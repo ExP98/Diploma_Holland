@@ -2,3 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
+*.dat
+*.dgm
+*.inp
+*.out
+*.log

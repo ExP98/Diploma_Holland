@@ -1,0 +1,15 @@
+```{r}
+library(holland)
+
+data(example2)
+Mplus_esyn(N = 300, Cor = example2)
+
+Circ_pro(N = 300, Cor = example2)
+Circ_emp(N = 300, Cor = example2)
+Circ_test(N = 300, Cor = example2, test="perfect")
+```
+
+```{r}
+example3
+```
+
