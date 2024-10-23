@@ -1,67 +1,188 @@
+---
+title: "Чтение данных"
+author: "Egor Glushkov"
+---
+
+# 1. Библиотеки
 
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
 library(data.table)
-library(jsonlite)
+# library(jsonlite)
+library(psych) # desc stats
 ```
+
+
+# 2. Данные
 
 ```{r}
 data <- fread("D:/Programs/RProjects/Diploma_Holland/0. Data/AllTestsData_092024.csv")
+all_tests <- data[["test_short_name"]] %>% unique()
+
+data
 ```
 
+
+# 3. Проверка данных
+
 ```{r}
-data[, .N, by = c("id")][order(-N)]
+data[, .N, by = c("id")][, .N, by = "N"]
 data[, .N, by = c("test_short_name")]
 ```
+У 16 человек пройдено 7 тестов, у 323 -- 6 тестов. Тот доп. тест у 16 человек -- golland_v2
+
 
 Обрабатывать по разным тестам данные отдельно. 
+
+Какие значения у теста большой пятерки:
 ```{r}
-data %>% 
-    filter(test_short_name == "big_five") %>% 
-    select(result) %>% 
-    slice(1) %>% 
-    pull()
+data %>%
+  .[test_short_name == "big_five", result] %>%
+  .[1]
 ```
-Привязанность–обособленность -- согласие (конформность, agreebleness)
-Экспрессивность–практичность --  открытость опыту (openness to experience)
-Самоконтроль–импульсивность -- сознательность (conscientiousness)
-Эмоциональная_устойчивость–эмоциональная_неустойчивость -- нейротизм (neuroticism)
+Значения теста большой пятерки:
+    Экстраверсия–интроверсия -- -||-
+    Привязанность–обособленность -- согласие (конформность, agreebleness)
+    Экспрессивность–практичность --  открытость опыту (openness to experience)
+    Самоконтроль–импульсивность -- сознательность (conscientiousness)
+    Эмоциональная_устойчивость–эмоциональная_неустойчивость -- нейротизм (neuroticism)
 
-
+Различные тесты Голланда у одних людей:
 ```{r}
-data %>% 
-    pivot_wider(names_from = "test_short_name", values_from = result) %>% 
-    filter(!is.na(golland_v2)) %>%
-    select(id, golland, golland_v2) %>%
-    view()
-
-data %>% 
-    pivot_wider(names_from = "test_short_name", values_from = result) %>% 
-    view()
+data %>%
+  pivot_wider(names_from = "test_short_name", values_from = result) %>%
+  filter(!is.na(golland_v2)) %>%
+  select(id, golland, golland_v2) %>%
+  view()
 ```
 
+Результаты всех тестов вместе:
+```{r}
+data %>%
+  pivot_wider(names_from = "test_short_name", values_from = result) %>%
+  view()
+```
+
+
+# 4. Чтение данных как единого датасета (парсинг)
 
 ```{r}
+extract_psytest_result <- function(res_str) {
+  res <- res_str %>%
+    str_extract("\\{[^\\}]*\\}") %>%
+    str_replace_all("\\{|\\}", "") %>%
+    str_split_1(",") %>%
+    str_split(":") %>%
+    sapply(\(elem) setNames(as.list(elem[[2]]), elem[[1]])) %>%
+    as.data.frame()
+  return(res)
+}
+
+
+show_desc_stats <- function(data) {
+  return(psych::describe(data, skew = FALSE, quant = c(.25, .75)) %>% 
+           select(vars, n, min, Q0.25, mean, median, Q0.75, max, range, sd, se))
+}
+```
+
+
+Примеры результатов (для парсинга):
+```{r}
+# data[test_short_name == "big_five", result][1]
+
 s_cattel <- "[{A:6,C:13,E:15,F:18,G:10,H:14,I:9,L:11,M:10,N:11,O:13,Q1:12,Q2:11,Q3:8,Q4:10,B:6}]"
 s_temperament <- "[{Экстраверсия:21,Психотизм:13,Нейротизм:25,Искренность:8}]"
 s_leon <- "[{Г-1:21,Г-2:20,Г-3:15,Г-4:24,Г-5:21,Г-6:21,Г-7:18,Г-8:21,Г-9:12,Г-10:12}]"
 s_bf <- "[{Экстраверсия–интроверсия:75,Привязанность–обособленность:75,Самоконтроль–импульсивность:75,Эмоциональная_устойчивость–эмоциональная_неустойчивость:74,Экспрессивность–практичность:75},{q_id:75,time:1646905559155,items:[{content:Зачем?,a_id:0}],state:accepted}]"
 
+# Надо вот так:
 s_correct <- "[{\"Экстраверсия\":21,\"Психотизм\":13,\"Нейротизм\":25,\"Искренность\":8}]"
-fromJSON(s_correct)
+# jsonlite::fromJSON(s_correct)
+```
+
+Надо выделять первые фигурные скобки:
+```{r}
+psytest_res_examples <- data %>% 
+  copy() %>% 
+  .[, .(answ = first(result)), by = test_short_name] %>% 
+  .[, answ]
+
+lapply(list(s_cattel, s_temperament, s_leon, s_bf), extract_psytest_result)
+lapply(psytest_res_examples, extract_psytest_result)
 ```
 
 ```{r}
-s_leon %>% 
-    str_replace_all("\\[\\{|\\}\\]", "") %>% 
-    str_split(",") %>% 
-    .[[1]] %>%
-    str_split(":") %>% 
-    sapply(\(elem) setNames(as.list(elem[[2]]), elem[[1]])) %>% 
-    as.data.frame()
+data %>% 
+  copy() %>% 
+  .[, result := lapply(result, \(elem) elem %>% extract_psytest_result() %>% t())] %>% 
+  unnest()
+  .[]
 ```
 
-Превратить в единый датасет с извлеченными оценками по всем тестам
+
+
+Превратить в единый датасет с извлеченными оценками по всем тестам:
+```{r}
+wide_data <- data %>%
+  copy() %>% 
+  .[, result := lapply(result, extract_psytest_result)] %>% 
+  pivot_wider(names_from = "test_short_name", values_from = result) %>% 
+  unnest(cols = -id, names_sep = " / ") %>% 
+  as.data.table() %>% 
+  .[, names(.) := lapply(.SD, as.integer)]
+```
+Big Five - 5 факторов
+temperament - 4
+cattell - 16
+golland - 6
+leonhard - 10
+schwartz - 20
+golland_v2 - 6
+--
+id + 67 факторов
+
+Для каждого теста привести описательную статистику:
+```{r}
+wide_data %>% show_desc_stats() %>% view()
+
+```
+
+```{r}
+check_data <- function(wide_data_, test_name) {
+  data <- wide_data_ %>% 
+    .[, .SD, .SDcols = names(.) %like% paste0("^id$|^", test_name, " ")]
+  
+  data %>% show_desc_stats() %>% print()
+  # data %>% pairs.panels()
+  data %>% outlier()
+  data %>% cor() %>% as.data.frame() %>% print()
+  return(NULL)
+}
+
+
+boxplot_data <- function(wide_data_, test_name) {
+  data <- wide_data_ %>% 
+    .[, .SD, .SDcols = names(.) %like% paste0("^id$|^", test_name, " ")] %>% 
+    melt(id.vars = "id") %>% 
+    .[, variable := str_replace_all(variable, "\\.|_", " - ")]
+  
+  plt <- ggplot(data, aes(x = str_wrap(variable, 25), y = value)) + 
+    geom_boxplot() +  # box is Q25 and Q75, whiskers are box +- 1.5*IQR
+    labs(x = "Фактор", y = "Значение", title = test_name) +
+    coord_flip()
+    # scale_x_discrete(guide = guide_axis(angle = 15)) # выполнять без coord_flip
+  return(plt)
+}
+```
+
+```{r}
+check_data(wide_data, "cattell")
+boxplot_data(wide_data, "golland")
+
+lapply(all_tests, boxplot_data, wide_data_ = wide_data)
+```
+
+
 Проверить на пропуски
 Проверить на выбросы по шкалам
 Проверить на корреляции
