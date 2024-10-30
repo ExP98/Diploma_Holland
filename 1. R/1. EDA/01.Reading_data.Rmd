@@ -8,6 +8,7 @@ author: "Egor Glushkov"
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
 library(data.table)
+library(xlsx)
 # library(jsonlite)
 library(psych) # desc stats
 ```
@@ -165,22 +166,63 @@ show_desc_stats <- function(data) {
   return(psych::describe(data, skew = FALSE, quant = c(.25, .75)) %>% 
            select(vars, n, min, Q0.25, mean, median, Q0.75, max, range, sd, se))
 }
+
+
+feature_replacement <- function(str) {
+  str %>% str_replace("(\\.)+", " - ") %>% str_replace("_", " ") %>% str_replace_all("\\.", " ") %>% str_trim()
+}
+
+
+golland_enum <- function(str) {
+  riasec <- c("R", "I", "A", "S", "E", "C")
+  return(str %>% str_replace("X", "") %>% as.numeric() %>% riasec[.])
+}
+
+test_names_df <- tribble(
+  ~code, ~name,
+  "big_five",       "Опросник Большой Пятерки",
+  "temperament",    "Личностный опросник Айзенка",
+  "cattell_poll",   "16-факторный личностный опросник Кеттелла",
+  "golland",        "Тест Голланда",
+  "leonhard_poll",  "Опросник Леонгарда-Шмишека",
+  "schwartz_poll",  "Ценностный опросник Шварца",
+  "golland_v2",     "Обновленный тест Голланда",
+)
 ```
 
-Для каждого теста привести описательную статистику:
+
 ```{r}
-wide_data %>% show_desc_stats() %>% view()
+desc_stats <- wide_data %>%
+  show_desc_stats() %>% 
+  as.data.frame() %>% 
+  rownames_to_column("test_feature") %>% 
+  filter(!test_feature %in% c("id")) %>% 
+  separate_wider_delim(cols = "test_feature", delim = " / ", names = c("test", "feature")) %>% 
+  filter(test != "golland_v2") %>% 
+  mutate(feature = feature %>% feature_replacement(), vars = row_number()) %>% 
+  mutate(feature = if_else(test == "golland", feature %>% golland_enum(), feature)) %>% 
+  select(`#` = vars, test, "Признак" = feature, N = n, min, Q0.25, mean, median, Q0.75, max, se) %>% 
+  mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>% 
+  mutate(across(where(is.numeric), \(x) x %>% as.character() %>% str_replace("\\.", ","))) %>% 
+  left_join(test_names_df, by = c("test" = "code")) %>% 
+  select(-test) %>% 
+  rename("Опросник" = name) %>% 
+  relocate("Опросник", .after = "#")
+
+write.xlsx2(desc_stats, "desc_stats.xlsx", "upd2", append = TRUE)
 ```
 
+
+# 5. Графики
 ```{r}
 check_data <- function(wide_data_, test_name) {
   data <- wide_data_ %>% 
     .[, .SD, .SDcols = names(.) %like% paste0("^id$|^", test_name, " ")]
   
-  data %>% show_desc_stats() %>% print()
+  # data %>% show_desc_stats() %>% print()
   # data %>% pairs.panels()
   data %>% outlier()
-  data %>% cor() %>% as.data.frame() %>% print()
+  # data %>% cor() %>% as.data.frame() %>% print()
   return(NULL)
 }
 
@@ -206,6 +248,13 @@ boxplot_data(wide_data, "golland")
 
 lapply(all_tests, boxplot_data, wide_data_ = wide_data)
 ```
+
+```{r}
+wide_data %>%
+  select(id, matches("golland "), 1:10) %>% 
+  slice(1:5)
+```
+
 
 
 Проверить на выбросы по шкалам
