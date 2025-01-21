@@ -58,8 +58,30 @@ golland_v2 - 6
 id + 67 факторов
 
 
-# 3. Проверка данных
+## Переименование переменных
 
+```{r}
+new_short_names <- wide_data %>%
+  copy() %>% 
+  colnames() %>% 
+  data.table(full_name = .) %>% 
+  .[, test_name := sapply(full_name, \(x) str_split_1(x, " / ")[1])] %>% 
+  .[, short_test := case_match(test_name, 
+                               "big_five" ~ "BF",
+                               "temperament" ~ "EY",
+                               "cattell_poll" ~ "CT",
+                               "golland" ~ "HL",
+                               "leonhard_poll" ~ "LN",
+                               "schwartz_poll" ~ "SC",
+                               "golland_v2" ~ "HL2")] %>% 
+  .[, .(full_name, test_name, short_test, cur = 1:.N), by = short_test] %>% 
+  .[, .(full_name, short_name = if_else(!is.na(short_test), str_c(short_test, "_", cur), full_name))]
+
+wide_data <- wide_data %>% rename_all(~new_short_names[["short_name"]])
+```
+
+
+# 3. Проверка данных
 
 ## Количество тестов у людей и количество людей по тестам
 ```{r}
@@ -94,6 +116,10 @@ data %>%
 
 
 ## Корреляции
+
+```{r}
+wide_data %>% select(matches("HL_")) %>% cor.plot()
+```
 
 
 ```{r}

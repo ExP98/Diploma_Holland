@@ -1,0 +1,133 @@
+---
+title: "Модели"
+author: "Egor Glushkov"
+---
+
+# 1. Библиотеки и функции
+```{r include=FALSE}
+library(mlr3verse)
+library(dotty)
+library(xgboost)
+
+set.seed(43)
+```
+
+Функции:
+```{r}
+# my_rmse <- \(y1, y2) sqrt(sum((y1 - y2)^2) / 6)
+cosine_sim <- \(y1, y2) (sum(y1 * y2)) / (sqrt(sum(y1 ^ 2)) * sqrt(sum(y2 ^ 2)))
+cosine_dist <- \(y1, y2) sqrt(2 * (1 - cosine_sim(y1, y2)))
+
+set_max <- function(vec, max_value) {
+  vec[vec >= max_value] <- max_value
+  return(vec)
+}
+```
+
+
+# 2. Данные
+
+```{r}
+features <-  wide_data[, .SD, .SDcols = !(names(wide_data) %like% "HL|HL2|id")] %>% copy() %>% as.matrix()
+targets <- wide_data[, .SD, .SDcols = names(wide_data) %like% "HL"] %>% copy() %>% as.matrix()
+```
+
+
+# 3. Модель
+
+Разделение данных на трейн и тест:
+```{r}
+split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.75, 0.25))
+
+.[features_train, features_test] <- list(features[split_idx, ], features[!split_idx, ])
+.[target_train, target_test]     <- list(targets[split_idx, ], targets[!split_idx, ])
+```
+
+
+Как выглядит модель, сколько раундов требуется:
+```{r}
+res <- vector("list", 20)
+for (i in 1:20) {
+  xgb_model <- xgboost(data = features_train, label = target_train[, 1],
+                       nrounds = i, objective = "reg:squarederror", verbose = 0)
+  
+  pred_y <- predict(xgb_model, features_test)
+  res[[i]] <- data.frame(
+    nrounds = i,
+    test_rmse = mlr3measures::rmse(target_test[, 1], pred_y),
+    test_round_rmse = mlr3measures::rmse(target_test[, 1], pred_y %>% round())
+  )
+}
+res %>% rbindlist()
+```
+
+Обучение и предсказание модели по шести признакам:
+```{r}
+pred_riasec <- vector("list", 6)
+for (feature_num in 1:6) {
+  xgb_model <- xgboost(data = features_train, label = target_train[, feature_num],
+                       nrounds = 15, objective = "reg:squarederror", verbose = 0)
+  
+  pred_riasec[[feature_num]] <- predict(xgb_model, features_test) %>% round() %>% set_max(14)
+}
+
+pred_test <- pred_riasec %>% as.data.table() %>% as.matrix()
+# target_test
+
+aRMSE <- sapply(1:nrow(target_test),\(i) mlr3measures::rmse(pred_test[i, ], target_test[i, ])) %>% mean()
+aCosDist<- sapply(1:nrow(target_test), \(i) cosine_dist(pred_test[i, ], target_test[i, ])) %>% mean()
+```
+
+Но есть ограничения:
+```{r}
+pred_riasec %>% as.data.table() %>% rowSums()
+
+pred_riasec %>%
+  copy() %>% 
+  as.data.table() %>% 
+  .[, new_V6 := 42 - (V1 + V2 + V3 + V4 + V5 + V6)] %>%
+  .[]
+```
+Ограничение, что каждое отдельное значение не больше 14. New_V6 < 0???
+
+Константный предсказатель:
+```{r}
+targets %>% colMeans()
+
+const_pred <- matrix(rep(rep(7, times = 6), each = nrow(target_test)), nrow = nrow(target_test))
+aRMSE_const <- sapply(1:nrow(target_test),
+                      \(i) mlr3measures::rmse(const_pred[i, ], target_test[i, ])) %>% mean()
+aCosDist_const <- sapply(1:nrow(target_test),
+                         \(i) cosine_dist(const_pred[i, ], target_test[i, ])) %>% mean()
+```
+
+
+
+# Прочее
+
+```{r}
+col_i <- 1
+bst <- xgboost(data = data_train, label = target_train[, col_i], nrounds = 10)
+
+# bst$evaluation_log
+pred_train_1 <- predict(bst, data_train) %>% round()
+pred_test_1  <- predict(bst, data_test) %>% round()
+mlr3measures::rmse(target_test[, col_i], pred_test_1)
+
+# xgb.importance(feature_names = names(train_data), model = bst)
+```
+
+```{r}
+# col_i <- 2
+bst <- xgboost(data = cbind(data_train, HL_1 = pred_train_1), label = target_train[, 2], nrounds = 10)
+pred2 <- predict(bst, cbind(data_test, HL_1 = pred_test_1)) %>% round()
+mlr3measures::rmse(target_test[, 2], pred2)
+```
+
+```{r}
+bst <- xgboost(data = data_train, label = target_train[, 2], nrounds = 10)
+
+pred1  <- predict(bst, data_test) %>% round()
+mlr3measures::rmse(target_test[, 2], pred1)
+```
+
