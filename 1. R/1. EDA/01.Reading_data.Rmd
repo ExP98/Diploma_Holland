@@ -195,47 +195,109 @@ show_desc_stats <- function(data) {
 
 
 feature_replacement <- function(str) {
-  str %>% str_replace("(\\.)+", " - ") %>% str_replace("_", " ") %>% str_replace_all("\\.", " ") %>% str_trim()
+  str %>% str_replace("(\\.)+", " - ") %>% str_replace_all("_", " ") %>% str_replace_all("\\.", " ") %>% str_trim()
 }
 
 
 golland_enum <- function(str) {
-  riasec <- c("R", "I", "A", "S", "E", "C")
+  riasec <- c(
+    "Реалистический (R)", 
+    "Исследовательский (I)",
+    "Артистический (A)",
+    "Социальный (S)",
+    "Предприимчивый (E)",
+    "Традиционный (C)"
+  )
+  # riasec <- c("R", "I", "A", "S", "E", "C")
   return(str %>% str_replace("X", "") %>% as.numeric() %>% riasec[.])
 }
 
+
+replace_col_using_df <- function(data, var_name, dict_df) {
+  data <- data %>% 
+    left_join(dict_df %>% select(V1 = 1, V2 = 2) %>% setnames("V1", var_name), by = var_name) %>% 
+    mutate(!!(var_name) := if_else(is.na(V2), get(var_name), V2), V2 = NULL)
+  return(data)
+}
+
+
 test_names_df <- tribble(
   ~code, ~name,
-  "big_five",       "Опросник Большой Пятерки",
-  "temperament",    "Личностный опросник Айзенка",
-  "cattell_poll",   "16-факторный личностный опросник Кеттелла",
   "golland",        "Тест Голланда",
   "leonhard_poll",  "Опросник Леонгарда-Шмишека",
+  "temperament",    "Личностный опросник Айзенка",
+  "cattell_poll",   "16-факторный опросник Кеттелла",
+  "big_five",       "Пятифакторный опросник личности",
   "schwartz_poll",  "Ценностный опросник Шварца",
-  "golland_v2",     "Обновленный тест Голланда",
+  "golland_v2",     "Обновленный тест Голланда"
+)
+
+leonhard_rus_factors <- tibble(
+  labels = paste0("Г - ", 1:10),
+  names = c("Гипертимность", "Дистимность", "Циклотимность", "Неуравновешенность", "Застревание", "Эмотивность", "Экзальтированность", "Тревожность", "Педантичность", "Демонстративность")
+)
+
+cattell_rus_factors <- tribble(
+  ~labels, ~names,
+  "A",  "Открытость - Замкнутость",
+  "B",  "Развитое мышление - Ограниченное мышление",
+  "C",  "Эмоциональная стабильность - Эмоциональная неустойчивость",
+  "E",  "Независимость - Податливость",
+  "F",  "Беспечность - Озабоченность",
+  "G",  "Сознательность - Беспринципность",
+  "H",  "Смелость - Застенчивость",
+  "I",  "Чувственность - Твердость",
+  "L",  "Подозрительность - Доверчивость",
+  "M",  "Мечтательность - Практичность",
+  "N",  "Утонченность - Простота",
+  "O",  "Склонность к чувству вины - Спокойная самоуверенность",
+  "Q1", "Радикализм - Консерватизм",
+  "Q2", "Самостоятельность - Зависимость от группы",
+  "Q3", "Самоконтроль, сильная воля - Недостаток самоконтроля, индифферентность",
+  "Q4", "Внутренняя напряженность - Внутренняя расслабленность"
 )
 ```
 
 
-```{r}
-desc_stats <- wide_data %>%
-  show_desc_stats() %>% 
+```{r message=FALSE, warning=FALSE}
+desc_stats <- wide_data %>% 
+  psych::describe(skew = FALSE, quant = c(.25, .75)) %>% 
+  select(vars, mean, sd, median, Q0.25, Q0.75, min, max) %>% 
   as.data.frame() %>% 
   rownames_to_column("test_feature") %>% 
   filter(!test_feature %in% c("id")) %>% 
   separate_wider_delim(cols = "test_feature", delim = " / ", names = c("test", "feature")) %>% 
+  arrange(factor(test, levels = test_names_df[["code"]])) %>% 
   filter(test != "golland_v2") %>% 
   mutate(feature = feature %>% feature_replacement(), vars = row_number()) %>% 
   mutate(feature = if_else(test == "golland", feature %>% golland_enum(), feature)) %>% 
-  select(`#` = vars, test, "Признак" = feature, N = n, min, Q0.25, mean, median, Q0.75, max, se) %>% 
   mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>% 
   mutate(across(where(is.numeric), \(x) x %>% as.character() %>% str_replace("\\.", ","))) %>% 
-  left_join(test_names_df, by = c("test" = "code")) %>% 
-  select(-test) %>% 
-  rename("Опросник" = name) %>% 
-  relocate("Опросник", .after = "#")
+  replace_col_using_df("test", test_names_df) %>% 
+  replace_col_using_df("feature", leonhard_rus_factors) %>% 
+  replace_col_using_df("feature", cattell_rus_factors) %>% 
+  transmute(
+    `Опросник` = test, 
+    `Признак` = feature, 
+    `Mean (SD)` = str_glue("{mean} ({sd})"),
+    `Median (IQR)` = str_glue("{median} ({Q0.25}-{Q0.75})"),
+    `Min` = min,
+    `Max` = max
+  ) %>% 
+  as.data.table() %>% 
+  .[, `#` := 1:.N, by = `Опросник`] %>% 
+  relocate(`#`, .before = `Признак`)
 
-write.xlsx2(desc_stats, "desc_stats.xlsx", "upd2", append = TRUE)
+write.xlsx2(desc_stats, "desc_stats.xlsx", "All", append = TRUE)
+```
+
+Отдельно выделим опросник Шварца с его х2 шкалами (нормативный идеал и инд. приоритет)
+```{r}
+desc_stats %>% 
+  .[`Опросник` == "Ценностный опросник Шварца"] %>% 
+  separate_wider_delim(cols = "Признак", delim = " - ", names = c("Признак", "norm")) %>% 
+  arrange(norm, `Признак`) %>% 
+  write.xlsx2("desc_stats.xlsx", "Шварц", append = TRUE)
 ```
 
 
@@ -269,12 +331,102 @@ boxplot_data <- function(wide_data_, test_name) {
 ```
 
 ```{r}
-check_data(wide_data, "cattell")
+check_data(wide_data, "cattell_poll")
 boxplot_data(wide_data, "golland")
 
 lapply(all_tests, boxplot_data, wide_data_ = wide_data)
 ```
 
+```{r}
+library(plotly)
+
+median_levels <- function(df, col_n) {
+  median_lvls <- df[, .(m = median(value)), by = c(col_n)][order(m), ..col_n][[1]]
+  return(median_lvls)
+}
+
+
+data_transformation <- function(wide_data_, test_name) {
+  data <- wide_data_ %>% 
+    copy() %>% 
+    .[, .SD, .SDcols = names(.) %like% paste0("^id$|^", test_name, " ")] %>% 
+    melt(id.vars = "id") %>% 
+    .[, variable := str_replace_all(variable, "\\.|_", " - ")] %>% 
+    separate_wider_delim(cols = "variable", delim = " / ", names = c("test_name", "feature")) %>%
+    mutate(feature = feature %>% feature_replacement(), vars = row_number()) 
+  return(data)
+}
+
+get_box_plot <- function(data, rus_rest_name, test_name, x_range = c(0, 27), n_str_wrap = 40) {
+  data <- data %>% 
+    copy() %>% 
+    as.data.table() %>% 
+    .[, feature := str_wrap(feature, n_str_wrap)] %>%
+    .[, feature := factor(feature, levels = median_levels(., "feature"))] 
+  
+  p <- plot_ly(data = data, x = ~value, y = ~feature, type = "box", 
+               colors = "Dark2", color = ~feature) %>% 
+    layout(
+      title = list(text = paste0("<b>", rus_rest_name, ". Диаграммы размаха факторов</b>")),
+      xaxis = list(title = "<b>Значение фактора</b>"),
+      yaxis = list(title = "", standoff = 5), # <b>Фактор</b>
+      # margin = list(l = 50),
+      showlegend = FALSE,
+      font = list(family = "Times New Roman", size = 10)
+    ) %>% 
+    layout(xaxis = list(range = x_range)) %>% 
+    config(locale = 'ru', displaylogo = FALSE,
+           toImageButtonOptions = list(format = 'png', filename = test_name, 
+                                       height = 1080/2, width = 1440/2, scale = 2))
+  return(p)
+}
+
+
+meta_func <- function(wide_data_, test_name, rus_rest_name, x_range = c(0, 27), n_str_wrap = 40,
+                      custom_func = NULL, ...) {
+  data <- data_transformation(wide_data_, test_name)
+  
+  if (!is.null(custom_func)) {{
+    data <- data %>% custom_func(...)
+  }}
+  
+  return(get_box_plot(data, rus_rest_name, test_name, x_range, n_str_wrap))
+}
+```
+
+```{r message=FALSE, warning=FALSE}
+meta_func(wide_data, "cattell_poll", "16-факторный Опросник Кеттелла (16PF)", custom_func = replace_col_using_df, 
+          x_range = c(0, 27), var_name = "feature", dict_df = cattell_rus_factors)
+
+meta_func(wide_data, "big_five", "Пятифакторный опросник личности (5PFQ)", x_range = c(0, 80), n_str_wrap = 30)
+
+
+meta_func(wide_data, "golland", "Тест Голланда (RIASEC)", 
+          custom_func = \(dt) mutate(dt, feature = if_else(test_name == "golland", feature %>% golland_enum(), feature)), 
+          x_range = c(0, 15))
+
+meta_func(wide_data, "temperament", "Личностный опросник Айзенка (EPQ-R)", x_range = c(-1, 25), n_str_wrap = 30)
+
+meta_func(wide_data, "leonhard_poll", "Опросник Леонгарда-Шмишека", 
+          custom_func = \(dt) replace_col_using_df(dt, var_name = "feature", dict_df = leonhard_rus_factors), 
+          x_range = c(0, 25))
+
+meta_func(wide_data, "schwartz_poll", "Ценностный опросник Шварца", x_range = c(-1, 25), n_str_wrap = 30)
+```
+
+Разделить Шварца на 2 по 10
+```{r}
+wide_data %>% 
+  data_transformation("schwartz_poll")
+
+  .[`Опросник` == "Ценностный опросник Шварца"] %>% 
+  separate_wider_delim(cols = "Признак", delim = " - ", names = c("Признак", "norm")) %>% 
+  arrange(norm, `Признак`) %>% 
+```
+
+
+
+# 7. Слайс данных
 ```{r}
 wide_data %>%
   select(id, matches("golland "), 1:10) %>% 
