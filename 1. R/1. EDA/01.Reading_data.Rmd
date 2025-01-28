@@ -118,7 +118,16 @@ data %>%
 ## Корреляции
 
 ```{r}
-wide_data %>% select(matches("HL_")) %>% cor.plot()
+png(filename = "../../0. Data/Output/cor.png")
+
+cor_plot <- wide_data %>% 
+  select(matches("golland ")) %>% 
+  cor.plot(main = "Матрица корреляций факторов\nмодели Голланда (N = 339)", 
+           labels = c("R", "I", "A", "S", "E", "C"),
+           cex = 1, scale = FALSE, diag = FALSE, upper = TRUE)
+
+recordPlot()
+dev.off()
 ```
 
 
@@ -144,6 +153,26 @@ ggplot(cor_df[value > 0.5], aes(x = value)) +
   theme_minimal()
 ```
 Среди скоррелированных признаков нет кодов Голланда -- хорошо.
+
+```{r}
+cor_df %>% 
+  separate_wider_delim(cols = 1:2, delim = " / ", names = c("test", "feature"), names_sep = "_") %>% 
+  mutate(across(matches("feature"), feature_replacement)) %>% 
+  mutate(factor1_feature = if_else(factor1_test == "golland", factor1_feature %>% golland_enum(), factor1_feature)) %>% 
+  mutate(factor2_feature = if_else(factor2_test == "golland", factor2_feature %>% golland_enum(), factor2_feature)) %>% 
+
+  replace_col_using_df("factor1_test", test_names_df) %>% 
+  replace_col_using_df("factor1_feature", leonhard_rus_factors) %>% 
+  replace_col_using_df("factor1_feature", cattell_rus_factors) %>%  
+  replace_col_using_df("factor2_test", test_names_df) %>% 
+  replace_col_using_df("factor2_feature", leonhard_rus_factors) %>% 
+  replace_col_using_df("factor2_feature", cattell_rus_factors) %>% 
+  
+  filter(value > 0.65) %>% 
+  arrange(-value) %>% 
+  mutate(value = value %>% round(digits = 2) %>% as.character() %>% str_replace("\\.", ",")) %>% 
+  write.xlsx2("../../0. Data/Output/max_cor.xlsx")
+```
 
 
 ## Пропуски
@@ -331,10 +360,10 @@ boxplot_data <- function(wide_data_, test_name) {
 ```
 
 ```{r}
-check_data(wide_data, "cattell_poll")
-boxplot_data(wide_data, "golland")
-
-lapply(all_tests, boxplot_data, wide_data_ = wide_data)
+# check_data(wide_data, "cattell_poll")
+# boxplot_data(wide_data, "golland")
+# 
+# lapply(all_tests, boxplot_data, wide_data_ = wide_data)
 ```
 
 ```{r}
@@ -367,14 +396,14 @@ get_box_plot <- function(data, rus_rest_name, test_name, x_range = c(0, 27), n_s
   p <- plot_ly(data = data, x = ~value, y = ~feature, type = "box", 
                colors = "Dark2", color = ~feature) %>% 
     layout(
-      title = list(text = paste0("<b>", rus_rest_name, ". Диаграммы размаха факторов</b>")),
+      title = list(text = paste0("<b>Диаграммы размаха факторов. ", rus_rest_name, "</b>")),
       xaxis = list(title = "<b>Значение фактора</b>"),
       yaxis = list(title = "", standoff = 5), # <b>Фактор</b>
       # margin = list(l = 50),
       showlegend = FALSE,
-      font = list(family = "Times New Roman", size = 10)
+      font = list(family = "Times New Roman", size = 12)
     ) %>% 
-    layout(xaxis = list(range = x_range)) %>% 
+    layout(xaxis = list(range = x_range, zeroline = FALSE)) %>% 
     config(locale = 'ru', displaylogo = FALSE,
            toImageButtonOptions = list(format = 'png', filename = test_name, 
                                        height = 1080/2, width = 1440/2, scale = 2))
@@ -382,7 +411,7 @@ get_box_plot <- function(data, rus_rest_name, test_name, x_range = c(0, 27), n_s
 }
 
 
-meta_func <- function(wide_data_, test_name, rus_rest_name, x_range = c(0, 27), n_str_wrap = 40,
+meta_func <- function(wide_data_, test_name, rus_rest_name, x_range = c(-1, 27), n_str_wrap = 40,
                       custom_func = NULL, ...) {
   data <- data_transformation(wide_data_, test_name)
   
@@ -395,42 +424,52 @@ meta_func <- function(wide_data_, test_name, rus_rest_name, x_range = c(0, 27), 
 ```
 
 ```{r message=FALSE, warning=FALSE}
-meta_func(wide_data, "cattell_poll", "16-факторный Опросник Кеттелла (16PF)", custom_func = replace_col_using_df, 
-          x_range = c(0, 27), var_name = "feature", dict_df = cattell_rus_factors)
-
-meta_func(wide_data, "big_five", "Пятифакторный опросник личности (5PFQ)", x_range = c(0, 80), n_str_wrap = 30)
-
-
-meta_func(wide_data, "golland", "Тест Голланда (RIASEC)", 
+p1 <- meta_func(wide_data, "golland", "Тест Голланда (RIASEC)", 
           custom_func = \(dt) mutate(dt, feature = if_else(test_name == "golland", feature %>% golland_enum(), feature)), 
-          x_range = c(0, 15))
+          x_range = c(-1, 16))
 
-meta_func(wide_data, "temperament", "Личностный опросник Айзенка (EPQ-R)", x_range = c(-1, 25), n_str_wrap = 30)
+p2 <- meta_func(wide_data, "big_five", "Пятифакторный опросник личности (5PFQ)", x_range = c(-1, 81), n_str_wrap = 30)
 
-meta_func(wide_data, "leonhard_poll", "Опросник Леонгарда-Шмишека", 
+p3 <- meta_func(wide_data, "temperament", "Личностный опросник Айзенка (EPQ-R)", x_range = c(-1, 26), n_str_wrap = 30)
+
+p4 <- meta_func(wide_data, "leonhard_poll", "Опросник Леонгарда-Шмишека", 
           custom_func = \(dt) replace_col_using_df(dt, var_name = "feature", dict_df = leonhard_rus_factors), 
-          x_range = c(0, 25))
+          x_range = c(-1, 26))
 
-meta_func(wide_data, "schwartz_poll", "Ценностный опросник Шварца", x_range = c(-1, 25), n_str_wrap = 30)
+p7 <- meta_func(wide_data, "cattell_poll", "16-факторный Опросник Кеттелла (16PF)", custom_func = replace_col_using_df, 
+          x_range = c(-1, 27), var_name = "feature", dict_df = cattell_rus_factors)
+
+# meta_func(wide_data, "schwartz_poll", "Ценностный опросник Шварца", x_range = c(-1, 100), n_str_wrap = 30)
 ```
 
-Разделить Шварца на 2 по 10
-```{r}
-wide_data %>% 
-  data_transformation("schwartz_poll")
+```{r message=FALSE, warning=FALSE}
+schwartz_tranformed <- wide_data %>% 
+  copy() %>% 
+  .[, .SD, .SDcols = names(.) %like% paste0("^id$|^", "schwartz_poll", " ")] %>% 
+  melt(id.vars = "id") %>% 
+  .[, variable := feature_replacement(variable)] %>% 
+  separate_wider_delim(cols = "variable", delim = " / ", names = c("test_name", "feature")) %>% 
+  separate_wider_delim(cols = "feature", delim = " - ", names = c("feature", "attr")) %>% 
+  arrange(attr, feature) %>% 
+  as.data.table()
 
-  .[`Опросник` == "Ценностный опросник Шварца"] %>% 
-  separate_wider_delim(cols = "Признак", delim = " - ", names = c("Признак", "norm")) %>% 
-  arrange(norm, `Признак`) %>% 
+p5 <- schwartz_tranformed[attr == "нормативный идеал"] %>% 
+  get_box_plot(rus_rest_name = "Ценностный опросник Шварца (нормативный идеал)", 
+               test_name = "schwartz_poll", x_range = c(-11, 61), n_str_wrap = 30) 
+  
+p6 <- schwartz_tranformed[attr == "индивидуальный приоритет"] %>% 
+  get_box_plot(rus_rest_name = "Ценностный опросник Шварца (индивидуальный приоритет)", 
+               test_name = "schwartz_poll", x_range = c(-6, 26), n_str_wrap = 30)
 ```
-
-
 
 # 7. Слайс данных
+
 ```{r}
 wide_data %>%
-  select(id, matches("golland "), 1:10) %>% 
-  slice(1:5)
+  select(id, matches("golland "), matches("big_five"), lp9 = `leonhard_poll / Г.9`, lp10 = `leonhard_poll / Г.10`) %>%
+  slice(1:5) %>% 
+  mutate(`dots` = "...", .before = "lp9") %>% 
+  write.xlsx2("../../0. Data/Output/slice_data.xlsx")
 ```
 
 
