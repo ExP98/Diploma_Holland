@@ -11,6 +11,9 @@ library(data.table)
 library(xlsx)
 # library(jsonlite)
 library(psych) # desc stats
+library(here)
+
+here::here()
 ```
 
 ```{r}
@@ -30,7 +33,7 @@ extract_psytest_result <- function(res_str) {
 # 2. Данные
 
 ```{r}
-data <- fread("D:/Programs/RProjects/Diploma_Holland/0. Data/AllTestsData_092024.csv")
+data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv"))
 all_tests <- data[["test_short_name"]] %>% unique()
 
 wide_data <- data %>%
@@ -90,21 +93,6 @@ data[, .N, by = c("test_short_name")]
 ```
 У 16 человек пройдено 7 тестов, у 323 -- 6 тестов. Тот доп. тест у 16 человек -- golland_v2
 
-## Данные по тесту Большой пятерки
-Какие значения у теста большой пятерки:
-```{r}
-data %>%
-  .[test_short_name == "big_five", result] %>%
-  .[1]
-```
-Значения теста большой пятерки:
-    Экстраверсия–интроверсия -- -||-
-    Привязанность–обособленность -- согласие (конформность, agreebleness)
-    Экспрессивность–практичность --  открытость опыту (openness to experience)
-    Самоконтроль–импульсивность -- сознательность (conscientiousness)
-    Эмоциональная_устойчивость–эмоциональная_неустойчивость -- нейротизм (neuroticism)
-
-
 ## Различные тесты Голланда у одних людей
 ```{r}
 data %>%
@@ -142,19 +130,19 @@ cor_df <- cor_mat %>%
   filter(factor1 != factor2, factor1 != "id", factor2 != "id", !is.na(value)) %>% 
   as.data.table()
 
-cor_df %>% 
-  filter(value > 0.6) %>% 
-  view()
-
-ggplot(cor_df[value > 0.5], aes(x = value)) +
-  geom_histogram(color = "black", fill = "steelblue", bins = 30) +
-  labs(x = "Коэффициент корреляции", y = "Частота") + 
-  ggtitle("Гистограмма частот для коэффицента корреляции > 0.5") +
-  theme_minimal()
+# ggplot(cor_df[value > 0.5], aes(x = value)) +
+#   geom_histogram(color = "black", fill = "steelblue", bins = 30) +
+#   labs(x = "Коэффициент корреляции", y = "Частота") + 
+#   ggtitle("Гистограмма частот для коэффицента корреляции > 0.5") +
+#   theme_minimal()
 ```
 Среди скоррелированных признаков нет кодов Голланда -- хорошо.
 
 ```{r}
+# cor_df %>% 
+  # filter(value > 0.6) %>% 
+  # view()
+
 cor_df %>% 
   separate_wider_delim(cols = 1:2, delim = " / ", names = c("test", "feature"), names_sep = "_") %>% 
   mutate(across(matches("feature"), feature_replacement)) %>% 
@@ -179,7 +167,7 @@ cor_df %>%
 
 ```{r}
 wide_data %>% 
-  select(-matches("golland_v2")) %>%
+  select(-matches("golland_v2|HL2")) %>%
   is.na() %>%
   sum()
 ```

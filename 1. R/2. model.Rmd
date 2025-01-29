@@ -9,18 +9,41 @@ library(mlr3verse)
 library(dotty)
 library(xgboost)
 
-set.seed(43)
+set.seed(143)
 ```
 
 Функции:
 ```{r}
-# my_rmse <- \(y1, y2) sqrt(sum((y1 - y2)^2) / 6)
+my_rmse <- \(y1, y2) sqrt(sum((y1 - y2)^2) / length(y1))
 cosine_sim <- \(y1, y2) (sum(y1 * y2)) / (sqrt(sum(y1 ^ 2)) * sqrt(sum(y2 ^ 2)))
 cosine_dist <- \(y1, y2) sqrt(2 * (1 - cosine_sim(y1, y2)))
+
 
 set_max <- function(vec, max_value) {
   vec[vec >= max_value] <- max_value
   return(vec)
+}
+
+
+smart_integer_round <- function(six_vals) {
+  modif <- six_vals * 42 / sum(six_vals)
+  resid <- 42 - sum(round(modif))
+  
+  ind_to_change <- order(abs(modif - round(modif)), decreasing = TRUE)[1:abs(resid)]
+  modif[ind_to_change] <- modif[ind_to_change] + sign(resid) * 1
+  
+  int_rnd_values <- round(modif)
+  if (sum(int_rnd_values) != 42) warning(str_glue("Sum of {toString(int_rnd_values)} != 42. Input: {toString(six_vals)}"))
+  return(int_rnd_values)
+}
+
+# sapply(1:nrow(pred_test), \(i) smart_integer_round(pred_test[i, ])) %>% colSums()
+
+show_custom_metrics <- function(my_pred, case_name) {
+  aRMSE_ <- sapply(1:nrow(target_test), \(i) mlr3measures::rmse(my_pred[i, ], target_test[i, ])) %>% mean()
+  aCosDist_ <- sapply(1:nrow(target_test), \(i) cosine_dist(my_pred[i, ], target_test[i, ])) %>% mean()
+  print(str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCosDist: {round(aCosDist_, 3)}"))
+  return(invisible(NULL))
 }
 ```
 
@@ -28,12 +51,9 @@ set_max <- function(vec, max_value) {
 # 2. Данные
 
 ```{r}
-features <-  wide_data[, .SD, .SDcols = !(names(wide_data) %like% "HL|HL2|id")] %>% copy() %>% as.matrix()
-targets <- wide_data[, .SD, .SDcols = names(wide_data) %like% "HL"] %>% copy() %>% as.matrix()
+features <- wide_data[, .SD, .SDcols = !(names(wide_data) %like% "HL|HL2|id")] %>% copy() %>% as.matrix()
+targets <- wide_data[, .SD, .SDcols = names(wide_data) %like% "HL_"] %>% copy() %>% as.matrix()
 ```
-
-
-# 3. Модель
 
 Разделение данных на трейн и тест:
 ```{r}
@@ -43,91 +63,162 @@ split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.7
 .[target_train, target_test]     <- list(targets[split_idx, ], targets[!split_idx, ])
 ```
 
+# 3. Модель
 
+## Число раундов
 Как выглядит модель, сколько раундов требуется:
 ```{r}
+ii <- 1
+
 res <- vector("list", 20)
 for (i in 1:20) {
-  xgb_model <- xgboost(data = features_train, label = target_train[, 1],
-                       nrounds = i, objective = "reg:squarederror", verbose = 0)
+  xgb_model <- xgboost(data = features_train, label = target_train[, ii],
+                       nrounds = i, objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
   
   pred_y <- predict(xgb_model, features_test)
   res[[i]] <- data.frame(
     nrounds = i,
-    test_rmse = mlr3measures::rmse(target_test[, 1], pred_y),
-    test_round_rmse = mlr3measures::rmse(target_test[, 1], pred_y %>% round())
+    test_rmse = mlr3measures::rmse(target_test[, ii], pred_y),
+    test_round_rmse = mlr3measures::rmse(target_test[, ii], pred_y %>% round())
   )
 }
-res %>% rbindlist()
-```
 
-Обучение и предсказание модели по шести признакам:
+res %>% rbindlist() %>% .[["test_rmse"]] %>% plot(main = "test_rmse")
+res %>% rbindlist() %>% .[["test_round_rmse"]] %>% plot(main = "test_round_rmse")
+```
+15 раундов хватает.
+
+## Независимое обучение
+Обучение и предсказание модели по шести признакам независимо:
 ```{r}
-pred_riasec <- vector("list", 6)
+indep_pred <- vector("list", 6)
 for (feature_num in 1:6) {
   xgb_model <- xgboost(data = features_train, label = target_train[, feature_num],
-                       nrounds = 15, objective = "reg:squarederror", verbose = 0)
+                       nrounds = 15, objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
   
-  pred_riasec[[feature_num]] <- predict(xgb_model, features_test) %>% round() %>% set_max(14)
+  indep_pred[[feature_num]] <- predict(xgb_model, features_test)
 }
 
-pred_test <- pred_riasec %>% as.data.table() %>% as.matrix()
-# target_test
+indep_pred <- indep_pred %>% as.data.table() %>% as.matrix()
+correct_indep_pred <- apply(indep_pred, 1, smart_integer_round) %>% t()
 
-aRMSE <- sapply(1:nrow(target_test),\(i) mlr3measures::rmse(pred_test[i, ], target_test[i, ])) %>% mean()
-aCosDist<- sapply(1:nrow(target_test), \(i) cosine_dist(pred_test[i, ], target_test[i, ])) %>% mean()
+show_custom_metrics(indep_pred, "Неприведенное независимое")
+show_custom_metrics(correct_indep_pred, "Приведенное независимое")
+# rowSums(res)[rowSums(res) != 42]
 ```
 
-Но есть ограничения:
+## Константный предсказатель
 ```{r}
-pred_riasec %>% as.data.table() %>% rowSums()
-
-pred_riasec %>%
-  copy() %>% 
-  as.data.table() %>% 
-  .[, new_V6 := 42 - (V1 + V2 + V3 + V4 + V5 + V6)] %>%
-  .[]
-```
-Ограничение, что каждое отдельное значение не больше 14. New_V6 < 0???
-
-Константный предсказатель:
-```{r}
-targets %>% colMeans()
-
-const_pred <- matrix(rep(rep(7, times = 6), each = nrow(target_test)), nrow = nrow(target_test))
-aRMSE_const <- sapply(1:nrow(target_test),
-                      \(i) mlr3measures::rmse(const_pred[i, ], target_test[i, ])) %>% mean()
-aCosDist_const <- sapply(1:nrow(target_test),
-                         \(i) cosine_dist(const_pred[i, ], target_test[i, ])) %>% mean()
+# const_pred <- matrix(rep(rep(7, times = 6), each = nrow(target_test)), nrow = nrow(target_test))
+const_pred <- matrix(rep(colMeans(target_train), each = nrow(target_train)), nrow = nrow(target_train))
+show_custom_metrics(const_pred, "Константное")
 ```
 
-
-
-# Прочее
+## Chained regression
 
 ```{r}
 col_i <- 1
-bst <- xgboost(data = data_train, label = target_train[, col_i], nrounds = 10)
+
+local_train_set <- features_train
+local_test_set <- features_test
+
+bst <- xgboost(data = local_train_set, label = target_train[, col_i], nrounds = 15, 
+               objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
 
 # bst$evaluation_log
-pred_train_1 <- predict(bst, data_train) %>% round()
-pred_test_1  <- predict(bst, data_test) %>% round()
-mlr3measures::rmse(target_test[, col_i], pred_test_1)
+pred_train_i <- predict(bst, local_train_set) %>% round()
+pred_test_i  <- predict(bst, local_test_set) %>% round()
+mlr3measures::rmse(target_test[, col_i], pred_test_i)
 
-# xgb.importance(feature_names = names(train_data), model = bst)
+all_test_preds <- NULL
+all_test_preds[[col_i]] <- pred_test_i
+
+# xgb.importance(feature_names = names(features_train), model = bst)
 ```
 
 ```{r}
-# col_i <- 2
-bst <- xgboost(data = cbind(data_train, HL_1 = pred_train_1), label = target_train[, 2], nrounds = 10)
-pred2 <- predict(bst, cbind(data_test, HL_1 = pred_test_1)) %>% round()
-mlr3measures::rmse(target_test[, 2], pred2)
+for (col_i in 2:6) {
+  local_train_set <- cbind(local_train_set, col_i = pred_train_i)
+  colnames(local_train_set)[ncol(local_train_set)] <- paste0("output_", col_i)
+  
+  local_test_set <- cbind(local_test_set, col_i = pred_test_i)
+  colnames(local_test_set)[ncol(local_test_set)] <- paste0("output_", col_i)
+  
+  bst <- xgboost(data = local_train_set, label = target_train[, col_i], nrounds = 15, 
+                 objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
+  
+  # bst$evaluation_log
+  pred_train_i <- predict(bst, local_train_set) %>% round()
+  pred_test_i  <- predict(bst, local_test_set) %>% round()
+  
+  all_test_preds[[col_i]] <- pred_test_i
+  print(mlr3measures::rmse(target_test[, col_i], pred_test_i))
+}
 ```
 
 ```{r}
-bst <- xgboost(data = data_train, label = target_train[, 2], nrounds = 10)
+chained_pred <- all_test_preds %>% as.data.table() %>% as.matrix.data.frame()
+correct_chain_test <- apply(chained_pred, 1, smart_integer_round) %>% t()
 
-pred1  <- predict(bst, data_test) %>% round()
-mlr3measures::rmse(target_test[, 2], pred1)
+show_custom_metrics(chained_pred, "Chained неприведенное")
+show_custom_metrics(correct_chain_test, "Chained приведенное")
+```
+Порядок предсказания может иметь значение!
+
+
+## Другие модели
+
+
+.[features_train, features_test]
+.[target_train, target_test] 
+```{r}
+library(lightgbm)
+
+x_train <- data.matrix(features_train)
+x_test <- data.matrix(features_test)
+
+indep_lgbm_pred <- vector("list", 6)
+for (feature_num in 1:6) {
+  dtrain <- lightgbm::lgb.Dataset(
+    data = x_train,
+    label = target_train[, feature_num],
+    free_raw_data = FALSE
+  )
+  
+  dtest <- lgb.Dataset.create.valid(dtrain, data = x_test, label = target_test[, feature_num])
+    
+  lgb_model <- lgb.train(
+    params = list(objective = "regression", metric = "rmse", num_iterations = 250),
+    data = dtrain,
+    valids = list(train = dtrain, eval = dtest),
+    verbose = -1
+  )
+  print(lgb_model$best_score)
+  indep_lgbm_pred[[feature_num]] <- predict(lgb_model, x_test) %>% round()
+}
+
+indep_lgbm_pred <- indep_pred %>% as.data.table() %>% as.matrix()
+correct_indep_lgbm_pred <- apply(indep_lgbm_pred, 1, smart_integer_round) %>% t()
+
+show_custom_metrics(indep_lgbm_pred, "Неприведенное независимое LGBM")
+show_custom_metrics(correct_indep_lgbm_pred, "Приведенное независимое LGBM")
+```
+
+Cross Validation model:
+```{r}
+dtrain_all <- lightgbm::lgb.Dataset(
+  data = data.matrix(features),
+  label = targets[, feature_num],
+  free_raw_data = FALSE
+)
+
+lgbm_cv_model <- lgb.cv(
+  params = list(objective = "regression", metric = "rmse"),
+  data = dtrain_all,
+  nfold = 5L,
+  verbose = -1
+)
+
+lgbm_cv_model$best_score
 ```
 
