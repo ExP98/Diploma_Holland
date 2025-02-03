@@ -1,17 +1,23 @@
 
+Идея из [Prediger](https://www.researchgate.net/publication/223318083_Locating_occupations_on_Holland's_hexagon_Beyond_RIASEC)
+Prediger, D. J., & Vansickle, T. R. (1992). Locating occupations on Holland’s hexagon: Beyond RIASEC. Journal of Vocational Behavior, 40(2), 111–128. doi:10.1016/0001-8791(92)90060-d
+
+Hexagon Congruence Index
+
 ```{r}
-riasec_set <- c(70, 69, 30, 68, 30, 30)
-# riasec_set <- c(70, 50, 30, 40, 30, 30)
+library(holland)
+# riasec_set <- c(70, 69, 30, 68, 30, 30)
+riasec_set <- c(70, 50, 30, 40, 30, 30)
 # riasec_set <- c(0, 0, 0, 0, 1, 1)
 
 angles_rad <- 2 * pi - 0:5 * pi / 3
 
 total_angle <- atan(sum(riasec_set * sin(angles_rad)) / sum(riasec_set * cos(angles_rad))) * 180 / pi
-total_angle2 <- if (total_angle < 0) 360 + total_angle
+# total_angle2 <- if (total_angle < 0) 360 + total_angle
+total_angle2  <- total_angle %% 360
 
 total_angle2
 
 plot_profile_holland(riasec_set, scalab = F)
 sco2let(riasec_set)
 ```
-
