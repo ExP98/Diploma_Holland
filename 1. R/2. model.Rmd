@@ -12,7 +12,7 @@ library(lightgbm)
 library(randomForest)
 library(caret)
 
-set.seed(243)
+# set.seed(243)
 source(paste0(here(), "/1. R/4. data_preparation.R"))
 ```
 
@@ -115,8 +115,8 @@ for (feature_num in 1:6) {
 indep_pred <- indep_pred %>% as.data.table() %>% as.matrix()
 correct_indep_pred <- apply(indep_pred, 1, smart_integer_round) %>% t()
 
-show_custom_metrics(indep_pred, "Неприведенное независимое")
-show_custom_metrics(correct_indep_pred, "Приведенное независимое")
+show_custom_metrics(indep_pred, "XGBoost. Неприведенное независимое")
+show_custom_metrics(correct_indep_pred, "XGBoost. Приведенное независимое")
 # rowSums(res)[rowSums(res) != 42]
 ```
 
@@ -310,6 +310,13 @@ show_custom_metrics(correct_lm_test, "lm приведенное")
 pca_model <- prcomp(X_train, center = TRUE, scale. = TRUE)
 
 # cumsum(pca_model$sdev^2 / sum(pca_model$sdev^2))
+data.table(
+  k = 1:length(pca_model$sdev),
+  ssq = pca_model$sdev^2
+) %>% 
+  .[, cumsum := cumsum(ssq / sum(ssq))] %>% 
+  .[]
+
 plot(pca_model$sdev^2 / sum(pca_model$sdev^2), 
      type = "b", 
      xlab = "Главные компоненты", 
@@ -317,19 +324,46 @@ plot(pca_model$sdev^2 / sum(pca_model$sdev^2),
 ```
 
 ```{r}
-pca_scaler <- function(X_df, pca_model_, k = 18) {
+pca_scaler <- function(X_df, pca_model_, k = 32) {
   res <- scale(X_df, center = pca_model_$center, scale = pca_model_$scale) %*% 
     pca_model_$rotation %>% 
     .[, 1:k]
   return(res)
 }
-
-X_train_scaled <- pca_scaler(X_train, pca_model, 40)
-X_test_scaled  <- pca_scaler(X_test,  pca_model, 40)
 ```
 
-lm:
+## lm
+
+Зависимость k (~PCA) и результатов lm:
 ```{r}
+check_k_pca_lm <- function(k) {
+  X_train_scaled <- pca_scaler(X_train, pca_model, k)
+  X_test_scaled  <- pca_scaler(X_test,  pca_model, k)
+  
+  lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., 
+                 data = data.frame(X_train_scaled, Y_train))
+  
+  lm_pred <- predict(lm_model, newdata = data.frame(X_test_scaled, Y_test)) %>% 
+    apply(., 1, smart_integer_round) %>% 
+    t()
+  
+  aRMSE_ <- sapply(1:nrow(Y_test), 
+                   \(i) mlr3measures::rmse(lm_pred[i, ], Y_test[i, ])) %>% mean()
+  return(c(k = k, aRMSE = aRMSE_))
+}
+
+res_k_lm <- sapply(1:ncol(X_train), check_k_pca_lm) %>% 
+  t() %>% 
+  as.data.table()
+
+plotly::plot_ly(res_k_lm, x = ~k, y = ~aRMSE, type = 'scatter', mode = 'lines+markers')
+```
+
+```{r}
+best_k <- res_k_lm[aRMSE == min(aRMSE), k]
+X_train_scaled <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_scaled  <- pca_scaler(X_test,  pca_model, k = best_k)
+
 lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., 
                data = data.frame(X_train_scaled, Y_train))
 
@@ -339,11 +373,46 @@ correct_lm_test <- apply(lm_pred, 1, smart_integer_round) %>% t()
 show_custom_metrics(lm_pred, "lm неприведенное")
 show_custom_metrics(correct_lm_test, "lm приведенное")
 ```
-Стоит исследовать зависимость k (~PCA) и результатов lm
 
 
-Random Forest:
+## Random Forest
+
 ```{r}
+check_k_pca_RF <- function(k) {
+  X_train_scaled <- pca_scaler(X_train, pca_model, k)
+  X_test_scaled  <- pca_scaler(X_test,  pca_model, k)
+  
+  models <- list()
+  
+  for (feature_num in 1:6) {
+    models[[feature_num]] <- randomForest(
+      x = X_train_scaled,
+      y = Y_train[, feature_num],
+      ntree = 1000
+    )
+  }
+  
+  rf_pred <- sapply(1:6, \(i) predict(models[[i]], data.frame(X_test_scaled, Y_test))) %>% 
+    apply(., 1, smart_integer_round) %>% 
+    t()
+  
+  aRMSE_ <- sapply(1:nrow(Y_test), 
+                   \(i) mlr3measures::rmse(rf_pred[i, ], Y_test[i, ])) %>% mean()
+  return(c(k = k, aRMSE = aRMSE_))
+}
+
+res_k_rf <- sapply(seq(2, ncol(X_train), by = 3), check_k_pca_RF) %>% 
+  t() %>% 
+  as.data.table()
+
+plotly::plot_ly(res_k_rf, x = ~k, y = ~aRMSE, type = 'scatter', mode = 'lines+markers')
+```
+
+```{r}
+best_k <- res_k_rf[aRMSE == min(aRMSE), k]
+X_train_scaled <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_scaled  <- pca_scaler(X_test,  pca_model, k = best_k)
+  
 models <- list()
 
 for (feature_num in 1:6) {
@@ -361,4 +430,22 @@ rf_pred <- sapply(1:6, function(t) {
 correct_rf_pred <- apply(rf_pred, 1, smart_integer_round) %>% t()
 show_custom_metrics(rf_pred, "Random Forest неприведенное")
 show_custom_metrics(correct_rf_pred, "Random Forest приведенное")
+```
+
+## XGBoost
+```{r}
+indep_pred <- vector("list", 6)
+for (feature_num in 1:6) {
+  xgb_model <- xgboost(data = X_train_scaled, label = Y_train[, feature_num],
+                       nrounds = 15, objective = "reg:squarederror", eval_metric = "rmse",
+                       verbose = 0)
+  
+  indep_pred[[feature_num]] <- predict(xgb_model, X_test_scaled)
+}
+
+indep_pred <- indep_pred %>% as.data.table() %>% as.matrix()
+correct_indep_pred <- apply(indep_pred, 1, smart_integer_round) %>% t()
+
+show_custom_metrics(indep_pred, "PCA + XGBoost. Неприведенное независимое")
+show_custom_metrics(correct_indep_pred, "PCA + XGBoost. Приведенное независимое")
 ```
