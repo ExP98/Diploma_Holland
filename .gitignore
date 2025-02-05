@@ -8,3 +8,4 @@
 *.out
 *.log
 /0. Data
+/1. R/catboost_info
