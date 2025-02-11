@@ -3,6 +3,9 @@ title: "Модели"
 author: "Egor Glushkov"
 ---
 
+Идеи: сделать общий интерфейс (ООП?) для всех моделей + для chain- и indep-регрессоров
+
+
 # 1. Библиотеки и функции
 ```{r include=FALSE}
 library(mlr3verse)
@@ -65,9 +68,16 @@ targets <- wide_data %>%
 ```{r}
 split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.75, 0.25))
 
-.[X_train, X_test] <- list(features[split_idx, ], features[!split_idx, ])
+.[X_train_unscaled, X_test_unscaled] <- list(features[split_idx, ], features[!split_idx, ])
 .[Y_train, Y_test] <- list(targets[split_idx, ], targets[!split_idx, ])
+
+mean_train <- apply(X_train_unscaled, 2, mean)
+sd_train <- apply(X_train_unscaled, 2, sd)
+
+X_train <- scale(X_train_unscaled, center = mean_train, scale = sd_train)
+X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
 ```
+
 
 # 3. Модель
 
@@ -120,7 +130,7 @@ for (feature_num in 1:6) {
 indep_pred <- indep_pred %>% as.data.table() %>% as.matrix()
 correct_indep_pred <- apply(indep_pred, 1, smart_integer_round) %>% t()
 
-show_custom_metrics(indep_pred, "XGBoost. Неприведенное независимое")
+# show_custom_metrics(indep_pred, "XGBoost. Неприведенное независимое")
 show_custom_metrics(correct_indep_pred, "XGBoost. Приведенное независимое")
 # rowSums(res)[rowSums(res) != 42]
 ```
@@ -174,7 +184,7 @@ for (col_i in 2:6) {
 chained_pred <- all_test_preds %>% as.data.table() %>% as.matrix.data.frame()
 correct_chain_test <- apply(chained_pred, 1, smart_integer_round) %>% t()
 
-show_custom_metrics(chained_pred, "Chained неприведенное")
+# show_custom_metrics(chained_pred, "Chained неприведенное")
 show_custom_metrics(correct_chain_test, "Chained приведенное")
 ```
 
@@ -271,8 +281,8 @@ for (col_i in 2:6) {
     verbose = -1
   )
   
-  pred_train_i <- predict(lgb_model, local_train_set) %>% round()
-  pred_test_i  <- predict(lgb_model, local_test_set) %>% round()
+  pred_train_i <- predict(lgb_model, local_train_set)
+  pred_test_i  <- predict(lgb_model, local_test_set)
   
   all_test_preds[[col_i]] <- pred_test_i
   print(mlr3measures::rmse(Y_test[, col_i], pred_test_i))
@@ -281,7 +291,7 @@ for (col_i in 2:6) {
 chained_pred <- all_test_preds %>% as.data.table() %>% as.matrix.data.frame()
 correct_chain_test <- apply(chained_pred, 1, smart_integer_round) %>% t()
 
-show_custom_metrics(chained_pred, "LGBM. Chained неприведенное")
+# show_custom_metrics(chained_pred, "LGBM. Chained неприведенное")
 show_custom_metrics(correct_chain_test, "LGBM. Chained приведенное")
 ```
 
@@ -379,7 +389,7 @@ lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ .,
 lm_pred <- predict(lm_model, newdata = data.frame(X_test, Y_test))
 correct_lm_test <- apply(lm_pred, 1, smart_integer_round) %>% t()
 
-show_custom_metrics(lm_pred, "lm неприведенное")
+# show_custom_metrics(lm_pred, "lm неприведенное")
 show_custom_metrics(correct_lm_test, "lm приведенное")
 ```
 
@@ -416,7 +426,7 @@ for (feature_num in 1:6) {
 indep_catb_pred <- indep_catb_pred %>% as.data.table() %>% as.matrix()
 correct_indep_catb_pred <- apply(indep_catb_pred, 1, smart_integer_round) %>% t()
 
-show_custom_metrics(indep_catb_pred, "Неприведенное независимое Catboost")
+# show_custom_metrics(indep_catb_pred, "Неприведенное независимое Catboost")
 show_custom_metrics(correct_indep_catb_pred, "Приведенное независимое Catboost")
 ```
 
