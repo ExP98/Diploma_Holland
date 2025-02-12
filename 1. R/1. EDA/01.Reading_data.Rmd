@@ -34,21 +34,26 @@ extract_psytest_result <- function(res_str) {
 
 ```{r}
 data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv"))
-all_tests <- data[["test_short_name"]] %>% unique()
+data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv"))
+# all_tests <- data[["test_short_name"]] %>% unique()
 
-wide_data <- data %>%
-  copy() %>% 
-  .[, result := lapply(result, extract_psytest_result)] %>% 
-  pivot_wider(names_from = "test_short_name", values_from = result) %>% 
-  unnest(cols = -id, names_sep = " / ") %>% 
-  as.data.table() %>% 
-  .[, names(.) := lapply(.SD, as.integer)] %>% 
-  # 2 пропуска в кодах Голланда, которые на самом деле нули
-  mutate(across(matches("golland "), \(x) replace(x, is.na(x), 0))) %>% 
+wide_data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv")) %>% 
+  transform_data_to_wide() %>% 
   # у первых двух субъектов сумма кодов Голланда не 42. Исправим это:
-  mutate(`golland / X1` = if_else(id == "10749", 14, `golland / X1`)) %>% 
-  mutate(`golland / X6` = if_else(id == "39803",  1, `golland / X6`))
+  .[id == "10749", `golland / X1` := 14] %>% 
+  .[id == "39803", `golland / X6` := 1] %>% 
+  rename_to_short()
+
+wide_data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv")) %>% 
+  setnames(old = "ID", new = "id") %>% 
+  transform_data_to_wide() %>% 
+  rename_to_short()
 ```
+
+```{r}
+wide_data2 %>% view()
+```
+
 
 Big Five - 5 факторов
 temperament - 4
@@ -61,29 +66,6 @@ golland_v2 - 6
 id + 67 факторов
 
 
-## Переименование переменных
-
-```{r}
-new_short_names <- wide_data %>%
-  copy() %>% 
-  colnames() %>% 
-  data.table(full_name = .) %>% 
-  .[, test_name := sapply(full_name, \(x) str_split_1(x, " / ")[1])] %>% 
-  .[, short_test := case_match(test_name, 
-                               "big_five" ~ "BF",
-                               "temperament" ~ "EY",
-                               "cattell_poll" ~ "CT",
-                               "golland" ~ "HL",
-                               "leonhard_poll" ~ "LN",
-                               "schwartz_poll" ~ "SC",
-                               "golland_v2" ~ "HL2")] %>% 
-  .[, .(full_name, test_name, short_test, cur = 1:.N), by = short_test] %>% 
-  .[, .(full_name, short_name = if_else(!is.na(short_test), str_c(short_test, "_", cur), full_name))]
-
-wide_data <- wide_data %>% rename_all(~new_short_names[["short_name"]])
-```
-
-
 # 3. Проверка данных
 
 ## Количество тестов у людей и количество людей по тестам
@@ -92,6 +74,63 @@ data[, .N, by = c("id")][, .N, by = "N"]
 data[, .N, by = c("test_short_name")]
 ```
 У 16 человек пройдено 7 тестов, у 323 -- 6 тестов. Тот доп. тест у 16 человек -- golland_v2
+
+```{r}
+data2 <- wide_data2 %>% 
+  copy() %>% 
+  .[, names(.) := lapply(.SD, as.integer)] %>% 
+  melt(id.vars = "id", variable.name = "test_short_name", value.name = "value") %>% 
+  .[order(id)] %>% 
+  drop_na(value)
+
+# такое число непустых факторов есть у такого числа людей
+data2[, .(N_factors = .N), by = c("id")][, .N, by = "N_factors"]
+```
+
+```{r}
+data2 %>% 
+  copy() %>% 
+  .[, test_name := str_sub(test_short_name, 1, 2)] %>% 
+  distinct(id, test_name) %>% 
+  .[order(id, test_name)] %>% 
+  .[, .(tests = toString(test_name)), by = "id"] %>% 
+  .[, .N, by = tests] %>% 
+  .[order(-N)]
+```
+
+```{r}
+# у скольких людей пройден тот или иной тест
+data2 %>% 
+  .[, .N, by = c("test_short_name")] %>% 
+  .[, .(tests = toString(test_short_name)), by = "N"] %>% 
+  .[]
+```
+
+
+```{r}
+dt2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv")) %>% 
+  setnames(old = "ID", new = "id") 
+
+dt2 %>% 
+  .[, .N, by = id] %>% 
+  .[N != 1]
+
+# dt2 %>% 
+  # copy() %>% 
+  # .[, result := lapply(result, extract_psytest_result)] %>% 
+  # dcast(id ~ test_short_name, value.var = "result") %>% 
+  # view()
+  
+
+```
+
+
+У всех ли пройден тест Голланда
+```{r}
+wide_data2[, .N, by = is.na(HL_1) & is.na(HL_2) & is.na(HL_3) & is.na(HL_4) & is.na(HL_5) & is.na(HL_6)]
+```
+У каждого из 4073 субъектов есть результаты по всем 6 шкалам теста Голланда.
+
 
 ## Различные тесты Голланда у одних людей
 ```{r}

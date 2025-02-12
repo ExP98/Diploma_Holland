@@ -25,30 +25,52 @@ extract_psytest_result <- function(res_str) {
 }
 
 
+transform_data_to_wide <- function(data_) {
+  wide_data_ <- data_ %>% 
+    copy() %>% 
+    .[, result := lapply(result, extract_psytest_result)] %>% 
+    dcast(id ~ test_short_name, value.var = "result") %>% 
+    .[, -c("golland_v2")] %>% 
+    unnest(cols = -id, names_sep = " / ") %>% 
+    as.data.table() %>% 
+    .[, names(.) := lapply(.SD, as.integer)]
+    # .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0)), .SDcols = patterns("golland")]
+  return(wide_data_)
+}
+
+
+rename_to_short <- function(wide_data_) {
+  shrt_nms_df <- wide_data_ %>%
+    copy() %>% 
+    colnames() %>% 
+    data.table(full_name = .) %>% 
+    .[, test_name := sapply(full_name, \(x) str_split_1(x, " / ")[1])] %>% 
+    .[, short_test := case_match(test_name, 
+                                 "big_five" ~ "BF",
+                                 "temperament" ~ "EY",
+                                 "cattell_poll" ~ "CT",
+                                 "golland" ~ "HL",
+                                 "leonhard_poll" ~ "LN",
+                                 "schwartz_poll" ~ "SC",
+                                 "golland_v2" ~ "HL2")] %>% 
+    .[, .(full_name, test_name, short_test, cur = 1:.N), by = short_test] %>% 
+    .[, .(full_name, short_name = if_else(!is.na(short_test), str_c(short_test, "_", cur), full_name))]
+  
+  wide_data_ <- wide_data_ %>% rename_all(~shrt_nms_df[["short_name"]])
+  return(wide_data_)
+}
+
+
 # 3. Скрипты подготовки данных                         ####
 wide_data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv")) %>% 
-  .[, result := lapply(result, extract_psytest_result)] %>% 
-  dcast(id ~ test_short_name, value.var = "result") %>% 
-  .[, -c("golland_v2")] %>% 
-  unnest(cols = -id, names_sep = " / ") %>% 
-  as.data.table() %>% 
-  .[, names(.) := lapply(.SD, as.integer)] %>% 
+  transform_data_to_wide() %>% 
   .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0)), .SDcols = patterns("golland")] %>% 
   # у первых двух субъектов сумма кодов Голланда не 42. Исправим это:
   .[id == "10749", `golland / X1` := 14] %>% 
-  .[id == "39803", `golland / X6` := 1]
-  
-new_short_names <- data.table(full_name = colnames(copy(wide_data))) %>% 
-  .[, test_name := sapply(full_name, \(x) str_split_1(x, " / ")[1])] %>% 
-  .[, short_test := case_match(test_name, 
-                               "big_five" ~ "BF",
-                               "temperament" ~ "EY",
-                               "cattell_poll" ~ "CT",
-                               "golland" ~ "HL",
-                               "leonhard_poll" ~ "LN",
-                               "schwartz_poll" ~ "SC",
-                               "golland_v2" ~ "HL2")] %>% 
-  .[, .(full_name, test_name, short_test, cur = 1:.N), by = short_test] %>% 
-  .[, .(full_name, short_name = if_else(!is.na(short_test), str_c(short_test, "_", cur), full_name))]
+  .[id == "39803", `golland / X6` := 1] %>% 
+  rename_to_short()
 
-wide_data <- wide_data %>% rename_all(~new_short_names[["short_name"]])
+wide_data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv")) %>% 
+  setnames(old = "ID", new = "id") %>% 
+  transform_data_to_wide() %>% 
+  rename_to_short()
