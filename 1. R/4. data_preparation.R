@@ -70,7 +70,7 @@ wide_data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv")) %>%
   .[id == "39803", `golland / X6` := 1] %>% 
   rename_to_short()
 
-wide_data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv")) %>% 
-  setnames(old = "ID", new = "id") %>% 
+wide_data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025_1.csv")) %>% 
+  setnames(old = "vk_id", new = "id") %>% 
   transform_data_to_wide() %>% 
   rename_to_short()

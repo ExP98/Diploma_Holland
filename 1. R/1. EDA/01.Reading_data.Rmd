@@ -14,27 +14,14 @@ library(psych) # desc stats
 library(here)
 
 here::here()
+# source("../1. R/4. data_preparation.R")
 ```
-
-```{r}
-extract_psytest_result <- function(res_str) {
-  res <- res_str %>%
-    str_extract("\\{[^\\}]*\\}") %>%
-    str_replace_all("\\{|\\}", "") %>%
-    str_split_1(",") %>%
-    str_split(":") %>%
-    sapply(\(elem) setNames(as.list(elem[[2]]), elem[[1]])) %>%
-    as.data.frame()
-  return(res)
-}
-```
-
 
 # 2. Данные
 
 ```{r}
 data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv"))
-data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv"))
+# data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv"))
 # all_tests <- data[["test_short_name"]] %>% unique()
 
 wide_data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv")) %>% 
@@ -108,12 +95,10 @@ data2 %>%
 
 
 ```{r}
-dt2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv")) %>% 
-  setnames(old = "ID", new = "id") 
+dt2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025_1.csv"))
+  # setnames(old = "ID", new = "id") 
 
-dt2 %>% 
-  .[, .N, by = id] %>% 
-  .[N != 1]
+dt2[, .N, by = vk_id][, .N, by = "N"]
 
 # dt2 %>% 
   # copy() %>% 
@@ -231,6 +216,23 @@ wide_data %>%
 Почти у всех 42, кроме двоих (первых двух!).
 - Пользователь 10749: у него 41 в сумме, но у него есть golland_v2, где все значения идентичны, только X1 на 1 больше (и будет 42). Меняем `golland / X1` на 14 у 10749.
 - У 39803 на 13 больше нужного. Притом его результаты почти совпадают с результатами второго, у которого 6ой признак на 13 же больше. Меняем его `golland / X6` с 14 на 1.
+
+
+```{r}
+wide_data2 %>%
+  copy() %>% 
+  .[, .SD, .SDcols = patterns("id|HL_")] %>% 
+  .[, rs := rowSums(.SD, na.rm = TRUE), .SDcols = patterns("HL_")] %>% 
+  .[rs != 42]
+```
+
+```{r}
+wide_data %>%
+  copy() %>% 
+  .[, .SD, .SDcols = patterns("id|HL_")] %>% 
+  .[, rs := rowSums(.SD, na.rm = TRUE), .SDcols = patterns("HL_")] %>% 
+  .[, .N, by = rs]
+```
 
 
 Проверить такую же сумму по другим тестам. В итоге лишь в golland_v2 сумма постоянна (и там всё ок):
