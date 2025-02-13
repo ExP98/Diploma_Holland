@@ -6,39 +6,22 @@ author: "Egor Glushkov"
 # 1. Библиотеки
 
 ```{r message=FALSE, warning=FALSE}
-library(tidyverse)
-library(data.table)
-library(xlsx)
-# library(jsonlite)
 library(psych) # desc stats
-library(here)
 
-here::here()
-# source("../1. R/4. data_preparation.R")
+source(paste0(here(), "/1. R/4. data_preparation.R"))
 ```
 
 # 2. Данные
 
 ```{r}
 data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv"))
-# data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv"))
+data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025_1.csv")) %>% 
+  setnames(old = "group_id", new = "id")
+
 # all_tests <- data[["test_short_name"]] %>% unique()
 
-wide_data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv")) %>% 
-  transform_data_to_wide() %>% 
-  # у первых двух субъектов сумма кодов Голланда не 42. Исправим это:
-  .[id == "10749", `golland / X1` := 14] %>% 
-  .[id == "39803", `golland / X6` := 1] %>% 
-  rename_to_short()
-
-wide_data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025.csv")) %>% 
-  setnames(old = "ID", new = "id") %>% 
-  transform_data_to_wide() %>% 
-  rename_to_short()
-```
-
-```{r}
-wide_data2 %>% view()
+# view(wide_data1)
+# view(wide_data2)
 ```
 
 
@@ -55,15 +38,18 @@ id + 67 факторов
 
 # 3. Проверка данных
 
-## Количество тестов у людей и количество людей по тестам
+## 3.1 Количество тестов у людей и количество людей по тестам
+
+Старые данные
 ```{r}
 data[, .N, by = c("id")][, .N, by = "N"]
 data[, .N, by = c("test_short_name")]
 ```
 У 16 человек пройдено 7 тестов, у 323 -- 6 тестов. Тот доп. тест у 16 человек -- golland_v2
 
+Новые данные:
 ```{r}
-data2 <- wide_data2 %>% 
+long_data2 <- wide_data2 %>% 
   copy() %>% 
   .[, names(.) := lapply(.SD, as.integer)] %>% 
   melt(id.vars = "id", variable.name = "test_short_name", value.name = "value") %>% 
@@ -71,11 +57,14 @@ data2 <- wide_data2 %>%
   drop_na(value)
 
 # такое число непустых факторов есть у такого числа людей
-data2[, .(N_factors = .N), by = c("id")][, .N, by = "N_factors"]
+long_data2[, .(N_factors = .N), by = c("id")][, .N, by = "N_factors"]
+data2[, .N, by = id][, .N, by = "N"]
 ```
+У 622 людей пройдено 4 теста, у 317 -- 5.
 
+Какие комбинации в новых данных:
 ```{r}
-data2 %>% 
+long_data2 %>% 
   copy() %>% 
   .[, test_name := str_sub(test_short_name, 1, 2)] %>% 
   distinct(id, test_name) %>% 
@@ -90,34 +79,32 @@ data2 %>%
 data2 %>% 
   .[, .N, by = c("test_short_name")] %>% 
   .[, .(tests = toString(test_short_name)), by = "N"] %>% 
-  .[]
+  .[, .(tests, N)]
+
+long_data2 %>% 
+  .[, .N, by = c("test_short_name")] %>% 
+  .[, .(tests = toString(test_short_name)), by = "N"] %>% 
+  .[, .(tests, N)]
 ```
+big_five	    552			
+golland	      939			(HL_1 нет у троих, HL_6 нет у двоих)
+leonhard_poll	659			
+temperament 	861			
+cattell_poll	654			
+schwartz_poll	408	
 
 
+У всех ли пройден тест Голланда:
 ```{r}
-dt2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025_1.csv"))
-  # setnames(old = "ID", new = "id") 
-
-dt2[, .N, by = vk_id][, .N, by = "N"]
-
-# dt2 %>% 
-  # copy() %>% 
-  # .[, result := lapply(result, extract_psytest_result)] %>% 
-  # dcast(id ~ test_short_name, value.var = "result") %>% 
-  # view()
-  
-
+wide_data2 %>% copy() %>% 
+  .[, .SD, .SDcols = patterns("HL")] %>% 
+  .[, names(.SD) := lapply(.SD, is.na)] %>% 
+  colSums()
 ```
+Есть 3 пропуска в HL_1 и 2 в HL_6
 
 
-У всех ли пройден тест Голланда
-```{r}
-wide_data2[, .N, by = is.na(HL_1) & is.na(HL_2) & is.na(HL_3) & is.na(HL_4) & is.na(HL_5) & is.na(HL_6)]
-```
-У каждого из 4073 субъектов есть результаты по всем 6 шкалам теста Голланда.
-
-
-## Различные тесты Голланда у одних людей
+## 3.2 Различные тесты Голланда у одних людей
 ```{r}
 data %>%
   pivot_wider(names_from = "test_short_name", values_from = result) %>%
@@ -125,126 +112,13 @@ data %>%
   select(id, golland, golland_v2) %>%
   view()
 ```
+Только для старой выборки (в новой нет теста v2)
 
 
-## Корреляции
+## 3.3 Корреляции
 
-```{r}
-png(filename = "../../0. Data/Output/cor.png")
+### Функции и словари
 
-cor_plot <- wide_data %>% 
-  select(matches("golland ")) %>% 
-  cor.plot(main = "Матрица корреляций факторов\nмодели Голланда (N = 339)", 
-           labels = c("R", "I", "A", "S", "E", "C"),
-           cex = 1, scale = FALSE, diag = FALSE, upper = TRUE)
-
-recordPlot()
-dev.off()
-```
-
-
-```{r}
-cor_mat <- wide_data %>% cor() 
-cor_mat[upper.tri(cor_mat)] <- NA
-
-cor_df <- cor_mat %>% 
-  as.data.frame() %>% 
-  rownames_to_column("factor1") %>% 
-  pivot_longer(cols = -factor1, names_to = "factor2") %>% 
-  filter(factor1 != factor2, factor1 != "id", factor2 != "id", !is.na(value)) %>% 
-  as.data.table()
-
-# ggplot(cor_df[value > 0.5], aes(x = value)) +
-#   geom_histogram(color = "black", fill = "steelblue", bins = 30) +
-#   labs(x = "Коэффициент корреляции", y = "Частота") + 
-#   ggtitle("Гистограмма частот для коэффицента корреляции > 0.5") +
-#   theme_minimal()
-```
-Среди скоррелированных признаков нет кодов Голланда -- хорошо.
-
-```{r}
-# cor_df %>% 
-  # filter(value > 0.6) %>% 
-  # view()
-
-cor_df %>% 
-  separate_wider_delim(cols = 1:2, delim = " / ", names = c("test", "feature"), names_sep = "_") %>% 
-  mutate(across(matches("feature"), feature_replacement)) %>% 
-  mutate(factor1_feature = if_else(factor1_test == "golland", factor1_feature %>% golland_enum(), factor1_feature)) %>% 
-  mutate(factor2_feature = if_else(factor2_test == "golland", factor2_feature %>% golland_enum(), factor2_feature)) %>% 
-
-  replace_col_using_df("factor1_test", test_names_df) %>% 
-  replace_col_using_df("factor1_feature", leonhard_rus_factors) %>% 
-  replace_col_using_df("factor1_feature", cattell_rus_factors) %>%  
-  replace_col_using_df("factor2_test", test_names_df) %>% 
-  replace_col_using_df("factor2_feature", leonhard_rus_factors) %>% 
-  replace_col_using_df("factor2_feature", cattell_rus_factors) %>% 
-  
-  filter(value > 0.65) %>% 
-  arrange(-value) %>% 
-  mutate(value = value %>% round(digits = 2) %>% as.character() %>% str_replace("\\.", ",")) %>% 
-  write.xlsx2("../../0. Data/Output/max_cor.xlsx")
-```
-
-
-## Пропуски
-
-```{r}
-wide_data %>% 
-  select(-matches("golland_v2|HL2")) %>%
-  is.na() %>%
-  sum()
-```
-2 пропуска
-
-```{r}
-wide_data %>% is.na() %>% colSums() %>% .[. != 0]
-```
-Есть по пропуску в golland X1 и X6 (в разных строках) -- заполнить нулями, ибо в тех строках сумма уже 42, значит, там пусто.
-
-
-## Сумма признаков кода Голланда
-
-Сумма фичей кодов Голланда const? Да, 42
-```{r}
-wide_data %>%
-  select(id, matches("golland ")) %>%
-  mutate(rs = rowSums(across(paste0("golland / X", 1:6)), na.rm = TRUE)) %>% 
-  # filter(is.na(`golland / X1`) | is.na(`golland / X6`))
-  filter(rs != 42)
-```
-Почти у всех 42, кроме двоих (первых двух!).
-- Пользователь 10749: у него 41 в сумме, но у него есть golland_v2, где все значения идентичны, только X1 на 1 больше (и будет 42). Меняем `golland / X1` на 14 у 10749.
-- У 39803 на 13 больше нужного. Притом его результаты почти совпадают с результатами второго, у которого 6ой признак на 13 же больше. Меняем его `golland / X6` с 14 на 1.
-
-
-```{r}
-wide_data2 %>%
-  copy() %>% 
-  .[, .SD, .SDcols = patterns("id|HL_")] %>% 
-  .[, rs := rowSums(.SD, na.rm = TRUE), .SDcols = patterns("HL_")] %>% 
-  .[rs != 42]
-```
-
-```{r}
-wide_data %>%
-  copy() %>% 
-  .[, .SD, .SDcols = patterns("id|HL_")] %>% 
-  .[, rs := rowSums(.SD, na.rm = TRUE), .SDcols = patterns("HL_")] %>% 
-  .[, .N, by = rs]
-```
-
-
-Проверить такую же сумму по другим тестам. В итоге лишь в golland_v2 сумма постоянна (и там всё ок):
-```{r}
-wide_data %>%
-  select(matches("golland_v2 ")) %>%
-  mutate(rs = rowSums(across(everything()), na.rm = TRUE)) %>% 
-  filter(rs != 0)
-```
-
-
-# 4. Описательная статистика
 ```{r}
 show_desc_stats <- function(data) {
   return(psych::describe(data, skew = FALSE, quant = c(.25, .75)) %>% 
@@ -316,6 +190,152 @@ cattell_rus_factors <- tribble(
 )
 ```
 
+### Cor-рисунки
+```{r}
+png(filename = "../../0. Data/Output/cor1.png")
+
+cor_plot <- wide_data %>% 
+  select(matches("HL_")) %>% 
+  cor.plot(main = "Матрица корреляций факторов\nмодели Голланда (N = 339)", 
+           labels = c("R", "I", "A", "S", "E", "C"),
+           cex = 1, scale = FALSE, diag = FALSE, upper = TRUE)
+
+recordPlot()
+dev.off()
+```
+
+```{r}
+png(filename = "../../0. Data/Output/cor2.png")
+
+cor_plot <- wide_data2 %>% 
+  select(matches("HL_")) %>% 
+  cor.plot(main = "Матрица корреляций факторов\nмодели Голланда (N = 939)", 
+           labels = c("R", "I", "A", "S", "E", "C"),
+           cex = 1, scale = FALSE, diag = FALSE, upper = TRUE)
+
+recordPlot()
+dev.off()
+```
+
+### Скоррелированные пары факторов
+```{r}
+wide_data_no_rename <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv")) %>%
+  transform_data_to_wide() %>%
+  .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0)), .SDcols = patterns("golland")] %>%
+  # у первых двух субъектов сумма кодов Голланда не 42. Исправим это:
+  .[id == "10749", `golland / X1` := 14] %>%
+  .[id == "39803", `golland / X6` := 1]
+
+cor_mat <- wide_data_no_rename %>% cor(use = "pairwise.complete.obs") 
+cor_mat[upper.tri(cor_mat)] <- NA
+
+cor_df <- cor_mat %>% 
+  as.data.frame() %>% 
+  rownames_to_column("factor1") %>% 
+  pivot_longer(cols = -factor1, names_to = "factor2") %>% 
+  filter(factor1 != factor2, factor1 != "id", factor2 != "id", !is.na(value)) %>% 
+  as.data.table()
+
+cor_df[str_detect(factor1, "golland") & str_detect(factor2, "golland")][order(-abs(value))]
+
+# ggplot(cor_df[value > 0.5], aes(x = value)) +
+#   geom_histogram(color = "black", fill = "steelblue", bins = 30) +
+#   labs(x = "Коэффициент корреляции", y = "Частота") +
+#   ggtitle("Гистограмма частот для коэффицента корреляции > 0.5") +
+#   theme_minimal()
+```
+Среди скоррелированных признаков нет кодов Голланда со связью больше 0.4 (по модулю) -- хорошо.
+
+```{r}
+# cor_df %>% 
+  # filter(value > 0.6) %>% 
+  # view()
+
+cor_df %>% 
+  separate_wider_delim(cols = 1:2, delim = " / ", names = c("test", "feature"), names_sep = "_") %>% 
+  mutate(across(matches("feature"), feature_replacement)) %>% 
+  mutate(factor1_feature = if_else(factor1_test == "golland", 
+                                   factor1_feature %>% golland_enum(), 
+                                   factor1_feature)) %>% 
+  mutate(factor2_feature = if_else(factor2_test == "golland", 
+                                   factor2_feature %>% golland_enum(),
+                                   factor2_feature)) %>% 
+  replace_col_using_df("factor1_test", test_names_df) %>%
+  replace_col_using_df("factor1_feature", leonhard_rus_factors) %>%
+  replace_col_using_df("factor1_feature", cattell_rus_factors) %>%
+  replace_col_using_df("factor2_test", test_names_df) %>%
+  replace_col_using_df("factor2_feature", leonhard_rus_factors) %>%
+  replace_col_using_df("factor2_feature", cattell_rus_factors) %>%
+  filter(value > 0.65) %>% 
+  arrange(-value) %>% 
+  mutate(value = value %>% round(digits = 2) %>% as.character() %>% str_replace("\\.", ",")) %>% 
+  write.xlsx2("../../0. Data/Output/max_cor.xlsx")
+```
+
+
+## 3.4 Пропуски
+
+```{r}
+wide_data %>% copy() %>% 
+  .[, names(.SD) := lapply(.SD, is.na)] %>% 
+  colSums() %>% 
+  .[. != 0]
+```
+2 пропуска было в HL (дополнено). В новых данных пропусков много больше (ибо заполнены 4-5 тестов)
+Есть по пропуску в golland X1 и X6 (в разных строках) -- заполнить нулями, ибо в тех строках сумма уже 42, значит, там пусто.
+
+```{r}
+wide_data2 %>% copy() %>% 
+  .[, names(.SD) := lapply(.SD, is.na)] %>% 
+  colSums()
+```
+
+В HL_1 и HL_6 пропуски -- заполнить нулямиa.
+
+
+## 3.5 Сумма признаков кода Голланда
+
+Сумма фичей кодов Голланда const = 42
+```{r}
+wide_data %>%
+  copy() %>% 
+  .[, .SD, .SDcols = patterns("id|HL_")] %>% 
+  .[, rs := rowSums(.SD, na.rm = TRUE), .SDcols = patterns("HL_")] %>% 
+  .[, .N, by = rs]
+```
+Почти у всех 42, кроме двоих (первых двух!).
+- Пользователь 10749: у него 41 в сумме, но у него есть golland_v2, где все значения идентичны, только X1 на 1 больше (и будет 42). Меняем `golland / X1` на 14 у 10749.
+- У 39803 на 13 больше нужного. Притом его результаты почти совпадают с результатами второго, у которого 6ой признак на 13 же больше. Меняем его `golland / X6` с 14 на 1.
+
+Проверить такую же сумму по другим тестам -- других постоянных сумм нет. В итоге лишь в golland_v2 сумма постоянна (и там всё ок):
+```{r}
+# wide_data %>%
+#   select(matches("golland_v2 ")) %>%
+#   mutate(rs = rowSums(across(everything()), na.rm = TRUE)) %>% 
+#   filter(rs != 0)
+
+# wide_data %>%
+#   copy() %>% 
+#   .[, .SD, .SDcols = patterns("id|SC")] %>% 
+#   .[, rs := rowSums(.SD, na.rm = TRUE), .SDcols = patterns("SC")] %>% 
+#   .[, .N, by = rs]
+```
+
+```{r}
+wide_data2 %>%
+  copy() %>% 
+  .[, .SD, .SDcols = patterns("id|HL_")] %>% 
+  .[, rs := rowSums(.SD, na.rm = TRUE), .SDcols = patterns("HL_")] %>% 
+  .[rs != 42]
+```
+В новых данных есть одна сумма, не равная 42.
+
+```{r}
+wide_data2[id == "736", HL_6 := 2]
+```
+
+
+# 4. Описательная статистика
 
 ```{r message=FALSE, warning=FALSE}
 desc_stats <- wide_data %>% 
@@ -491,7 +511,8 @@ p6 <- schwartz_tranformed[attr == "индивидуальный приорите
                test_name = "schwartz_poll", x_range = c(-6, 26), n_str_wrap = 30)
 ```
 
-# 7. Слайс данных
+
+# 6. Слайс данных
 
 ```{r}
 wide_data %>%
@@ -500,10 +521,3 @@ wide_data %>%
   mutate(`dots` = "...", .before = "lp9") %>% 
   write.xlsx2("../../0. Data/Output/slice_data.xlsx")
 ```
-
-
-
-Проверить на выбросы по шкалам
-Уменьшение размерности?
-Метапеременные?
-Создать справочник фич, выделив тесты, закодировав фичи.

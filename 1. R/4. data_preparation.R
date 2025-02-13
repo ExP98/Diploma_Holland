@@ -1,7 +1,8 @@
 #@ Diploma_Holland
 #@ Подготовка данных
 #@ Дата: 03.02.2025
-#@ Разработчик:  Глушков Егор
+#@ Разработчик: Глушков Егор
+#@ Изменения: февраль 2025
 
 
 # 1. Библиотеки                                        ####
@@ -64,13 +65,16 @@ rename_to_short <- function(wide_data_) {
 # 3. Скрипты подготовки данных                         ####
 wide_data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv")) %>% 
   transform_data_to_wide() %>% 
-  .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0)), .SDcols = patterns("golland")] %>% 
+  rename_to_short() %>% 
+  .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0)), .SDcols = patterns("HL")] %>% 
   # у первых двух субъектов сумма кодов Голланда не 42. Исправим это:
-  .[id == "10749", `golland / X1` := 14] %>% 
-  .[id == "39803", `golland / X6` := 1] %>% 
-  rename_to_short()
+  .[id == "10749", HL_1 := 14] %>% 
+  .[id == "39803", HL_6 := 1] 
+  
 
 wide_data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025_1.csv")) %>% 
-  setnames(old = "vk_id", new = "id") %>% 
+  setnames(old = "group_id", new = "id") %>% 
   transform_data_to_wide() %>% 
-  rename_to_short()
+  rename_to_short() %>% 
+  .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0)), .SDcols = patterns("HL")] %>% 
+  .[id == "736", HL_6 := 2] # лишь у одного сумма кодов не равна 42
