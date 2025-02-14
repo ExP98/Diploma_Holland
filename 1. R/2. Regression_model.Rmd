@@ -1,5 +1,5 @@
 ---
-title: "Модели"
+title: "Регрессионные модели"
 author: "Egor Glushkov"
 ---
 
@@ -16,7 +16,7 @@ library(randomForest)
 library(catboost)
 library(caret)
 
-set.seed(43)
+set.seed(42)
 source(paste0(here::here(), "/1. R/4. data_preparation.R"))
 ```
 
@@ -52,28 +52,25 @@ show_custom_metrics <- function(my_pred, case_name) {
 
 # 2. Данные
 
-```{r}
-features <- wide_data %>% 
-  copy() %>% 
-  .[, .SD, .SDcols = !(names(wide_data) %like% "HL|HL2|id")] %>% 
-  as.matrix()
-
-targets <- wide_data %>% 
-  copy() %>% 
-  .[, .SD, .SDcols = names(wide_data) %like% "HL_"] %>% 
-  as.matrix()
-```
-
-
 Разделение данных на трейн и тест:
 ```{r}
-split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.75, 0.25))
+features <- untd_dt %>% 
+  copy() %>% 
+  .[, .SD, .SDcols = !(names(untd_dt) %like% "HL|HL2|id")] %>% 
+  as.matrix()
+
+targets <- untd_dt %>% 
+  copy() %>% 
+  .[, .SD, .SDcols = names(untd_dt) %like% "HL_"] %>% 
+  as.matrix()
+
+split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.8, 0.2))
 
 .[X_train_unscaled, X_test_unscaled] <- list(features[split_idx, ], features[!split_idx, ])
 .[Y_train, Y_test] <- list(targets[split_idx, ], targets[!split_idx, ])
 
-mean_train <- apply(X_train_unscaled, 2, mean)
-sd_train <- apply(X_train_unscaled, 2, sd)
+mean_train <- apply(X_train_unscaled, 2, mean, na.rm = TRUE)
+sd_train <- apply(X_train_unscaled, 2, sd, na.rm = TRUE)
 
 X_train <- scale(X_train_unscaled, center = mean_train, scale = sd_train)
 X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
@@ -125,7 +122,7 @@ for (feature_num in 1:6) {
                        nrounds = 15, objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
   
   indep_pred[[feature_num]] <- predict(xgb_model, X_test)
-  importance_list[[feature_num]] <- xgb.importance(feature_names = names(X_train), model = xgb_model)
+  importance_list[[feature_num]] <- xgb.importance(model = xgb_model)
 }
 
 indep_pred <- indep_pred %>% as.data.table() %>% as.matrix()
@@ -222,7 +219,7 @@ for (feature_num in 1:6) {
 indep_lgbm_pred <- indep_lgbm_pred %>% as.data.table() %>% as.matrix()
 correct_indep_lgbm_pred <- apply(indep_lgbm_pred, 1, smart_integer_round) %>% t()
 
-show_custom_metrics(indep_lgbm_pred, "Неприведенное независимое LGBM")
+# show_custom_metrics(indep_lgbm_pred, "Неприведенное независимое LGBM")
 show_custom_metrics(correct_indep_lgbm_pred, "Приведенное независимое LGBM")
 ```
 
@@ -321,7 +318,8 @@ for (feature_num in 1:6) {
   models[[feature_num]] <- randomForest(
     x = X_train,
     y = Y_train[, feature_num],
-    ntree = 1000
+    ntree = 1000,
+    na.action = na.omit
     # importance = TRUE
   )
 }
@@ -385,7 +383,9 @@ show_custom_metrics(correct_chain_test, "Chained приведенное")
 
 ```{r}
 lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., 
-               data = data.frame(X_train, Y_train))
+               data = data.frame(X_train, Y_train)
+               # , na.action = na.omit
+               )
 
 lm_pred <- predict(lm_model, newdata = data.frame(X_test, Y_test))
 correct_lm_test <- apply(lm_pred, 1, smart_integer_round) %>% t()
@@ -483,7 +483,7 @@ for (col_i in 2:6) {
 chained_pred <- all_test_preds %>% as.data.table() %>% as.matrix.data.frame()
 correct_chain_test <- apply(chained_pred, 1, smart_integer_round) %>% t()
 
-show_custom_metrics(chained_pred, "Catboost. Chained неприведенное")
+# show_custom_metrics(chained_pred, "Catboost. Chained неприведенное")
 show_custom_metrics(correct_chain_test, "Catboost. Chained приведенное")
 ```
 
