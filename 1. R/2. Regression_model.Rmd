@@ -8,7 +8,7 @@ author: "Egor Glushkov"
 
 # 1. Библиотеки и функции
 ```{r include=FALSE}
-library(mlr3verse)
+library(R6)
 library(dotty)
 library(xgboost)
 library(lightgbm)
@@ -39,10 +39,20 @@ smart_integer_round <- function(six_vals) {
   return(int_rnd_values)
 }
 
+
+prediction_correction <- function(preds) {
+  correct_preds <- preds %>%
+    as.data.table() %>% 
+    apply(., 1, smart_integer_round) %>% 
+    t()
+  return(correct_preds)
+}
+
+
 # sapply(1:nrow(pred_test), \(i) smart_integer_round(pred_test[i, ])) %>% colSums()
 
 show_custom_metrics <- function(my_pred, case_name) {
-  aRMSE_ <- sapply(1:nrow(Y_test), \(i) mlr3measures::rmse(my_pred[i, ], Y_test[i, ])) %>% mean()
+  aRMSE_ <- sapply(1:nrow(Y_test), \(i) my_rmse(my_pred[i, ], Y_test[i, ])) %>% mean()
   aCosDist_ <- sapply(1:nrow(Y_test), \(i) cosine_dist(my_pred[i, ], Y_test[i, ])) %>% mean()
   print(str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCosDist: {round(aCosDist_, 3)}"))
   return(invisible(NULL))
@@ -54,14 +64,14 @@ show_custom_metrics <- function(my_pred, case_name) {
 
 Разделение данных на трейн и тест:
 ```{r}
-features <- untd_dt %>% 
+features <- wide_data %>% 
   copy() %>% 
-  .[, .SD, .SDcols = !(names(untd_dt) %like% "HL|HL2|id")] %>% 
+  .[, .SD, .SDcols = !(names(wide_data) %like% "HL|HL2|id")] %>% 
   as.matrix()
 
-targets <- untd_dt %>% 
+targets <- wide_data %>% 
   copy() %>% 
-  .[, .SD, .SDcols = names(untd_dt) %like% "HL_"] %>% 
+  .[, .SD, .SDcols = names(wide_data) %like% "HL_"] %>% 
   as.matrix()
 
 split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.8, 0.2))
@@ -79,12 +89,60 @@ X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
 
 # 3. Модель
 
+```{r}
+my_template_model <- R6Class(
+  classname = "my_template_model",
+  public = list(
+    model = NULL,
+    importance = NULL,
+    pred_train = NULL,
+    pred_test = NULL,
+    rmse_test = NA,
+    
+    fit = function(X_train_, y_train_) {
+      self$model <- NULL
+      return(invisible(self))
+    },
+    
+    predict = function(X_, is_test = FALSE) {
+      preds <- predict(self$model, X_)
+      if (is_test) self$pred_test <- preds
+      return(preds)
+    },
+    
+    calc_importance = function() {
+      self$importance <- NULL
+      return(self$importance)
+    },
+    
+    initialize = function(X_train_, y_train_, X_test_ = NULL, y_test_ = NULL) {
+      self$fit(X_train_, y_train_)
+      self$pred_train <- self$predict(X_train_)
+      
+      if (!is.null(X_test_)) self$pred_test <- self$predict(X_test_, is_test = TRUE)
+      if (!is.null(y_test_) && !is.null(self$pred_test)) private$calc_rmse(y_test_, self$pred_test)
+      
+      return(invisible(self))
+    }
+  ),
+  
+  private = list(
+    calc_rmse = function(y_test_, y_preds = self$pred_test) {
+      self$rmse_test <- my_rmse(y_test_, self$pred_test)
+      return(invisible(self))
+    }
+  )
+)
+```
+
+
 ## 3.1 Константный предсказатель
 ```{r}
 # const_pred <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
 const_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_train)), nrow = nrow(Y_train))
 show_custom_metrics(const_pred, "Константное")
 ```
+
 
 ## 3.2 XGBoost
 
@@ -101,8 +159,8 @@ for (i in 1:20) {
   pred_y <- predict(xgb_model, X_test)
   res[[i]] <- data.frame(
     nrounds = i,
-    test_rmse = mlr3measures::rmse(Y_test[, ii], pred_y),
-    test_round_rmse = mlr3measures::rmse(Y_test[, ii], pred_y %>% round())
+    test_rmse = my_rmse(Y_test[, ii], pred_y),
+    test_round_rmse = my_rmse(Y_test[, ii], pred_y %>% round())
   )
 }
 
@@ -111,30 +169,43 @@ res %>% rbindlist() %>% .[["test_round_rmse"]] %>% plot(main = "test_round_rmse"
 ```
 15 раундов хватает.
 
-### Независимое обучение
-Обучение и предсказание модели по шести признакам независимо:
-```{r}
-indep_pred <- vector("list", 6)
-importance_list <- vector("list", 6)
 
+### Класс 
+
+```{r}
+my_XGBoost_model <- R6Class(
+  classname = "my_XGBoost_model",
+  inherit = my_template_model,
+  public = list(
+    fit = function(X_train_, y_train_) {
+      self$model <- xgboost(data = X_train_, label = y_train_, nrounds = 15, 
+                            objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
+      return(invisible(self))
+    },
+    
+    calc_importance = function() {
+      self$importance <- xgb.importance(model = self$model)
+      return(self$importance)
+    }
+  )
+)
+```
+
+
+### Независимое обучение
+
+```{r}
+indep_xgb <- vector("list", 6)
 for (feature_num in 1:6) {
-  xgb_model <- xgboost(data = X_train, label = Y_train[, feature_num],
-                       nrounds = 15, objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
-  
-  indep_pred[[feature_num]] <- predict(xgb_model, X_test)
-  importance_list[[feature_num]] <- xgb.importance(model = xgb_model)
+  indep_xgb[[feature_num]] <- my_XGBoost_model$new(X_train, Y_train[, feature_num], X_test)
 }
 
-indep_pred <- indep_pred %>% as.data.table() %>% as.matrix()
-correct_indep_pred <- apply(indep_pred, 1, smart_integer_round) %>% t()
-
-# show_custom_metrics(indep_pred, "XGBoost. Неприведенное независимое")
-show_custom_metrics(correct_indep_pred, "XGBoost. Приведенное независимое")
-# rowSums(res)[rowSums(res) != 42]
+xgb_ind_pred <- sapply(indep_xgb, \(x) x$pred_test) %>% prediction_correction()
+show_custom_metrics(xgb_ind_pred, "XGBoost независимое")
 ```
 
 ```{r}
-importance_list
+lapply(indep_xgb, \(x) x$calc_importance())
 ```
 Для XGBoost (и позже для Random Forest) самая важная фича -- CT_1 (открытость-замкнутость)
 
@@ -142,48 +213,25 @@ importance_list
 ### Chained regression
 
 ```{r}
-col_i <- 1
+models <- vector("list", 6)
 
 local_train_set <- X_train
 local_test_set <- X_test
 
-bst <- xgboost(data = local_train_set, label = Y_train[, col_i], nrounds = 15, 
-               objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
-
-# bst$evaluation_log
-pred_train_i <- predict(bst, local_train_set) 
-pred_test_i  <- predict(bst, local_test_set) 
-mlr3measures::rmse(Y_test[, col_i], pred_test_i)
-
-all_test_preds <- NULL
-all_test_preds[[col_i]] <- pred_test_i
-```
-
-```{r}
-for (col_i in 2:6) {
-  local_train_set <- cbind(local_train_set, col_i = pred_train_i)
-  colnames(local_train_set)[ncol(local_train_set)] <- paste0("output_", col_i)
+for (col_i in 1:6) {
+  if (col_i != 1) {
+    local_train_set <- cbind(local_train_set, col_i = models[[col_i-1]]$pred_train)
+    local_test_set <- cbind(local_test_set, col_i = models[[col_i-1]]$pred_test)
+    colnames(local_train_set)[ncol(local_train_set)] <- paste0("output_", col_i)
+    colnames(local_test_set)[ncol(local_test_set)] <- paste0("output_", col_i)
+  }
   
-  local_test_set <- cbind(local_test_set, col_i = pred_test_i)
-  colnames(local_test_set)[ncol(local_test_set)] <- paste0("output_", col_i)
-  
-  bst <- xgboost(data = local_train_set, label = Y_train[, col_i], nrounds = 15, 
-                 objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
-  
-  # bst$evaluation_log
-  pred_train_i <- predict(bst, local_train_set) 
-  pred_test_i  <- predict(bst, local_test_set) 
-  
-  all_test_preds[[col_i]] <- pred_test_i
-  print(mlr3measures::rmse(Y_test[, col_i], pred_test_i))
+  models[[col_i]] <- my_XGBoost_model$new(local_train_set, Y_train[, col_i], local_test_set, Y_test[, col_i])
+  print(models[[col_i]]$rmse_test)
 }
 
-
-chained_pred <- all_test_preds %>% as.data.table() %>% as.matrix.data.frame()
-correct_chain_test <- apply(chained_pred, 1, smart_integer_round) %>% t()
-
-# show_custom_metrics(chained_pred, "Chained неприведенное")
-show_custom_metrics(correct_chain_test, "Chained приведенное")
+xgb_chain_pred <- sapply(models, \(x) x$pred_test) %>% prediction_correction()
+show_custom_metrics(xgb_chain_pred, "XGBoost Chained")
 ```
 
 Порядок предсказания может иметь значение!
@@ -216,11 +264,8 @@ for (feature_num in 1:6) {
   indep_lgbm_pred[[feature_num]] <- predict(lgb_model, x_test_mat)
 }
 
-indep_lgbm_pred <- indep_lgbm_pred %>% as.data.table() %>% as.matrix()
-correct_indep_lgbm_pred <- apply(indep_lgbm_pred, 1, smart_integer_round) %>% t()
-
-# show_custom_metrics(indep_lgbm_pred, "Неприведенное независимое LGBM")
-show_custom_metrics(correct_indep_lgbm_pred, "Приведенное независимое LGBM")
+lgb_ind_pred <- indep_lgbm_pred %>% prediction_correction()
+show_custom_metrics(lgb_ind_pred, "LGBM независимое")
 ```
 
 ### Chained
@@ -249,7 +294,7 @@ lgb_model <- lgb.train(
 
 pred_train_i <- predict(lgb_model, local_train_set)
 pred_test_i  <- predict(lgb_model, local_test_set)
-mlr3measures::rmse(Y_test[, col_i], pred_test_i)
+my_rmse(Y_test[, col_i], pred_test_i)
 
 all_test_preds <- NULL
 all_test_preds[[col_i]] <- pred_test_i
@@ -283,14 +328,11 @@ for (col_i in 2:6) {
   pred_test_i  <- predict(lgb_model, local_test_set)
   
   all_test_preds[[col_i]] <- pred_test_i
-  print(mlr3measures::rmse(Y_test[, col_i], pred_test_i))
+  print(my_rmse(Y_test[, col_i], pred_test_i))
 }
 
-chained_pred <- all_test_preds %>% as.data.table() %>% as.matrix.data.frame()
-correct_chain_test <- apply(chained_pred, 1, smart_integer_round) %>% t()
-
-# show_custom_metrics(chained_pred, "LGBM. Chained неприведенное")
-show_custom_metrics(correct_chain_test, "LGBM. Chained приведенное")
+lgb_chain_pred <- all_test_preds %>% prediction_correction()
+show_custom_metrics(lgb_chain_pred, "LGBM Chained")
 ```
 
 
@@ -312,33 +354,26 @@ lgbm_cv_model$best_score
 
 ### Независимое
 ```{r}
-models <- list()
-
+rf_pred <- vector("list", 6)
 for (feature_num in 1:6) {
-  models[[feature_num]] <- randomForest(
+  models <- randomForest(
     x = X_train,
     y = Y_train[, feature_num],
     ntree = 1000,
     na.action = na.omit
     # importance = TRUE
   )
+  
+  rf_pred[[feature_num]] <- predict(models, data.frame(X_test, Y_test))
 }
 
-# Predict all targets
-rf_pred <- sapply(1:6, function(t) {
-  predict(models[[t]], data.frame(X_test, Y_test))
-})
-
-correct_rf_pred <- apply(rf_pred, 1, smart_integer_round) %>% t()
-
-show_custom_metrics(rf_pred, "Random Forest неприведенное")
-show_custom_metrics(correct_rf_pred, "Random Forest приведенное")
+rf_ind_pred <- rf_pred %>% prediction_correction()
+show_custom_metrics(rf_ind_pred, "Random Forest независимое")
 ```
 
 
 ### Chained
 
-Подумать, оставлять ли ... %>% round()
 ```{r}
 col_i <- 1
 
@@ -349,7 +384,7 @@ rf <- randomForest(x = local_train_set, y = Y_train[, col_i], ntree = 1000)
 
 pred_train_i <- predict(rf, local_train_set) 
 pred_test_i  <- predict(rf, local_test_set) 
-mlr3measures::rmse(Y_test[, col_i], pred_test_i)
+my_rmse(Y_test[, col_i], pred_test_i)
 
 all_test_preds <- NULL
 all_test_preds[[col_i]] <- pred_test_i
@@ -368,14 +403,11 @@ for (col_i in 2:6) {
   pred_test_i  <- predict(rf, local_test_set) 
   
   all_test_preds[[col_i]] <- pred_test_i
-  print(mlr3measures::rmse(Y_test[, col_i], pred_test_i))
+  print(my_rmse(Y_test[, col_i], pred_test_i))
 }
 
-chained_pred <- all_test_preds %>% as.data.table() %>% as.matrix.data.frame()
-correct_chain_test <- apply(chained_pred, 1, smart_integer_round) %>% t()
-
-show_custom_metrics(chained_pred, "Chained неприведенное")
-show_custom_metrics(correct_chain_test, "Chained приведенное")
+rf_chain_pred <- all_test_preds %>% prediction_correction()
+show_custom_metrics(rf_chain_pred, "Random Forest Chained")
 ```
 
 
@@ -387,11 +419,8 @@ lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ .,
                # , na.action = na.omit
                )
 
-lm_pred <- predict(lm_model, newdata = data.frame(X_test, Y_test))
-correct_lm_test <- apply(lm_pred, 1, smart_integer_round) %>% t()
-
-# show_custom_metrics(lm_pred, "lm неприведенное")
-show_custom_metrics(correct_lm_test, "lm приведенное")
+lm_ind_pred <- predict(lm_model, newdata = data.frame(X_test, Y_test)) %>% prediction_correction()
+show_custom_metrics(lm_ind_pred, "lm")
 ```
 
 
@@ -400,20 +429,10 @@ show_custom_metrics(correct_lm_test, "lm приведенное")
 ### Независимое
 
 ```{r}
-new_X_train <- X_train %>% 
-  copy() %>% 
-  as.data.table() %>%
-  .[, names(.SD) := lapply(.SD, \(x) as.double(x))]
-
-new_X_test <- X_test %>% 
-  copy() %>% 
-  as.data.table() %>%
-  .[, names(.SD) := lapply(.SD, \(x) as.double(x))]
-
 indep_catb_pred <- vector("list", 6)
 for (feature_num in 1:6) {
-  train_pool <- catboost.load_pool(data = new_X_train, label = Y_train[, feature_num])
-  test_pool  <- catboost.load_pool(data = new_X_test,  label = Y_test[, feature_num])
+  train_pool <- catboost.load_pool(data = X_train, label = Y_train[, feature_num])
+  test_pool  <- catboost.load_pool(data = X_test,  label = Y_test[, feature_num])
       
   catb_model <- catboost.train(
     learn_pool = train_pool,
@@ -424,12 +443,10 @@ for (feature_num in 1:6) {
   indep_catb_pred[[feature_num]] <- catboost.predict(catb_model, test_pool)
 }
 
-indep_catb_pred <- indep_catb_pred %>% as.data.table() %>% as.matrix()
-correct_indep_catb_pred <- apply(indep_catb_pred, 1, smart_integer_round) %>% t()
-
-# show_custom_metrics(indep_catb_pred, "Неприведенное независимое Catboost")
-show_custom_metrics(correct_indep_catb_pred, "Приведенное независимое Catboost")
+catb_ind_pred <- indep_catb_pred %>% prediction_correction()
+show_custom_metrics(catb_ind_pred, "Catboost независимое")
 ```
+
 
 ### Chained
 
@@ -450,7 +467,7 @@ catb_model <- catboost.train(
 
 pred_train_i <- catboost.predict(catb_model, train_pool)
 pred_test_i  <- catboost.predict(catb_model, test_pool)
-mlr3measures::rmse(Y_test[, col_i], pred_test_i)
+my_rmse(Y_test[, col_i], pred_test_i)
 
 all_test_preds <- NULL
 all_test_preds[[col_i]] <- pred_test_i
@@ -477,14 +494,11 @@ for (col_i in 2:6) {
   pred_test_i  <- catboost.predict(catb_model, test_pool)
   
   all_test_preds[[col_i]] <- pred_test_i
-  print(mlr3measures::rmse(Y_test[, col_i], pred_test_i))
+  print(my_rmse(Y_test[, col_i], pred_test_i))
 }
 
-chained_pred <- all_test_preds %>% as.data.table() %>% as.matrix.data.frame()
-correct_chain_test <- apply(chained_pred, 1, smart_integer_round) %>% t()
-
-# show_custom_metrics(chained_pred, "Catboost. Chained неприведенное")
-show_custom_metrics(correct_chain_test, "Catboost. Chained приведенное")
+catb_chain_pred <- all_test_preds %>% prediction_correction()
+show_custom_metrics(catb_chain_pred, "Catboost Chained")
 ```
 
 
@@ -521,18 +535,18 @@ pca_scaler <- function(X_df, pca_model_, k = 32) {
 Зависимость k (~PCA) и результатов lm:
 ```{r}
 check_k_pca_lm <- function(k) {
-  X_train_scaled <- pca_scaler(X_train, pca_model, k)
-  X_test_scaled  <- pca_scaler(X_test,  pca_model, k)
+  X_train_pca_reduced <- pca_scaler(X_train, pca_model, k)
+  X_test_pca_reduced  <- pca_scaler(X_test,  pca_model, k)
   
   lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., 
-                 data = data.frame(X_train_scaled, Y_train))
+                 data = data.frame(X_train_pca_reduced, Y_train))
   
-  lm_pred <- predict(lm_model, newdata = data.frame(X_test_scaled, Y_test)) %>% 
+  lm_pred <- predict(lm_model, newdata = data.frame(X_test_pca_reduced, Y_test)) %>% 
     apply(., 1, smart_integer_round) %>% 
     t()
   
   aRMSE_ <- sapply(1:nrow(Y_test), 
-                   \(i) mlr3measures::rmse(lm_pred[i, ], Y_test[i, ])) %>% mean()
+                   \(i) my_rmse(lm_pred[i, ], Y_test[i, ])) %>% mean()
   return(c(k = k, aRMSE = aRMSE_))
 }
 
@@ -545,43 +559,41 @@ plotly::plot_ly(res_k_lm, x = ~k, y = ~aRMSE, type = 'scatter', mode = 'lines+ma
 
 ```{r}
 best_k <- res_k_lm[aRMSE == min(aRMSE), k]
-X_train_scaled <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_scaled  <- pca_scaler(X_test,  pca_model, k = best_k)
+X_train_pca_reduced <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca_reduced  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., 
-               data = data.frame(X_train_scaled, Y_train))
+               data = data.frame(X_train_pca_reduced, Y_train))
 
-lm_pred <- predict(lm_model, newdata = data.frame(X_test_scaled, Y_test))
-correct_lm_test <- apply(lm_pred, 1, smart_integer_round) %>% t()
-
-show_custom_metrics(lm_pred, "lm неприведенное")
-show_custom_metrics(correct_lm_test, "lm приведенное")
+lm_pca_pred <- predict(lm_model, newdata = data.frame(X_test_pca_reduced, Y_test)) %>%
+  prediction_correction()
+show_custom_metrics(lm_pca_pred, "PCA + lm")
 ```
 
 
 ## Random Forest
 
+Подбор лучшего k для PCA + Random Forest
 ```{r}
 check_k_pca_RF <- function(k) {
-  X_train_scaled <- pca_scaler(X_train, pca_model, k)
-  X_test_scaled  <- pca_scaler(X_test,  pca_model, k)
+  X_train_pca_reduced <- pca_scaler(X_train, pca_model, k)
+  X_test_pca_reduced  <- pca_scaler(X_test,  pca_model, k)
   
   models <- list()
   
   for (feature_num in 1:6) {
     models[[feature_num]] <- randomForest(
-      x = X_train_scaled,
+      x = X_train_pca_reduced,
       y = Y_train[, feature_num],
       ntree = 1000
     )
   }
   
-  rf_pred <- sapply(1:6, \(i) predict(models[[i]], data.frame(X_test_scaled, Y_test))) %>% 
-    apply(., 1, smart_integer_round) %>% 
-    t()
+  rf_pred <- sapply(1:6, \(i) predict(models[[i]], data.frame(X_test_pca_reduced, Y_test))) %>% 
+    prediction_correction()
   
   aRMSE_ <- sapply(1:nrow(Y_test), 
-                   \(i) mlr3measures::rmse(rf_pred[i, ], Y_test[i, ])) %>% mean()
+                   \(i) my_rmse(rf_pred[i, ], Y_test[i, ])) %>% mean()
   return(c(k = k, aRMSE = aRMSE_))
 }
 
@@ -594,26 +606,22 @@ plotly::plot_ly(res_k_rf, x = ~k, y = ~aRMSE, type = 'scatter', mode = 'lines+ma
 
 ```{r}
 best_k <- res_k_rf[aRMSE == min(aRMSE), k]
-X_train_scaled <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_scaled  <- pca_scaler(X_test,  pca_model, k = best_k)
+X_train_pca_reduced <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca_reduced  <- pca_scaler(X_test,  pca_model, k = best_k)
   
-models <- list()
-
+rf_pred <- vector("list", 6)
 for (feature_num in 1:6) {
   models[[feature_num]] <- randomForest(
-    x = X_train_scaled,
+    x = X_train_pca_reduced,
     y = Y_train[, feature_num],
     ntree = 1000
   )
+  
+  rf_pred[[feature_num]] <- predict(models[[feature_num]], data.frame(X_test_pca_reduced, Y_test))
 }
 
-rf_pred <- sapply(1:6, function(t) {
-  predict(models[[t]], data.frame(X_test_scaled, Y_test))
-})
-
-correct_rf_pred <- apply(rf_pred, 1, smart_integer_round) %>% t()
-show_custom_metrics(rf_pred, "Random Forest неприведенное")
-show_custom_metrics(correct_rf_pred, "Random Forest приведенное")
+rf_ind_pca_pred <- rf_pred %>% prediction_correction()
+show_custom_metrics(rf_ind_pca_pred, "PCA + Random Forest")
 ```
 
 
@@ -621,18 +629,15 @@ show_custom_metrics(correct_rf_pred, "Random Forest приведенное")
 ```{r}
 indep_pred <- vector("list", 6)
 for (feature_num in 1:6) {
-  xgb_model <- xgboost(data = X_train_scaled, label = Y_train[, feature_num],
+  xgb_model <- xgboost(data = X_train_pca_reduced, label = Y_train[, feature_num],
                        nrounds = 15, objective = "reg:squarederror", eval_metric = "rmse",
                        verbose = 0)
   
-  indep_pred[[feature_num]] <- predict(xgb_model, X_test_scaled)
+  indep_pred[[feature_num]] <- predict(xgb_model, X_test_pca_reduced)
 }
 
-indep_pred <- indep_pred %>% as.data.table() %>% as.matrix()
-correct_indep_pred <- apply(indep_pred, 1, smart_integer_round) %>% t()
-
-show_custom_metrics(indep_pred, "PCA + XGBoost. Неприведенное независимое")
-show_custom_metrics(correct_indep_pred, "PCA + XGBoost. Приведенное независимое")
+xgb_pca_ind_pred <- indep_pred %>% prediction_correction()
+show_custom_metrics(xgb_pca_ind_pred, "PCA + XGBoost независимое")
 ```
 
 
@@ -641,8 +646,8 @@ show_custom_metrics(correct_indep_pred, "PCA + XGBoost. Приведенное �
 ```{r}
 indep_catb_pred <- vector("list", 6)
 for (feature_num in 1:6) {
-  train_pool <- catboost.load_pool(data = X_train_scaled, label = Y_train[, feature_num])
-  test_pool  <- catboost.load_pool(data = X_test_scaled,  label = Y_test[, feature_num])
+  train_pool <- catboost.load_pool(data = X_train_pca_reduced, label = Y_train[, feature_num])
+  test_pool  <- catboost.load_pool(data = X_test_pca_reduced,  label = Y_test[, feature_num])
       
   catb_model <- catboost.train(
     learn_pool = train_pool,
@@ -653,11 +658,8 @@ for (feature_num in 1:6) {
   indep_catb_pred[[feature_num]] <- catboost.predict(catb_model, test_pool)
 }
 
-indep_catb_pred <- indep_catb_pred %>% as.data.table() %>% as.matrix()
-correct_indep_catb_pred <- apply(indep_catb_pred, 1, smart_integer_round) %>% t()
-
-show_custom_metrics(indep_catb_pred, "PCA + Catboost. Неприведенное независимое")
-show_custom_metrics(correct_indep_catb_pred, "PCA + Catboost. Приведенное независимое")
+catb_pca_ind_pred <- indep_catb_pred %>% prediction_correction()
+show_custom_metrics(catb_pca_ind_pred, "PCA + Catboost независимое")
 ```
 
 
@@ -672,7 +674,6 @@ bool_mask_row <- function(matrix_row) {
 }
 
 targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
-
 .[Y_b_train, Y_b_test] <- list(targets_bool[split_idx, ], targets_bool[!split_idx, ])
 ```
 
@@ -683,5 +684,77 @@ targets_bool %>%
   as.data.table() %>% 
   rename_all(~colnames(targets)) %>% 
   arrow::write_feather("../0. Data/Y_bool.feather")
+```
+
+
+# 6. Python
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.multioutput import MultiOutputRegressor, RegressorChain
+# from sklearn.metrics import root_mean_squared_error
+
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor 
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.svm import SVR
+```
+
+```{python}
+def rmse(y_true, y_pred):
+    mean_squared_error = np.mean((y_true - y_pred) ** 2)  # Среднее значение квадратов ошибок
+    return np.sqrt(mean_squared_error)
+
+
+def check_MO_regression(model_obj, model_name=""):
+    MO_regr = {'Indep': MultiOutputRegressor, 'Chain': RegressorChain}
+    for name, model in MO_regr.items():
+        y_pred = model(model_obj).fit(X_train, y_train).predict(X_test)
+        print(f"{model_name} {name}. RMSE: {round(rmse(y_test, y_pred), 3)}")
+    return(None)
+
+
+def plot_nn_losses(hist):
+    plt.plot(hist.history['loss'], label='Train Loss')
+    plt.plot(hist.history['val_loss'], label='Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
+    return(None)
+```
+
+```{python}
+data = pd.read_feather("../0. Data/wide_data.feather")
+
+X = data.loc[:, ~data.columns.isin(["HL_1", "HL_2", "HL_3", "HL_4", "HL_5", "HL_6", "id"])]
+y = data.loc[:, "HL_1":"HL_6"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+scaler = StandardScaler().fit(X_train)
+X_train = scaler.transform(X_train)
+X_test = scaler.transform(X_test)
+
+y_bool = pd.read_feather("../0. Data/Y_bool.feather")
+
+y_b_train, y_b_test = train_test_split(y_bool, test_size=0.2, random_state=42)
+```
+
+```{python}
+linear = LinearRegression().fit(X_train, y_train)
+rf = RandomForestRegressor().fit(X_train, y_train)
+etr = ExtraTreesRegressor().fit(X_train, y_train)
+knn = KNeighborsRegressor().fit(X_train, y_train)
+
+print(f"Linear. RMSE: {rmse(y_test, linear.predict(X_test))}")
+print(f"ExtraTree. RMSE: {rmse(y_test, etr.predict(X_test))}")
+print(f"Random Forest. RMSE: {rmse(y_test, rf.predict(X_test))}")
+print(f"kNN. RMSE: {rmse(y_test, knn.predict(X_test))}")
 ```
 
