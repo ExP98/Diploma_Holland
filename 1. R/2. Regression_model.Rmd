@@ -15,6 +15,7 @@ library(lightgbm)
 library(randomForest)
 library(catboost)
 library(caret)
+library(plotly)
 
 set.seed(42)
 source(paste0(here::here(), "/1. R/4. data_preparation.R"))
@@ -57,28 +58,36 @@ show_custom_metrics <- function(my_pred, case_name) {
   msg <- str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCosDist: {round(aCosDist_, 3)}")
   return(msg)
 }
+
+
+pca_scaler <- function(X_df, pca_model_, k = 32) {
+  res <- scale(X_df, center = pca_model_$center, scale = pca_model_$scale) %*% 
+    pca_model_$rotation %>% 
+    .[, 1:k]
+  return(res)
+}
 ```
 
 
 ```{r}
 perform_indep_multioutput_regression <- function(model_class, print_msg = "", 
                                                  X_train_, Y_train_, X_test_, Y_test_,
-                                                 print_all = TRUE) {
+                                                 print_metric = TRUE) {
   models <- vector("list", 6)
   for (col_i in 1:6) {
     models[[col_i]] <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i])
-    if (print_all) print(models[[col_i]]$rmse_test)
+    # print(models[[col_i]]$rmse_test)
   }
   
   ind_pred <- sapply(models, \(x) x$pred_test) %>% prediction_correction()
-  print(show_custom_metrics(ind_pred, paste0(print_msg, " Indep")))
+  if (print_metric) print(show_custom_metrics(ind_pred, paste0(print_msg, " Indep")))
   return(invisible(ind_pred))
 }
 
 
 perform_chain_multioutput_regression <- function(model_class, print_msg = "", 
                                                  X_train_, Y_train_, X_test_, Y_test_,
-                                                 print_all = TRUE) {
+                                                 print_metric = TRUE) {
   models <- vector("list", 6)
   
   cbind_X_train <- X_train_
@@ -92,11 +101,11 @@ perform_chain_multioutput_regression <- function(model_class, print_msg = "",
       colnames(cbind_X_test)[ncol(cbind_X_test)] <- paste0("output_", col_i)
     }
     models[[col_i]] <- model_class$new(cbind_X_train, Y_train_[, col_i], cbind_X_test, Y_test_[, col_i])
-    if (print_all) print(models[[col_i]]$rmse_test)
+    # print(models[[col_i]]$rmse_test)
   }
   
   chain_pred <- sapply(models, \(x) x$pred_test) %>% prediction_correction()
-  print(show_custom_metrics(chain_pred, paste0(print_msg, " Chained")))
+  if (print_metric) print(show_custom_metrics(chain_pred, paste0(print_msg, " Chained")))
   return(invisible(chain_pred))
 }
 ```
@@ -237,8 +246,13 @@ my_XGBoost_model <- R6Class(
 
 
 ```{r}
-perform_indep_multioutput_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
-perform_chain_multioutput_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
+.[xgb_ind_pred, xgb_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test
+)
+
+# perform_indep_multioutput_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
+# perform_chain_multioutput_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
 ```
 
 ```{r}
@@ -488,149 +502,114 @@ plot(pca_model$sdev^2 / sum(pca_model$sdev^2),
      ylab = "Доля объясненной дисперсии")
 ```
 
+
 ```{r}
-pca_scaler <- function(X_df, pca_model_, k = 32) {
-  res <- scale(X_df, center = pca_model_$center, scale = pca_model_$scale) %*% 
-    pca_model_$rotation %>% 
-    .[, 1:k]
-  return(res)
+check_k_pca_for_model <- function(k, model, X_train_, X_test_) {
+  X_train_pca <- pca_scaler(X_train_, pca_model, k)
+  X_test_pca  <- pca_scaler(X_test_,  pca_model, k)
+  
+  tmp_preds <- perform_indep_multioutput_regression(model, print_msg = "RF", X_train_pca, Y_train,
+                                                    X_test_pca, Y_test, print_metric = FALSE)
+  
+  aRMSE_ <- sapply(1:nrow(Y_test), \(i) my_rmse(tmp_preds[i, ], Y_test[i, ])) %>% mean()
+  return(c(k = k, aRMSE = aRMSE_))
+}
+
+
+get_k_PCA_model_table <- function(model, by = 5, X_train_ = X_train, X_test_ = X_test, plot_b = TRUE) {
+  res_k_model <- sapply(seq(2, ncol(X_train_), by = by), 
+                        check_k_pca_for_model, 
+                        model = model, X_train_ = X_train_, X_test_ = X_test_) %>% 
+    t() %>% 
+    as.data.table()
+  
+  if (plot_b) plot_ly(res_k_model, x = ~k, y = ~aRMSE, type = 'scatter', mode = 'lines+markers') %>% show()
+  return(res_k_model)
 }
 ```
 
-## lm
+
+## 4.1 lm
 
 Зависимость k (~PCA) и результатов lm:
 ```{r}
-check_k_pca_lm <- function(k) {
-  X_train_pca_reduced <- pca_scaler(X_train, pca_model, k)
-  X_test_pca_reduced  <- pca_scaler(X_test,  pca_model, k)
-  
-  lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., 
-                 data = data.frame(X_train_pca_reduced, Y_train))
-  
-  lm_pred <- predict(lm_model, newdata = data.frame(X_test_pca_reduced, Y_test)) %>% 
-    apply(., 1, smart_integer_round) %>% 
-    t()
-  
-  aRMSE_ <- sapply(1:nrow(Y_test), 
-                   \(i) my_rmse(lm_pred[i, ], Y_test[i, ])) %>% mean()
-  return(c(k = k, aRMSE = aRMSE_))
-}
-
-res_k_lm <- sapply(1:ncol(X_train), check_k_pca_lm) %>% 
-  t() %>% 
-  as.data.table()
-
-plotly::plot_ly(res_k_lm, x = ~k, y = ~aRMSE, type = 'scatter', mode = 'lines+markers')
+res_k_lm <- get_k_PCA_model_table(my_lm_model, 1)
 ```
+
 
 ```{r}
 best_k <- res_k_lm[aRMSE == min(aRMSE), k]
-X_train_pca_reduced <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca_reduced  <- pca_scaler(X_test,  pca_model, k = best_k)
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
-lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., 
-               data = data.frame(X_train_pca_reduced, Y_train))
-
-lm_pca_pred <- predict(lm_model, newdata = data.frame(X_test_pca_reduced, Y_test)) %>%
-  prediction_correction()
-show_custom_metrics(lm_pca_pred, "PCA + lm")
+.[lm_pca_ind_pred, lm_pca_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_lm_model, "lm + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+)
 ```
 
 
-## Random Forest
+## 4.2 Random Forest
 
 Подбор лучшего k для PCA + Random Forest
+
 ```{r}
-check_k_pca_RF <- function(k) {
-  X_train_pca_reduced <- pca_scaler(X_train, pca_model, k)
-  X_test_pca_reduced  <- pca_scaler(X_test,  pca_model, k)
-  
-  models <- list()
-  
-  for (col_i in 1:6) {
-    models[[col_i]] <- randomForest(
-      x = X_train_pca_reduced,
-      y = Y_train[, col_i],
-      ntree = 1000
-    )
-  }
-  
-  rf_pred <- sapply(1:6, \(i) predict(models[[i]], data.frame(X_test_pca_reduced, Y_test))) %>% 
-    prediction_correction()
-  
-  aRMSE_ <- sapply(1:nrow(Y_test), 
-                   \(i) my_rmse(rf_pred[i, ], Y_test[i, ])) %>% mean()
-  return(c(k = k, aRMSE = aRMSE_))
-}
-
-res_k_rf <- sapply(seq(2, ncol(X_train), by = 3), check_k_pca_RF) %>% 
-  t() %>% 
-  as.data.table()
-
-plotly::plot_ly(res_k_rf, x = ~k, y = ~aRMSE, type = 'scatter', mode = 'lines+markers')
+res_k_rf <- get_k_PCA_model_table(my_RandomForest_model, 5)
 ```
 
 ```{r}
 best_k <- res_k_rf[aRMSE == min(aRMSE), k]
-X_train_pca_reduced <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca_reduced  <- pca_scaler(X_test,  pca_model, k = best_k)
-  
-rf_pred <- vector("list", 6)
-for (col_i in 1:6) {
-  models[[col_i]] <- randomForest(
-    x = X_train_pca_reduced,
-    y = Y_train[, col_i],
-    ntree = 1000
-  )
-  
-  rf_pred[[col_i]] <- predict(models[[col_i]], data.frame(X_test_pca_reduced, Y_test))
-}
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
-rf_ind_pca_pred <- rf_pred %>% prediction_correction()
-show_custom_metrics(rf_ind_pca_pred, "PCA + Random Forest")
+.[rf_pca_ind_pred, rf_pca_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_RandomForest_model, "Random Forest + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+)
 ```
 
 
-## XGBoost
-```{r}
-indep_pred <- vector("list", 6)
-for (col_i in 1:6) {
-  xgb_model <- xgboost(data = X_train_pca_reduced, label = Y_train[, col_i],
-                       nrounds = 15, objective = "reg:squarederror", eval_metric = "rmse",
-                       verbose = 0)
-  
-  indep_pred[[col_i]] <- predict(xgb_model, X_test_pca_reduced)
-}
-
-xgb_pca_ind_pred <- indep_pred %>% prediction_correction()
-show_custom_metrics(xgb_pca_ind_pred, "PCA + XGBoost независимое")
-```
-
-
-## Catboost
+## 4.3 XGBoost
 
 ```{r}
-indep_catb_pred <- vector("list", 6)
-for (col_i in 1:6) {
-  train_pool <- catboost.load_pool(data = X_train_pca_reduced, label = Y_train[, col_i])
-  test_pool  <- catboost.load_pool(data = X_test_pca_reduced,  label = Y_test[, col_i])
-      
-  catb_model <- catboost.train(
-    learn_pool = train_pool,
-    test_pool = test_pool,
-    params = list(loss_function = 'RMSE', logging_level = "Silent")
-  )
-  
-  indep_catb_pred[[col_i]] <- catboost.predict(catb_model, test_pool)
-}
+res_k_xgb <- get_k_PCA_model_table(my_XGBoost_model, 2)
+```
 
-catb_pca_ind_pred <- indep_catb_pred %>% prediction_correction()
-show_custom_metrics(catb_pca_ind_pred, "PCA + Catboost независимое")
+```{r}
+best_k <- res_k_xgb[aRMSE == min(aRMSE), k]
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[xgb_pca_ind_pred, xgb_pca_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_XGBoost_model, "XGBoost + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+)
 ```
 
 
-# 5. Multilabel classification
+## 4.4 Catboost
+
+```{r}
+res_k_catb <- get_k_PCA_model_table(my_Catboost_model, 4)
+```
+
+```{r}
+best_k <- res_k_catb[aRMSE == min(aRMSE), k]
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[catb_pca_ind_pred, catb_pca_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_Catboost_model, "Catboost + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+)
+```
+
+
+# 6. Multilabel classification
 
 ```{r}
 bool_mask_row <- function(matrix_row) {
@@ -654,7 +633,7 @@ targets_bool %>%
 ```
 
 
-# 6. Python
+# 7. Python
 
 ```{python}
 import pandas as pd
