@@ -66,6 +66,11 @@ pca_scaler <- function(X_df, pca_model_, k = 32) {
     .[, 1:k]
   return(res)
 }
+
+
+scalar_matrix_production <- function(w_vec, mat_list) {
+  return((map2(w_vec, mat_list, `*`) %>% reduce(`+`)) / sum(w_vec))
+}
 ```
 
 
@@ -191,7 +196,7 @@ my_template_model <- R6Class(
 ## 3.1 Константный предсказатель
 ```{r}
 # const_pred <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
-const_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_train)), nrow = nrow(Y_train))
+const_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test))
 show_custom_metrics(const_pred, "Константное")
 ```
 
@@ -303,8 +308,10 @@ my_LightGBM_model <- R6Class(
 ```
 
 ```{r}
-perform_indep_multioutput_regression(my_LightGBM_model, "LightGBM", X_train, Y_train, X_test, Y_test)
-perform_chain_multioutput_regression(my_LightGBM_model, "LightGBM", X_train, Y_train, X_test, Y_test)
+.[lgbm_ind_pred, lgbm_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_LightGBM_model, "LightGBM", X_train, Y_train, X_test, Y_test
+)
 ```
 
 
@@ -354,9 +361,12 @@ my_LightGBM_CV_model <- R6Class(
 ```
 
 ```{r}
-perform_indep_multioutput_regression(my_LightGBM_CV_model, "LightGBM CV", X_train, Y_train, X_test, Y_test)
-perform_chain_multioutput_regression(my_LightGBM_CV_model, "LightGBM CV", X_train, Y_train, X_test, Y_test)
+.[lgbm_cv_ind_pred, lgbm_cv_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_LightGBM_CV_model, "LightGBM CV", X_train, Y_train, X_test, Y_test
+)
 ```
+
 
 
 ## 3.4 Random Forest
@@ -384,8 +394,10 @@ my_RandomForest_model <- R6Class(
 ```
 
 ```{r}
-perform_indep_multioutput_regression(my_RandomForest_model, "Random Forest", X_train, Y_train, X_test, Y_test)
-perform_chain_multioutput_regression(my_RandomForest_model, "Random Forest", X_train, Y_train, X_test, Y_test)
+.[rf_ind_pred, rf_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_RandomForest_model, "Random Forest", X_train, Y_train, X_test, Y_test
+)
 ```
 
 
@@ -431,8 +443,10 @@ show_custom_metrics(lm_ind_pred, "lm")
 ```
 
 ```{r}
-perform_indep_multioutput_regression(my_lm_model, "lm", X_train, Y_train, X_test, Y_test)
-perform_chain_multioutput_regression(my_lm_model, "lm", X_train, Y_train, X_test, Y_test)
+.[lm_ind_pred, lm_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_lm_model, "lm", X_train, Y_train, X_test, Y_test
+)
 ```
 
 
@@ -478,8 +492,10 @@ my_Catboost_model <- R6Class(
 ```
 
 ```{r}
-perform_indep_multioutput_regression(my_Catboost_model, "CatBoost", X_train, Y_train, X_test, Y_test)
-perform_chain_multioutput_regression(my_Catboost_model, "CatBoost", X_train, Y_train, X_test, Y_test)
+.[catb_ind_pred, catb_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_Catboost_model, "CatBoost", X_train, Y_train, X_test, Y_test
+)
 ```
 
 
@@ -558,6 +574,7 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 res_k_rf <- get_k_PCA_model_table(my_RandomForest_model, 5)
 ```
 
+k = 27
 ```{r}
 best_k <- res_k_rf[aRMSE == min(aRMSE), k]
 print(str_glue("Best k: {best_k}"))
@@ -577,6 +594,7 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 res_k_xgb <- get_k_PCA_model_table(my_XGBoost_model, 2)
 ```
 
+k = 26
 ```{r}
 best_k <- res_k_xgb[aRMSE == min(aRMSE), k]
 print(str_glue("Best k: {best_k}"))
@@ -596,6 +614,7 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 res_k_catb <- get_k_PCA_model_table(my_Catboost_model, 4)
 ```
 
+k = 30
 ```{r}
 best_k <- res_k_catb[aRMSE == min(aRMSE), k]
 print(str_glue("Best k: {best_k}"))
@@ -606,6 +625,41 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
   list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
   my_Catboost_model, "Catboost + PCA", X_train_pca, Y_train, X_test_pca, Y_test
 )
+```
+
+
+# 5. Ensemble
+
+Stacking:
+
+const_pred, xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred
+
+```{r}
+scalar_matrix_production(w_vec = c(0.5, 0.5), list(const_pred, xgb_ind_pred)) %>% 
+  show_custom_metrics(., "Const & Xgb")
+```
+
+```{r}
+models_pred <- list(const_pred, xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred)
+
+w <- rep(1/length(models_pred), length(models_pred))
+scalar_matrix_production(w_vec = w, models_pred) %>% show_custom_metrics("All")
+```
+
+
+
+```{r}
+selected_models_pred <- list(xgb_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, rf_ind_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred)
+
+w <- c(1, 5, 5, 5, 1, 2, 6)
+scalar_matrix_production(w_vec = w, selected_models_pred) %>% show_custom_metrics("Selected")
+```
+
+```{r}
+selected2_models_pred <- list(lgbm_chain_pred, lgbm_cv_ind_pred, rf_ind_pred, catb_ind_pred, catb_chain_pred)
+
+w <- rep(1/length(selected2_models_pred), length(selected2_models_pred))
+scalar_matrix_production(w_vec = w, selected2_models_pred) %>% show_custom_metrics("Selected 2")
 ```
 
 
