@@ -3,9 +3,6 @@ title: "Регрессионные модели"
 author: "Egor Glushkov"
 ---
 
-Идеи: сделать общий интерфейс (ООП?) для всех моделей + для chain- и indep-регрессоров
-
-
 # 1. Библиотеки и функции
 ```{r include=FALSE}
 library(R6)
@@ -1026,6 +1023,73 @@ bool_mask_row <- function(matrix_row) {
 targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
 .[Y_b_train, Y_b_test] <- list(targets_bool[split_idx, ], targets_bool[!split_idx, ])
 ```
+
+```{r}
+rf <- randomForest(x = X_train, y = as.factor(Y_b_train[, 1]), ntree = 1000, importance = TRUE) 
+
+predict(rf, X_test, type = "prob")[, "TRUE"]
+# потом из вектора с 6 значениями выбирать те 3, где максимальная вероятность
+```
+
+
+```{r}
+library(mlr3verse)
+library(mlr3spatial)
+
+# Создание dataframe
+n_target <- 6
+full_data <- cbind(features, targets_bool) %>% as.data.table()
+
+target_labels <- paste0("Label_", 1:n_target)
+colnames(full_data)[(ncol(full_data)-6+1):ncol(full_data)] <- target_labels
+
+# getTaskData(yeast.task)
+
+# task <- mlr3::as_task_classif(x = full_data, target = target_labels)
+
+# Создание multilabel задачи
+task <- as_task_classif_st(
+  x = full_data,
+  target = paste0("Label_", 1:n_target),
+  id = "psychology_test",
+  positive = "1",
+  label = "Psychological Scales Classification"
+)
+
+# Установка типа задачи как multilabel
+task$properties <- union(task$properties, "multilabel")
+
+# Разделение данных на обучающую и тестовую выборки
+split <- partition(task, ratio = 0.8)
+
+# Создание модели (Random Forest через ranger)
+learner <- lrn("classif.ranger",
+  num.trees = 100,
+  predict_type = "prob",
+  importance = "impurity"
+)
+
+# Создание мультиметочного ученика с бинарными преобразованиями
+multilabel_learner <- mlr_learners$get("classif.ranger") %>>%
+  po("multilabel", method = "onevsrest") %>>%
+  as_learner()
+
+# Обучение модели
+multilabel_learner$train(task, split$train)
+
+# Предсказание на тестовых данных
+prediction <- multilabel_learner$predict(task, split$test)
+
+# Оценка результатов
+measures <- list(
+  msr("multilabel.hamloss"),
+  msr("multilabel.f1"),
+  msr("multilabel.acc")
+)
+
+prediction$score(measures)
+```
+
 
 ```{r}
 library(arrow)
