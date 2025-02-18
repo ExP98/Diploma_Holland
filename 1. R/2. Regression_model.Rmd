@@ -13,6 +13,7 @@ library(randomForest)
 library(catboost)
 library(caret)
 library(plotly)
+library(arrow)
 
 set.seed(42)
 source(paste0(here::here(), "/1. R/4. data_preparation.R"))
@@ -160,7 +161,6 @@ perform_chain_multioutput_regression <- function(model_class, print_msg = "",
 ```
 
 
-
 # 2. Данные
 
 Разделение данных на трейн и тест:
@@ -182,6 +182,9 @@ split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.8
 
 mean_train <- apply(X_train_unscaled, 2, mean, na.rm = TRUE)
 sd_train <- apply(X_train_unscaled, 2, sd, na.rm = TRUE)
+
+# X_train <- X_train_unscaled
+# X_test <- X_test_unscaled
 
 X_train <- scale(X_train_unscaled, center = mean_train, scale = sd_train)
 X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
@@ -412,7 +415,6 @@ my_LightGBM_CV_model <- R6Class(
 ```
 
 
-
 ## 3.4 Random Forest
 
 ```{r}
@@ -538,7 +540,7 @@ my_Catboost_model <- R6Class(
 ```{r}
 .[catb_ind_pred, catb_chain_pred] <- map(
   list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
-  my_Catboost_model, "CatBoost", X_train, Y_train, X_test, Y_test
+  my_Catboost_model, "CatBoost", X_train %>% apply(2, as.double), Y_train, X_test %>% apply(2, as.double), Y_test
 )
 ```
 
@@ -671,9 +673,51 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 ```
 
 
+## 4.5 LightGBM
+
+```{r}
+res_k_lgb <- get_k_PCA_model_table(my_LightGBM_model, 3)
+```
+
+k = 11
+```{r}
+best_k <- res_k_lgb[aRMSE == min(aRMSE), k]
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[lgb_pca_ind_pred, lgb_pca_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_LightGBM_model, "LightGBM + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+)
+```
+
+
+## 4.6 LightGBM CV
+
+```{r}
+res_k_lgb_cv <- get_k_PCA_model_table(my_LightGBM_CV_model, 3)
+```
+
+k = 11
+```{r}
+best_k <- res_k_lgb_cv[aRMSE == min(aRMSE), k]
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred] <- map(
+  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  my_LightGBM_CV_model, "LightGBM CV + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+)
+```
+
+
 # 5. Ensemble
 
 ## 5.1 Стэкинг моделей на данных без пропусков
+
+### Без PCA
 const_pred, xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred
 
 ```{r}
@@ -682,7 +726,7 @@ scalar_matrix_production(w_vec = c(0.5, 0.5), list(const_pred, xgb_ind_pred)) %>
 ```
 
 ```{r}
-models_pred <- list(const_pred, xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred)
+models_pred <- list(xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred)
 
 w <- rep(1/length(models_pred), length(models_pred))
 scalar_matrix_production(w_vec = w, models_pred) %>% show_custom_metrics("All", Y_test_ = Y_test)
@@ -701,6 +745,49 @@ selected2_models_pred <- list(lgbm_chain_pred, lgbm_cv_ind_pred, rf_ind_pred, ca
 
 w <- rep(1/length(selected2_models_pred), length(selected2_models_pred))
 scalar_matrix_production(w_vec = w, selected2_models_pred) %>% show_custom_metrics("Selected 2", Y_test_ = Y_test)
+```
+
+```{r}
+selected3_models_pred <- list(lgbm_ind_pred, rf_ind_pred, lm_ind_pred, catb_ind_pred)
+
+w <- c(1, 1, 1, 3)
+# w <- rep(1/length(selected3_models_pred), length(selected3_models_pred))
+scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3", Y_test_ = Y_test)
+```
+
+
+### С PCA
+lm_pca_ind_pred, lm_pca_chain_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, xgb_pca_chain_pred, catb_pca_ind_pred, catb_pca_chain_pred, lgb_pca_ind_pred, lgb_pca_chain_pred, lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred
+
+```{r}
+models_pred <- list(lm_pca_ind_pred, lm_pca_chain_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, xgb_pca_chain_pred, catb_pca_ind_pred, catb_pca_chain_pred, lgb_pca_ind_pred, lgb_pca_chain_pred, lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred)
+
+w <- rep(1/length(models_pred), length(models_pred))
+scalar_matrix_production(w_vec = w, models_pred) %>% show_custom_metrics("All", Y_test_ = Y_test)
+```
+
+
+```{r}
+selected_models_pred <- list(xgb_pca_ind_pred, lgb_pca_chain_pred, lgb_cv_pca_ind_pred, rf_pca_ind_pred, lm_pca_ind_pred, catb_pca_ind_pred, catb_pca_chain_pred)
+
+w <- c(1, 5, 5, 5, 1, 2, 6)
+scalar_matrix_production(w_vec = w, selected_models_pred) %>% show_custom_metrics("Selected", Y_test_ = Y_test)
+```
+
+```{r}
+selected2_models_pred <- list(lgb_pca_chain_pred, lgb_cv_pca_ind_pred, rf_pca_ind_pred, catb_pca_ind_pred, catb_pca_chain_pred)
+
+w <- rep(1/length(selected2_models_pred), length(selected2_models_pred))
+sel2_preds <- scalar_matrix_production(w_vec = w, selected2_models_pred)
+sel2_preds %>% show_custom_metrics("Selected 2", Y_test_ = Y_test)
+```
+
+```{r}
+selected3_models_pred <- list(lgb_pca_ind_pred, rf_pca_ind_pred, lm_pca_ind_pred, catb_pca_ind_pred)
+
+w <- c(1, 1, 1, 3)
+# w <- rep(1/length(selected3_models_pred), length(selected3_models_pred))
+scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3", Y_test_ = Y_test)
 ```
 
 
@@ -954,7 +1041,7 @@ class_models <- data.table(
 
 c("BF", "EY", "CT", "LN", "SC")
 ```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "CT", use_PCA_b = F)
+df <- prepare_psytest_dataset(wide_data, wide_data2, "LN", use_PCA_b = F)
 x <- map2(class_models$models, class_models$labels, one_test_model_map, df_ = df)
 show_constant_pred_metric(df)
 ```
@@ -996,7 +1083,8 @@ CatBoost Chained. aRMSE: 2.129; aCosDist: 0.29
 ---
 
 ```{r}
-models_pred <- list(x[[1]][[1]], x[[2]][[1]], x[[3]][[2]], x[[4]][[1]], x[[5]][[1]], x[[6]][[1]])
+# models_pred <- list(x[[1]][[1]], x[[2]][[2]], x[[3]][[1]], x[[4]][[2]], x[[5]][[1]], x[[6]][[1]])
+models_pred <- list(x[[1]][[1]], x[[2]][[2]], x[[3]][[1]], x[[4]][[1]], x[[5]][[1]], x[[6]][[1]])
 
 w1 <- rep(1/length(models_pred), length(models_pred))
 w2 <- c(1, 2, 2, 2, 9, 2)
@@ -1005,6 +1093,15 @@ scalar_matrix_production(w_vec = w1, models_pred) %>%
   show_custom_metrics("All equal", Y_test_ = df[["Y_test"]])
 
 scalar_matrix_production(w_vec = w2, models_pred) %>% 
+  show_custom_metrics("All preferences", Y_test_ = df[["Y_test"]])
+```
+
+LN (no PCA):
+```{r}
+models_pred2 <- list(x[[1]][[1]], x[[2]][[1]], x[[3]][[2]], x[[4]][[1]], x[[5]][[1]], x[[6]][[1]])
+w3 <- c(1, 3, 3, 3, 3, 13)
+
+scalar_matrix_production(w_vec = w3, models_pred2) %>% 
   show_custom_metrics("All preferences", Y_test_ = df[["Y_test"]])
 ```
 
@@ -1224,8 +1321,13 @@ prediction$score(measures)
 ```
 
 
+
+# 7. Python
+
 ```{r}
-library(arrow)
+wide_data %>% 
+  as.data.table() %>% 
+  arrow::write_feather("../0. Data/wide_data.feather")
 
 targets_bool %>% 
   as.data.table() %>% 
@@ -1233,8 +1335,6 @@ targets_bool %>%
   arrow::write_feather("../0. Data/Y_bool.feather")
 ```
 
-
-# 7. Python
 
 ```{python}
 import pandas as pd
