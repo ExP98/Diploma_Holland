@@ -1025,10 +1025,143 @@ targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
 ```
 
 ```{r}
-rf <- randomForest(x = X_train, y = as.factor(Y_b_train[, 1]), ntree = 1000, importance = TRUE) 
+ind_pred <- vector("list", 6)
 
-predict(rf, X_test, type = "prob")[, "TRUE"]
-# потом из вектора с 6 значениями выбирать те 3, где максимальная вероятность
+for (col_i in 1:6) {
+  rf <- randomForest(x = X_train, y = as.factor(Y_b_train[, col_i]), ntree = 1000, importance = TRUE) 
+  ind_pred[[col_i]] <- predict(rf, X_test, type = "prob")[, "TRUE"]
+}
+
+Y_pred <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
+# Y_b_test
+
+# Случайные предсказания
+Y_rand <- replicate(n = nrow(Y_b_test), sample(c(rep(TRUE, 3), rep(FALSE, 3)), size = 6)) %>% t()
+```
+
+
+## Метрики
+
+1. Hamming Loss - Доля неправильно предсказанных меток
+```{r}
+# доля неправильных ответов. От 0 до 1
+hamming_loss <- function(y_true, y_pred) {
+  mean(y_true != y_pred)
+}
+
+hamming_loss(Y_b_test, Y_pred)
+hamming_loss(Y_b_test, Y_rand)
+# hamming_loss(Y_b_test, Y_b_test)
+# hamming_loss(Y_b_test, !Y_b_test)
+```
+
+2. Top-k Accuracy
+```{r}
+# Расчет точности
+mean(rowSums(Y_pred * Y_b_test) >= 1)  # Хотя бы одна верная
+mean(rowSums(Y_pred * Y_b_test) >= 2)  # Хотя бы 2 верные
+mean(rowSums(Y_pred * Y_b_test) >= 3)  # Все 3 верные
+
+# последнее аналогично Subset Accuracy (Exact Match) - Доля объектов с полностью правильными метками
+subset_accuracy <- function(y_true, y_pred) {
+  mean(apply(y_true == y_pred, 1, all))
+}
+
+subset_accuracy(Y_b_test, Y_pred)
+```
+
+```{r}
+# Расчет точности
+mean(rowSums(Y_rand * Y_b_test) >= 1)  # Хотя бы одна верная
+mean(rowSums(Y_rand * Y_b_test) >= 2)  # Хотя бы 2 верные
+mean(rowSums(Y_rand * Y_b_test) >= 3)  # Все 3 верные
+
+subset_accuracy(Y_b_test, Y_rand)
+```
+
+
+3. Precision, Recall, F1-Score
+```{r}
+library(Metrics)
+
+calc_class_metrics <- function(y_true, y_pred) {
+  answ <- data.table(y_true = y_true, y_pred = y_pred)
+  TP <- answ[y_true == TRUE & y_pred == TRUE, .N]
+  FP <- answ[y_true == FALSE & y_pred == TRUE, .N]
+  FN <- answ[y_true == TRUE & y_pred == FALSE, .N]
+  TN <- answ[y_true == FALSE & y_pred == FALSE, .N]
+  
+  return(list(
+    recall = TP / (TP + FN),
+    precision = TP / (TP + FP),
+    acc = (TP + TN) / (TP + FP + FN + TN),
+    F1_score = (2 * TP) / (2 * TP + FP + FN)
+  ))
+}
+
+# calc_class_metrics(Y_b_test[, 1], Y_pred[, 1])ф
+```
+
+```{r}
+get_confus_elems <- function(y_true, y_pred) {
+  answ <- data.table(y_true = y_true, y_pred = y_pred)
+  TP <- answ[y_true == TRUE & y_pred == TRUE, .N]
+  FP <- answ[y_true == FALSE & y_pred == TRUE, .N]
+  FN <- answ[y_true == TRUE & y_pred == FALSE, .N]
+  TN <- answ[y_true == FALSE & y_pred == FALSE, .N]
+  return(list(TP = TP, FP = FP, FN = FN, TN = TN))   
+}
+
+get_total_confus_dt <- function(Y_true, Y_pred) {
+  conf_dt <- sapply(1:6, \(i) get_confus_elems(Y_true[, i], Y_pred[, i])) %>% 
+    t() %>% 
+    as.data.table() %>% 
+    unnest(cols = c(TP, FP, FN, TN))
+  return(conf_dt)
+}
+
+recall_    <- function(conf_row) conf_row[["TP"]] / (conf_row[["TP"]] + conf_row[["FN"]])
+precision_ <- function(conf_row) conf_row[["TP"]] / (conf_row[["TP"]] + conf_row[["FP"]])
+F1_score_  <- function(conf_row) {
+  return((2 * conf_row[["TP"]]) / (2 * conf_row[["TP"]] + conf_row[["FP"]] + conf_row[["FN"]]))
+}
+
+micro_metric <- \(total_conf_dt, metric_f) colSums(total_conf_dt) %>% metric_f()
+macro_metric <- \(total_conf_dt, metric_f) apply(total_conf_dt, 1, metric_f) %>% mean()
+
+calc_multiclass_metrics <- function(Y_true, Y_pred) {
+  total_confus_dt <- get_total_confus_dt(Y_true, Y_pred)
+  return(list(
+    micro_precision = micro_metric(total_confus_dt, precision_),
+    micro_recall    = micro_metric(total_confus_dt, recall_),
+    micro_F1_score  = micro_metric(total_confus_dt, F1_score_),
+    
+    macro_precision = macro_metric(total_confus_dt, precision_),
+    macro_recall    = macro_metric(total_confus_dt, recall_),
+    macro_F1_score  = macro_metric(total_confus_dt, F1_score_)
+  ))
+}
+```
+
+```{r}
+calc_multiclass_metrics(Y_b_test, Y_pred)
+```
+
+```{r}
+calc_multiclass_metrics(Y_b_test, Y_rand)
+```
+
+4. Jaccard Similarity Score
+Сходство между метками:
+```{r}
+jaccard_score <- function(y_true, y_pred) {
+  intersection <- rowSums(y_true * y_pred)
+  union <- rowSums((y_true + y_pred) > 0)
+  mean(intersection / union)
+}
+
+jaccard_score(Y_b_test, Y_pred)
+jaccard_score(Y_b_test, Y_rand)
 ```
 
 
