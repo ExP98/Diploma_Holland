@@ -1041,7 +1041,7 @@ class_models <- data.table(
 
 c("BF", "EY", "CT", "LN", "SC")
 ```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "LN", use_PCA_b = F)
+df <- prepare_psytest_dataset(wide_data, wide_data2, "LN", use_PCA_b = T)
 x <- map2(class_models$models, class_models$labels, one_test_model_map, df_ = df)
 show_constant_pred_metric(df)
 ```
@@ -1146,8 +1146,8 @@ hamming_loss <- function(y_true, y_pred) {
   mean(y_true != y_pred)
 }
 
-hamming_loss(Y_b_test, Y_pred)
-hamming_loss(Y_b_test, Y_rand)
+hamming_loss(Y_b_test, Y_pred) # 0.377451
+hamming_loss(Y_b_test, Y_rand) # 0.5392157
 # hamming_loss(Y_b_test, Y_b_test)
 # hamming_loss(Y_b_test, !Y_b_test)
 ```
@@ -1155,23 +1155,23 @@ hamming_loss(Y_b_test, Y_rand)
 2. Top-k Accuracy
 ```{r}
 # Расчет точности
-mean(rowSums(Y_pred * Y_b_test) >= 1)  # Хотя бы одна верная
-mean(rowSums(Y_pred * Y_b_test) >= 2)  # Хотя бы 2 верные
-mean(rowSums(Y_pred * Y_b_test) >= 3)  # Все 3 верные
+mean(rowSums(Y_pred * Y_b_test) >= 1)  # Хотя бы одна верная - 0.9852941
+mean(rowSums(Y_pred * Y_b_test) >= 2)  # Хотя бы 2 верные    - 0.7352941
+mean(rowSums(Y_pred * Y_b_test) >= 3)  # Все 3 верные        - 0.1470588
 
 # последнее аналогично Subset Accuracy (Exact Match) - Доля объектов с полностью правильными метками
 subset_accuracy <- function(y_true, y_pred) {
   mean(apply(y_true == y_pred, 1, all))
 }
 
-subset_accuracy(Y_b_test, Y_pred)
+subset_accuracy(Y_b_test, Y_pred) # 0.1470588
 ```
 
 ```{r}
 # Расчет точности
-mean(rowSums(Y_rand * Y_b_test) >= 1)  # Хотя бы одна верная
-mean(rowSums(Y_rand * Y_b_test) >= 2)  # Хотя бы 2 верные
-mean(rowSums(Y_rand * Y_b_test) >= 3)  # Все 3 верные
+mean(rowSums(Y_rand * Y_b_test) >= 1)  # Хотя бы одна верная - 0.8970588
+mean(rowSums(Y_rand * Y_b_test) >= 2)  # Хотя бы 2 верные    - 0.4264706
+mean(rowSums(Y_rand * Y_b_test) >= 3)  # Все 3 верные        - 0.05882353
 
 subset_accuracy(Y_b_test, Y_rand)
 ```
@@ -1241,11 +1241,10 @@ calc_multiclass_metrics <- function(Y_true, Y_pred) {
 ```
 
 ```{r}
-calc_multiclass_metrics(Y_b_test, Y_pred)
-```
-
-```{r}
-calc_multiclass_metrics(Y_b_test, Y_rand)
+bind_rows(
+  pred = calc_multiclass_metrics(Y_b_test, Y_pred),
+  rand = calc_multiclass_metrics(Y_b_test, Y_rand)
+) %>% mutate(Y = c("pred", "rand"), .before = 1)
 ```
 
 4. Jaccard Similarity Score
@@ -1257,8 +1256,8 @@ jaccard_score <- function(y_true, y_pred) {
   mean(intersection / union)
 }
 
-jaccard_score(Y_b_test, Y_pred)
-jaccard_score(Y_b_test, Y_rand)
+jaccard_score(Y_b_test, Y_pred) # 0.4911765
+jaccard_score(Y_b_test, Y_rand) # 0.3367647
 ```
 
 
