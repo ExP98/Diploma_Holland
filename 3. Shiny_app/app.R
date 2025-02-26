@@ -6,6 +6,7 @@
 
 # 1. Библиотеки                                        ####
 library(shiny)
+library(tidyverse)
 library(DT)
 
 
@@ -34,7 +35,8 @@ create_test_ui <- function(test_num, factors_count, test_name) {
   fluidRow(column(
     12,
     div(
-      style = "border: 1px solid #ddd; padding: 10px; margin-bottom: 20px;",
+      style = "border: 1px solid #ddd; padding: 10px; margin-bottom: 20px; background-color: #E9EFFC;
+      border-radius: 5px;",
       fluidRow(column(
         12, checkboxInput(paste0("test", test_num), strong(test_name), width = '100%')
       )),
@@ -69,25 +71,38 @@ create_test_ui <- function(test_num, factors_count, test_name) {
 
 
 # 4. Фронт                                        ####
-ui <- fluidPage(titlePanel("Прогнозирование психологических тестов"),
-                fluidRow(
-                  column(
-                    12,
-                    create_test_ui(1, 5, "Тест 1 (5 факторов)"),
-                    create_test_ui(2, 10, "Тест 2 (10 факторов)"),
-                    create_test_ui(3, 4, "Тест 3 (4 фактора)"),
-                    
-                    fluidRow(column(
-                      4,
-                      offset = 4,
-                      actionButton("calc", "Подсчитать", class = "btn-primary btn-block", style = "margin-top: 20px; margin-bottom: 20px;")
-                    )),
-                    
-                    hr(),
-                    h3("Результаты прогноза:"),
-                    verbatimTextOutput("res")
-                  )
-                ))
+ui <- fluidPage(
+  titlePanel("Предсказание кода Голланда по результатам психометрических тестов"),
+  fluidRow(
+    column(12,
+           create_test_ui(1, 5, "Тест 1 (5 факторов)"),
+           create_test_ui(2, 10, "Тест 2 (10 факторов)"),
+           create_test_ui(3, 4, "Тест 3 (4 фактора)"),
+           
+           fluidRow(
+             column(4, offset = 4,
+                    actionButton("calc", "Подсчитать", class = "btn-primary btn-block",
+                                 style = "margin-top: 20px; margin-bottom: 20px;"))
+             ), 
+           hr(),
+           h3("Результаты прогноза"),
+           verbatimTextOutput("res")
+           )
+    ),
+  
+  tags$head(
+    tags$style(HTML("
+      .info-btn {
+        position: fixed; top: 20px; right: 20px; width: 35px; height: 35px;
+        border-radius: 50%; background-color: #337ab7;
+        color: white; border: none; font-weight: bold;
+        cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        z-index: 1000;
+      }
+    "))
+  ),
+  actionButton("info", label = "i", class = "info-btn")
+  )
 
 
 # 5. Сервер                                        ####
@@ -98,24 +113,14 @@ server <- function(input, output) {
     check_test <- function(test_num, factors_count) {
       if (input[[paste0("test", test_num)]]) {
         test_constraints <- constraints[constraints$test == test_num, ]
+        
         for (i in 1:factors_count) {
           val <- input[[paste0("t", test_num, "_f", i)]]
           current <- test_constraints[test_constraints$factor == i, ]
-          if (is.na(val) ||
-              val < current$min || val > current$max) {
+          if (is.na(val) || val < current$min || val > current$max) {
             errors <<- c(
               errors,
-              paste0(
-                "Тест ",
-                test_num,
-                ", фактор ",
-                i,
-                ": ",
-                "Значение должно быть между ",
-                current$min,
-                " и ",
-                current$max
-              )
+              str_glue("Тест {test_num}, фактор {i}: значение должно быть в интервале от {current$min} до {current$max}")
             )
           }
         }
@@ -128,7 +133,7 @@ server <- function(input, output) {
     
     if (length(errors) > 0) {
       showNotification(paste(errors, collapse = "\n"), type = "error")
-      return()
+      return(NULL)
     }
     
     generate_result <- function() {
@@ -141,10 +146,29 @@ server <- function(input, output) {
     
     output$res <- renderPrint({
       res <- generate_result()
-      cat("Прогнозируемые значения:\n")
+      cat("Предсказанные значения:\n")
       cat(paste0("Фактор ", 1:6, ": ", res, collapse = "\n"))
-      cat("\n\nСумма: ", sum(res))
     })
+  })
+  
+  observeEvent(input$info, {
+    showModal(modalDialog(
+      title = "Информация о проекте",
+      tags$div(
+        style = "font-size: 16px;",
+        tags$p(icon("info-circle"), " О проекте:"),
+        tags$ul(
+          tags$li("Название: \"Предсказание кода Голланда по результатам психометрических тестов\""),
+          tags$li("Автор: Глушков Егор Александрович"),
+          tags$li("Дата создания: 2025 год"),
+          tags$li("Версия: 1.0")
+        ),
+        tags$p("Данный проект выполнен в рамках выпускной квалификационной работы магистра")
+      ),
+      footer = modalButton("Закрыть"),
+      easyClose = TRUE,
+      size = "m"
+    ))
   })
 }
 
