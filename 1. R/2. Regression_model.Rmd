@@ -49,10 +49,20 @@ prediction_correction <- function(preds) {
 
 
 # sapply(1:nrow(pred_test), \(i) smart_integer_round(pred_test[i, ])) %>% colSums()
+df_rmse <- function(pred_df, Y_test_) {
+  return(sapply(1:nrow(Y_test_), \(i) my_rmse(pred_df[i, ], Y_test_[i, ])) %>% mean())
+}
+
+df_metric <- function(pred_df, Y_test_, func = my_rmse) {
+  return(sapply(1:nrow(Y_test_), \(i) func(pred_df[i, ], Y_test_[i, ])) %>% mean())
+}
+
 
 show_custom_metrics <- function(my_pred, case_name, Y_test_ = Y_test) {
-  aRMSE_ <- sapply(1:nrow(Y_test_), \(i) my_rmse(my_pred[i, ], Y_test_[i, ])) %>% mean()
-  aCosDist_ <- sapply(1:nrow(Y_test_), \(i) cosine_dist(my_pred[i, ], Y_test_[i, ])) %>% mean()
+  aRMSE_ <- df_metric(my_pred, Y_test_, my_rmse)
+  aCosDist_ <- df_metric(my_pred, Y_test_, cosine_dist)
+  # aRMSE_ <- sapply(1:nrow(Y_test_), \(i) my_rmse(my_pred[i, ], Y_test_[i, ])) %>% mean()
+  # aCosDist_ <- sapply(1:nrow(Y_test_), \(i) cosine_dist(my_pred[i, ], Y_test_[i, ])) %>% mean()
   msg <- str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCosDist: {round(aCosDist_, 3)}")
   return(msg)
 }
@@ -118,11 +128,11 @@ prepare_psytest_dataset <- function(wide_data_, wide_data2_,
 }
 ```
 
-
+MO -- multioutput
 ```{r}
-perform_indep_multioutput_regression <- function(model_class, print_msg = "", 
-                                                 X_train_, Y_train_, X_test_, Y_test_,
-                                                 print_metric = TRUE) {
+perform_stack_MO_regression <- function(model_class, print_msg = "", 
+                                        X_train_, Y_train_, X_test_, Y_test_,
+                                        print_metric = TRUE) {
   models <- vector("list", 6)
   for (col_i in 1:6) {
     models[[col_i]] <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i])
@@ -130,14 +140,14 @@ perform_indep_multioutput_regression <- function(model_class, print_msg = "",
   }
   
   ind_pred <- sapply(models, \(x) x$pred_test) %>% prediction_correction()
-  if (print_metric) print(show_custom_metrics(ind_pred, paste0(print_msg, " Indep"), Y_test_ = Y_test_))
+  if (print_metric) print(show_custom_metrics(ind_pred, paste0(print_msg, " stack"), Y_test_ = Y_test_))
   return(invisible(ind_pred))
 }
 
 
-perform_chain_multioutput_regression <- function(model_class, print_msg = "", 
-                                                 X_train_, Y_train_, X_test_, Y_test_,
-                                                 print_metric = TRUE) {
+perform_chain_MO_regression <- function(model_class, print_msg = "", 
+                                        X_train_, Y_train_, X_test_, Y_test_,
+                                        print_metric = TRUE) {
   models <- vector("list", 6)
   
   cbind_X_train <- X_train_
@@ -299,16 +309,16 @@ my_XGBoost_model <- R6Class(
 
 ```{r}
 .[xgb_ind_pred, xgb_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test
 )
 
-# perform_indep_multioutput_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
-# perform_chain_multioutput_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
+# perform_stack_MO_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
+# perform_chain_MO_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
 ```
 
 ```{r}
-lapply(indep_xgb, \(x) x$calc_importance())
+lapply(xgb_ind_pred, \(x) x$calc_importance())
 ```
 Для XGBoost (и позже для Random Forest) самая важная фича -- CT_1 (открытость-замкнутость)
 
@@ -356,10 +366,32 @@ my_LightGBM_model <- R6Class(
 
 ```{r}
 .[lgbm_ind_pred, lgbm_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_LightGBM_model, "LightGBM", X_train, Y_train, X_test, Y_test
 )
 ```
+
+
+# Несколько моделей сразу
+```{r}
+models_df <- data.table(
+  model = c(my_LightGBM_model, my_XGBoost_model, my_RandomForest_model),
+  name = c("LightGBM", "XGBoost","Random Forest")
+)
+
+x <- models_df %>% 
+  copy() %>% 
+  .[, stack := map(model, \(mdl) perform_stack_MO_regression(mdl, name, X_train, Y_train, X_test, Y_test))] %>% 
+  .[, chain := map(model, \(mdl) perform_chain_MO_regression(mdl, name, X_train, Y_train, X_test, Y_test))] %>% 
+  .[, (c("stack_rmse", "chain_rmse")) := map(.SD, \(col) map(col, \(pred) df_metric(pred, Y_test, my_rmse))),
+    .SDcols = c("stack", "chain")] %>% 
+  .[, (c("stack_cos", "chain_cos")) := map(.SD, \(col) map(col, \(pred) df_metric(pred, Y_test, cosine_dist))),
+    .SDcols = c("stack", "chain")]
+
+x[1, rmse]
+# sapply(1:nrow(Y_test_), \(i) my_rmse(my_pred[i, ], Y_test_[i, ])) %>% mean()
+```
+
 
 
 ### Cross Validation
@@ -409,7 +441,7 @@ my_LightGBM_CV_model <- R6Class(
 
 ```{r}
 .[lgbm_cv_ind_pred, lgbm_cv_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_LightGBM_CV_model, "LightGBM CV", X_train, Y_train, X_test, Y_test
 )
 ```
@@ -441,7 +473,7 @@ my_RandomForest_model <- R6Class(
 
 ```{r}
 .[rf_ind_pred, rf_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_RandomForest_model, "Random Forest", X_train, Y_train, X_test, Y_test
 )
 ```
@@ -490,7 +522,7 @@ show_custom_metrics(lm_ind_pred, "lm")
 
 ```{r}
 .[lm_ind_pred, lm_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_lm_model, "lm", X_train, Y_train, X_test, Y_test
 )
 ```
@@ -539,7 +571,7 @@ my_Catboost_model <- R6Class(
 
 ```{r}
 .[catb_ind_pred, catb_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_Catboost_model, "CatBoost", X_train %>% apply(2, as.double), Y_train, X_test %>% apply(2, as.double), Y_test
 )
 ```
@@ -569,7 +601,7 @@ check_k_pca_for_model <- function(k, model, X_train_, X_test_) {
   X_train_pca <- pca_scaler(X_train_, pca_model, k)
   X_test_pca  <- pca_scaler(X_test_,  pca_model, k)
   
-  tmp_preds <- perform_indep_multioutput_regression(model, print_msg = "RF", X_train_pca, Y_train,
+  tmp_preds <- perform_stack_MO_regression(model, print_msg = "RF", X_train_pca, Y_train,
                                                     X_test_pca, Y_test, print_metric = FALSE)
   
   aRMSE_ <- sapply(1:nrow(Y_test), \(i) my_rmse(tmp_preds[i, ], Y_test[i, ])) %>% mean()
@@ -605,7 +637,7 @@ X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[lm_pca_ind_pred, lm_pca_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_lm_model, "lm + PCA", X_train_pca, Y_train, X_test_pca, Y_test
 )
 ```
@@ -627,7 +659,7 @@ X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[rf_pca_ind_pred, rf_pca_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_RandomForest_model, "Random Forest + PCA", X_train_pca, Y_train, X_test_pca, Y_test
 )
 ```
@@ -647,7 +679,7 @@ X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[xgb_pca_ind_pred, xgb_pca_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_XGBoost_model, "XGBoost + PCA", X_train_pca, Y_train, X_test_pca, Y_test
 )
 ```
@@ -667,7 +699,7 @@ X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[catb_pca_ind_pred, catb_pca_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_Catboost_model, "Catboost + PCA", X_train_pca, Y_train, X_test_pca, Y_test
 )
 ```
@@ -687,7 +719,7 @@ X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[lgb_pca_ind_pred, lgb_pca_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_LightGBM_model, "LightGBM + PCA", X_train_pca, Y_train, X_test_pca, Y_test
 )
 ```
@@ -707,7 +739,7 @@ X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_LightGBM_CV_model, "LightGBM CV + PCA", X_train_pca, Y_train, X_test_pca, Y_test
 )
 ```
@@ -837,7 +869,7 @@ prepare_psytest_dataset_by_split <- function(input_dt, psytest_label = c("BF", "
 df <- prepare_psytest_dataset(wide_data, wide_data2, "BF")
 
 .[BF_catb_ind, BF_catb_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_Catboost_model, "BF - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -851,7 +883,7 @@ rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>%
 df <- prepare_psytest_dataset(wide_data, wide_data2, "EY")
 
 .[EY_catb_ind, EY_catb_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_Catboost_model, "EY - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -866,7 +898,7 @@ rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>%
 df <- prepare_psytest_dataset(wide_data, wide_data2, "CT")
 
 .[CT_catb_ind, CT_catb_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_Catboost_model, "CT - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -880,7 +912,7 @@ rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>%
 df <- prepare_psytest_dataset(wide_data, wide_data2, "LN")
 
 .[LN_catb_ind, LN_catb_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_Catboost_model, "LN - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -894,7 +926,7 @@ rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>%
 df <- prepare_psytest_dataset(wide_data, wide_data2, "SC")
 
 .[SC_catb_ind, SC_catb_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_Catboost_model, "SC - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -928,7 +960,7 @@ All preferences. aRMSE: 2.083; aCosDist: 0.284
 df <- prepare_psytest_dataset(wide_data, wide_data2, "BF")
 
 .[BF_rf_ind, BF_rf_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_RandomForest_model, "BF - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -942,7 +974,7 @@ rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>%
 df <- prepare_psytest_dataset(wide_data, wide_data2, "EY")
 
 .[EY_rf_ind, EY_rf_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_RandomForest_model, "EY - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -957,7 +989,7 @@ rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>%
 df <- prepare_psytest_dataset(wide_data, wide_data2, "CT")
 
 .[CT_rf_ind, CT_rf_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_RandomForest_model, "CT - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -971,7 +1003,7 @@ rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>%
 df <- prepare_psytest_dataset(wide_data, wide_data2, "LN")
 
 .[LN_rf_ind, LN_rf_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_RandomForest_model, "LN - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -985,7 +1017,7 @@ rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>%
 df <- prepare_psytest_dataset(wide_data, wide_data2, "SC")
 
 .[SC_rf_ind, SC_rf_chain] <- map(
-  list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_RandomForest_model, "SC - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
 )
 
@@ -1019,7 +1051,7 @@ scalar_matrix_production(w_vec = w3, models_pred) %>%
 ```{r}
 one_test_model_map <- function(model, model_label, df_ = df) {
   x <- map(
-    list(perform_indep_multioutput_regression, perform_chain_multioutput_regression), exec,
+    list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
     model, model_label, df_[["X_train"]], df_[["Y_train"]], df_[["X_test"]], df_[["Y_test"]]
   )
 }
@@ -1050,33 +1082,33 @@ show_constant_pred_metric(df)
 
 *CT**: 
 1) *no PCA*
-XGBoost Indep. aRMSE: 2.178; aCosDist: 0.296
+XGBoost stack. aRMSE: 2.178; aCosDist: 0.296
 XGBoost Chained. aRMSE: 2.264; aCosDist: 0.308
-LightGBM Indep. aRMSE: 2.127; aCosDist: 0.29
+LightGBM stack. aRMSE: 2.127; aCosDist: 0.29
 LightGBM Chained. aRMSE: 2.118; aCosDist: 0.288
-LightGBM CV Indep. aRMSE: 2.116; aCosDist: 0.288
+LightGBM CV stack. aRMSE: 2.116; aCosDist: 0.288
 LightGBM CV Chained. aRMSE: 2.123; aCosDist: 0.289
-Random Forest Indep. aRMSE: 2.101; aCosDist: 0.286
+Random Forest stack. aRMSE: 2.101; aCosDist: 0.286
 Random Forest Chained. aRMSE: 2.104; aCosDist: 0.287
-lm Indep. aRMSE: 2.076; aCosDist: 0.282
+lm stack. aRMSE: 2.076; aCosDist: 0.282
 lm Chained. aRMSE: 2.076; aCosDist: 0.282
-CatBoost Indep. aRMSE: 2.089; aCosDist: 0.284
+CatBoost stack. aRMSE: 2.089; aCosDist: 0.284
 CatBoost Chained. aRMSE: 2.109; aCosDist: 0.287
 Константное. aRMSE: 2.23; aCosDist: 0.304
 
 2) *PCA*
 Train: 654 rows; test: 339 rows (34.14%).
-XGBoost Indep. aRMSE: 2.257; aCosDist: 0.307
+XGBoost stack. aRMSE: 2.257; aCosDist: 0.307
 XGBoost Chained. aRMSE: 2.295; aCosDist: 0.312
-LightGBM Indep. aRMSE: 2.125; aCosDist: 0.289
+LightGBM stack. aRMSE: 2.125; aCosDist: 0.289
 LightGBM Chained. aRMSE: 2.149; aCosDist: 0.293
-LightGBM CV Indep. aRMSE: 2.14; aCosDist: 0.292
+LightGBM CV stack. aRMSE: 2.14; aCosDist: 0.292
 LightGBM CV Chained. aRMSE: 2.117; aCosDist: 0.288
-Random Forest Indep. aRMSE: 2.135; aCosDist: 0.291
+Random Forest stack. aRMSE: 2.135; aCosDist: 0.291
 Random Forest Chained. aRMSE: 2.156; aCosDist: 0.294
-lm Indep. aRMSE: 2.077; aCosDist: 0.283
+lm stack. aRMSE: 2.077; aCosDist: 0.283
 lm Chained. aRMSE: 2.077; aCosDist: 0.283
-CatBoost Indep. aRMSE: 2.124; aCosDist: 0.289
+CatBoost stack. aRMSE: 2.124; aCosDist: 0.289
 CatBoost Chained. aRMSE: 2.129; aCosDist: 0.29
 Константное. aRMSE: 2.23; aCosDist: 0.304
 
@@ -1358,7 +1390,7 @@ def rmse(y_true, y_pred):
 
 
 def check_MO_regression(model_obj, model_name=""):
-    MO_regr = {'Indep': MultiOutputRegressor, 'Chain': RegressorChain}
+    MO_regr = {'stack': MultiOutputRegressor, 'Chain': RegressorChain}
     for name, model in MO_regr.items():
         y_pred = model(model_obj).fit(X_train, y_train).predict(X_test)
         print(f"{model_name} {name}. RMSE: {round(rmse(y_test, y_pred), 3)}")
