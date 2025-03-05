@@ -26,6 +26,7 @@ cosine_sim <- \(y1, y2) (sum(y1 * y2)) / (sqrt(sum(y1 ^ 2)) * sqrt(sum(y2 ^ 2)))
 cosine_dist <- \(y1, y2) sqrt(2 * (1 - cosine_sim(y1, y2)))
 
 
+# sapply(1:nrow(pred_test), \(i) smart_integer_round(pred_test[i, ])) %>% colSums()
 smart_integer_round <- function(six_vals) {
   modif <- six_vals * 42 / sum(six_vals) + 10*.Machine$double.eps
   resid <- 42 - sum(round(modif))
@@ -48,11 +49,6 @@ prediction_correction <- function(preds) {
 }
 
 
-# sapply(1:nrow(pred_test), \(i) smart_integer_round(pred_test[i, ])) %>% colSums()
-df_rmse <- function(pred_df, Y_test_) {
-  return(sapply(1:nrow(Y_test_), \(i) my_rmse(pred_df[i, ], Y_test_[i, ])) %>% mean())
-}
-
 df_metric <- function(pred_df, Y_test_, func = my_rmse) {
   return(sapply(1:nrow(Y_test_), \(i) func(pred_df[i, ], Y_test_[i, ])) %>% mean())
 }
@@ -61,8 +57,6 @@ df_metric <- function(pred_df, Y_test_, func = my_rmse) {
 show_custom_metrics <- function(my_pred, case_name, Y_test_ = Y_test) {
   aRMSE_ <- df_metric(my_pred, Y_test_, my_rmse)
   aCosDist_ <- df_metric(my_pred, Y_test_, cosine_dist)
-  # aRMSE_ <- sapply(1:nrow(Y_test_), \(i) my_rmse(my_pred[i, ], Y_test_[i, ])) %>% mean()
-  # aCosDist_ <- sapply(1:nrow(Y_test_), \(i) cosine_dist(my_pred[i, ], Y_test_[i, ])) %>% mean()
   msg <- str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCosDist: {round(aCosDist_, 3)}")
   return(msg)
 }
@@ -130,24 +124,35 @@ prepare_psytest_dataset <- function(wide_data_, wide_data2_,
 
 MO -- multioutput
 ```{r}
-perform_stack_MO_regression <- function(model_class, print_msg = "", 
-                                        X_train_, Y_train_, X_test_, Y_test_,
-                                        print_metric = TRUE) {
+perform_MO_regression <- function(model_class, type = c("stack", "chain")) {
+  type <- match.arg(type)
+  pred <- if (type == "stack") {
+    perform_stack_MO_regression(model_class, X_train, Y_train, X_test, Y_test, print_metric = FALSE)
+  } else {
+    perform_chain_MO_regression(model_class, X_train, Y_train, X_test, Y_test, print_metric = FALSE)
+  }
+  return(pred)
+}
+
+
+perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_,
+                                        print_metric = FALSE, print_model_name = TRUE) {
+  if (print_model_name) message(paste0("Stack - ", model_class$classname))
   models <- vector("list", 6)
   for (col_i in 1:6) {
     models[[col_i]] <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i])
     # print(models[[col_i]]$rmse_test)
   }
   
-  ind_pred <- sapply(models, \(x) x$pred_test) %>% prediction_correction()
-  if (print_metric) print(show_custom_metrics(ind_pred, paste0(print_msg, " stack"), Y_test_ = Y_test_))
-  return(invisible(ind_pred))
+  stack_pred <- sapply(models, \(x) x$pred_test) %>% prediction_correction()
+  if (print_metric) print(show_custom_metrics(stack_pred, paste0(model_class$classname, " stack"), Y_test_ = Y_test_))
+  return(invisible(stack_pred))
 }
 
 
-perform_chain_MO_regression <- function(model_class, print_msg = "", 
-                                        X_train_, Y_train_, X_test_, Y_test_,
-                                        print_metric = TRUE) {
+perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_,
+                                        print_metric = FALSE, print_model_name = TRUE) {
+  if (print_model_name) message(paste0("Chain - ", model_class$classname))
   models <- vector("list", 6)
   
   cbind_X_train <- X_train_
@@ -165,7 +170,7 @@ perform_chain_MO_regression <- function(model_class, print_msg = "",
   }
   
   chain_pred <- sapply(models, \(x) x$pred_test) %>% prediction_correction()
-  if (print_metric) print(show_custom_metrics(chain_pred, paste0(print_msg, " Chained"), Y_test_ = Y_test_))
+  if (print_metric) print(show_custom_metrics(chain_pred, paste0(model_class$classname, " Chained"), Y_test_ = Y_test_))
   return(invisible(chain_pred))
 }
 ```
@@ -198,6 +203,24 @@ sd_train <- apply(X_train_unscaled, 2, sd, na.rm = TRUE)
 
 X_train <- scale(X_train_unscaled, center = mean_train, scale = sd_train)
 X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
+```
+
+valid
+```{r}
+split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.6, 0.4))
+
+.[X_train_unscaled, X_test_unscaled] <- list(features[split_idx, ], features[!split_idx, ])
+.[Y_train, Y_test] <- list(targets[split_idx, ], targets[!split_idx, ])
+
+mean_train <- apply(X_train_unscaled, 2, mean, na.rm = TRUE)
+sd_train <- apply(X_train_unscaled, 2, sd, na.rm = TRUE)
+
+X_train <- scale(X_train_unscaled, center = mean_train, scale = sd_train)
+X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
+
+nn <- round(nrow(X_test)/2)
+.[X_test, X_valid] <- list(X_test[1:nn, ], X_test[(nn+1):nrow(X_test), ])
+.[Y_test, Y_valid] <- list(Y_test[1:nn, ], Y_test[(nn+1):nrow(X_test), ])
 ```
 
 
@@ -282,7 +305,6 @@ res %>% rbindlist() %>% .[["test_rmse"]] %>% plot(main = "test_rmse")
 res %>% rbindlist() %>% .[["test_round_rmse"]] %>% plot(main = "test_round_rmse")
 ```
 15 раундов хватает.
-
 
 ```{r}
 my_XGBoost_model <- R6Class(
@@ -376,22 +398,38 @@ my_LightGBM_model <- R6Class(
 ```{r}
 models_df <- data.table(
   model = c(my_LightGBM_model, my_XGBoost_model, my_RandomForest_model),
-  name = c("LightGBM", "XGBoost","Random Forest")
+  name = c("LightGBM", "XGBoost", "Random Forest")
 )
 
-x <- models_df %>% 
+MO_res <- models_df %>% 
   copy() %>% 
-  .[, stack := map(model, \(mdl) perform_stack_MO_regression(mdl, name, X_train, Y_train, X_test, Y_test))] %>% 
-  .[, chain := map(model, \(mdl) perform_chain_MO_regression(mdl, name, X_train, Y_train, X_test, Y_test))] %>% 
-  .[, (c("stack_rmse", "chain_rmse")) := map(.SD, \(col) map(col, \(pred) df_metric(pred, Y_test, my_rmse))),
-    .SDcols = c("stack", "chain")] %>% 
-  .[, (c("stack_cos", "chain_cos")) := map(.SD, \(col) map(col, \(pred) df_metric(pred, Y_test, cosine_dist))),
-    .SDcols = c("stack", "chain")]
-
-x[1, rmse]
-# sapply(1:nrow(Y_test_), \(i) my_rmse(my_pred[i, ], Y_test_[i, ])) %>% mean()
+  .[, stack_pred := map(model, \(mdl) perform_MO_regression(mdl, "stack"))] %>% 
+  .[, chain_pred := map(model, \(mdl) perform_MO_regression(mdl, "chain"))] %>% 
+  .[, (c("stack_rmse", "chain_rmse")) := map(.SD, \(col) map_dbl(col, \(pred) df_metric(pred, Y_test, my_rmse))),
+    .SDcols = c("stack_pred", "chain_pred")] %>%
+  .[, (c("stack_cos", "chain_cos")) := map(.SD, \(col) map_dbl(col, \(pred) df_metric(pred, Y_test, cosine_dist))),
+    .SDcols = c("stack_pred", "chain_pred")]
 ```
 
+```{r}
+x <- MO_res %>% 
+  copy() %>% 
+  .[, .(name, stack_pred, id = 1)] %>% 
+  dcast(id ~ name, value.var = "stack_pred") %>% 
+  .[, id := NULL]
+
+
+code_res_1 <- x %>% 
+  copy() %>% 
+  .[, names(.SD) := lapply(.SD, \(col) col[[1]][, 1])] %>% 
+  unnest(cols = c(LightGBM, `Random Forest`, XGBoost)) %>% 
+  as.data.table() %>% 
+  .[, paste0(names(.SD), "_resid") := lapply(.SD, \(col) col - Y_test[, 1])]
+
+RF_resid_pred <- my_RandomForest_model$new(code_res_1, Y_test[, 1])
+RF_resid_pred$pred_train
+my_rmse(RF_resid_pred$pred_train, Y_test[, 1])
+```
 
 
 ### Cross Validation
