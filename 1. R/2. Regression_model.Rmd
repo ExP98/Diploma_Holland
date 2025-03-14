@@ -70,6 +70,75 @@ nn <- round(nrow(X_test)/2)
 ## Выбор предикторов
 Stepwise (back, forward), L2-regression
 
+```{r}
+library(glmnet)    # Для многомерной регрессии
+library(MASS)      # Для stepwise регрессии
+library(pls)       # Для многомерных методов
+
+
+### Метод 1: Многомерная пошаговая регрессия (отдельные модели для каждого таргета)
+stepwise_results <- list()
+for(target in colnames(Y_train)) {
+  full_model <- lm(y ~ ., data = data.frame(X_train, y = Y_train[, target]))
+  step_model <- stepAIC(full_model, direction = "both", trace = FALSE)
+  stepwise_results[[target]] <- step_model
+}
+
+stepw_pred <- sapply(stepwise_results, \(x) predict(x, data.frame(X_test))) %>% prediction_correction()
+show_custom_metrics(stepw_pred, "Stepwise", Y_test_ = Y_test)
+
+## то же самое
+# .[lm_ind_pred, lm_chain_pred] <- map(
+#   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+#   my_stepwise_lm_model, X_train, Y_train, X_test, Y_test, T, F
+# )
+```
+
+Признаки после выполнения пошаговой регрессии
+```{r}
+features_stepw <- sapply(1:6, \(i) stepwise_results[[i]]$model %>% colnames() %>% .[. != "y"])
+# reduce(features_stepw, union)
+```
+
+```{r}
+### Метод 2: Многомерная Ridge регрессия (L2-регуляризация)
+# Преобразование данных в матричный формат
+x <- as.matrix(X_train)
+y_mat <- as.matrix(Y_train)
+
+# Обучение модели с кросс-валидацией
+cv_ridge <- cv.glmnet(x, y_mat, family = "mgaussian", alpha = 0)
+ridge_model <- glmnet(x, y_mat, family = "mgaussian", alpha = 0, lambda = cv_ridge$lambda.min)
+
+# Прогноз и оценка
+ridge_pred <- predict(ridge_model, newx = as.matrix(X_test))[,,1]
+show_custom_metrics(ridge_pred, "Ridge Regression", Y_test_ = Y_test)
+```
+
+```{r}
+### Метод 3: Многомерная Lasso регрессия (L1-регуляризация)
+cv_lasso <- cv.glmnet(x, y_mat, family = "mgaussian", alpha = 1)
+lasso_model <- glmnet(x, y_mat, family = "mgaussian", alpha = 1, lambda = cv_lasso$lambda.min)
+
+lasso_pred <- predict(lasso_model, newx = as.matrix(X_test))[,,1]
+show_custom_metrics(lasso_pred, "Lasso Regression", Y_test_ = Y_test)
+```
+
+
+```{r}
+### Метод 4: Многомерный случайный лес
+rf_predictions <- matrix(0, nrow = nrow(X_test), ncol = ncol(Y_test))
+colnames(rf_predictions) <- colnames(Y_test)
+
+for(i in 1:ncol(Y_train)) {
+  df <- data.frame(X_train, y = Y_train[,i])
+  rf_model <- randomForest(y ~ ., data = df)
+  rf_predictions[,i] <- predict(rf_model, X_test)
+}
+
+show_custom_metrics(rf_predictions, "RF", Y_test_ = Y_test)
+```
+
 
 ## Несколько моделей сразу
 ```{r}
@@ -217,6 +286,14 @@ show_custom_metrics(lm_ind_pred, "lm")
 .[lm_ind_pred, lm_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_lm_model, X_train, Y_train, X_test, Y_test, T, F
+)
+```
+
+
+```{r}
+.[lm_ind_pred, lm_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_stepwise_lm_model, X_train, Y_train, X_test, Y_test, T, F
 )
 ```
 

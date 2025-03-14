@@ -421,6 +421,20 @@ my_lm_model <- R6Class(
 )
 
 
+my_stepwise_lm_model <- R6Class(
+  classname = "my_stepwise_lm_model",
+  inherit = my_lm_model,
+  
+  private = list(
+    fit = function(X_train_, y_train_) {
+      just_lm  <- lm(target ~ ., data = data.frame(X_train_, target = y_train_))
+      self$model <- stepAIC(just_lm, direction = "both", trace = FALSE)
+      return(invisible(self))
+    }
+  )
+)
+
+
 # 3.7 my_Catboost_model                                          ####
 my_Catboost_model <- R6Class(
   classname = "my_Catboost_model",
