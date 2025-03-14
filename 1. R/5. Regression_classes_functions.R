@@ -16,9 +16,9 @@ library(catboost)
 # 2. Функции                                                     ####
 # 2.1 Метрики, функции потерь, корректировка предсказания        ####
 
-my_rmse <- \(y1, y2) sqrt(sum((y1 - y2)^2) / length(y1))
-cosine_sim <- \(y1, y2) (sum(y1 * y2)) / (sqrt(sum(y1 ^ 2)) * sqrt(sum(y2 ^ 2)))
-cosine_dist <- \(y1, y2) sqrt(2 * (1 - cosine_sim(y1, y2)))
+my_rmse     <- function(y1, y2) sqrt(sum((y1 - y2)^2) / length(y1))
+cosine_sim  <- function(y1, y2) (sum(y1 * y2)) / (sqrt(sum(y1 ^ 2)) * sqrt(sum(y2 ^ 2)))
+cosine_dist <- function(y1, y2) sqrt(2 * (1 - cosine_sim(y1, y2)))
 
 ## C-индекс: C = 3(X1, Y1) + 2(X2, Y2) + 1(X3, Y3), где
 ##   (Xi, Yi) = 3 (Xi == Yi); 2 (Xi, Yi -- соседи); 1 (Xi, Yi -- через 1 позицию); 0 (противоположные)
@@ -39,6 +39,9 @@ calc_C_index <- function(row1, row2) {
     calc_pair_match(r1[3], r2[3]) * 1
   return(C_index)
 }
+
+# чтобы минимильное значение было лучшим (ибо чем больше С-индекс, тем предсказание точнее)
+c_index_dist <- \(row1, row2) 18 - calc_C_index(row1, row2)
 
 
 # sapply(1:nrow(pred_test), \(i) smart_integer_round(pred_test[i, ])) %>% colSums()
@@ -140,26 +143,28 @@ prepare_psytest_dataset <- function(wide_data_, wide_data2_,
 }
 
 
-check_k_pca_for_model <- function(k, model, X_train_, X_test_) {
+check_k_pca_for_model <- function(k, model, X_train_, X_test_, metric_f = my_rmse) {
   X_train_pca <- pca_scaler(X_train_, pca_model, k)
   X_test_pca  <- pca_scaler(X_test_,  pca_model, k)
   
-  tmp_preds <- perform_stack_MO_regression(model, print_msg = "RF", X_train_pca, Y_train,
-                                           X_test_pca, Y_test, print_metric = FALSE)
+  tmp_preds <- perform_stack_MO_regression(model, X_train_pca, Y_train, X_test_pca, Y_test, 
+                                           print_metric = FALSE, print_model_name = FALSE)
   
-  aRMSE_ <- sapply(1:nrow(Y_test), \(i) my_rmse(tmp_preds[i, ], Y_test[i, ])) %>% mean()
-  return(c(k = k, aRMSE = aRMSE_))
+  avg_metric <- df_metric(tmp_preds, Y_test, func = metric_f)
+  return(c(k = k, avg_metric = avg_metric))
 }
 
 
-get_k_PCA_model_table <- function(model, by = 5, X_train_ = X_train, X_test_ = X_test, plot_b = TRUE) {
+get_k_PCA_model_table <- function(model, by = 5, X_train_ = X_train, X_test_ = X_test, 
+                                  plot_b = TRUE, metric_f = my_rmse) {
+  
   res_k_model <- sapply(seq(2, ncol(X_train_), by = by), 
                         check_k_pca_for_model, 
-                        model = model, X_train_ = X_train_, X_test_ = X_test_) %>% 
+                        model = model, X_train_ = X_train_, X_test_ = X_test_, metric_f = metric_f) %>% 
     t() %>% 
     as.data.table()
   
-  if (plot_b) plot_ly(res_k_model, x = ~k, y = ~aRMSE, type = 'scatter', mode = 'lines+markers') %>% show()
+  if (plot_b) plot_ly(res_k_model, x = ~k, y = ~avg_metric, type = 'scatter', mode = 'lines+markers') %>% show()
   return(res_k_model)
 }
 
@@ -217,7 +222,7 @@ perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_
 
 
 # 3. R6-Классы моделей                                           ####
-
+# 3.1 my_template_model                                          ####
 my_template_model <- R6Class(
   classname = "my_template_model",
   public = list(
@@ -263,6 +268,7 @@ my_template_model <- R6Class(
 )
 
 
+# 3.2 my_XGBoost_model                                          ####
 my_XGBoost_model <- R6Class(
   classname = "my_XGBoost_model",
   inherit = my_template_model,
@@ -284,6 +290,7 @@ my_XGBoost_model <- R6Class(
 )
 
 
+# 3.3 my_LightGBM_model                                          ####
 my_LightGBM_model <- R6Class(
   classname = "my_LightGBM_model",
   inherit = my_template_model,
@@ -320,6 +327,7 @@ my_LightGBM_model <- R6Class(
 )
 
 
+# 3.4 my_LightGBM_CV_model                                          ####
 my_LightGBM_CV_model <- R6Class(
   classname = "my_LightGBM_CV_model",
   inherit = my_template_model,
@@ -362,6 +370,7 @@ my_LightGBM_CV_model <- R6Class(
 )
 
 
+# 3.5 my_RandomForest_model                                          ####
 my_RandomForest_model <- R6Class(
   classname = "my_RandomForest_model",
   inherit = my_template_model,
@@ -383,6 +392,7 @@ my_RandomForest_model <- R6Class(
 )
 
 
+# 3.6 my_lm_model                                          ####
 my_lm_model <- R6Class(
   classname = "my_lm_model",
   inherit = my_template_model,
@@ -411,6 +421,7 @@ my_lm_model <- R6Class(
 )
 
 
+# 3.7 my_Catboost_model                                          ####
 my_Catboost_model <- R6Class(
   classname = "my_Catboost_model",
   inherit = my_template_model,
@@ -447,6 +458,3 @@ my_Catboost_model <- R6Class(
     }
   )
 )
-
-
-

@@ -12,7 +12,7 @@ library(arrow)
 
 set.seed(42)
 source(paste0(here::here(), "/1. R/4. Data_preparation.R"))
-source(paste0(here::here(), "/1. R/5. Re"))
+source(paste0(here::here(), "/1. R/5. Regression_classes_functions.R"))
 ```
 
 
@@ -66,72 +66,12 @@ nn <- round(nrow(X_test)/2)
 
 # 3. Модель
 
-## 3.1 Константный предсказатель
-```{r}
-# const_pred <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
-const_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test))
-show_custom_metrics(const_pred, "Константное")
-```
 
-
-## 3.2 XGBoost
-
-### Число раундов
-Как выглядит модель, сколько раундов требуется:
-```{r}
-ii <- 1
-
-res <- vector("list", 20)
-for (i in 1:20) {
-  xgb_model <- xgboost(data = X_train, label = Y_train[, ii],
-                       nrounds = i, objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
-  
-  pred_y <- predict(xgb_model, X_test)
-  res[[i]] <- data.frame(
-    nrounds = i,
-    test_rmse = my_rmse(Y_test[, ii], pred_y),
-    test_round_rmse = my_rmse(Y_test[, ii], pred_y %>% round())
-  )
-}
-
-res %>% rbindlist() %>% .[["test_rmse"]] %>% plot(main = "test_rmse")
-res %>% rbindlist() %>% .[["test_round_rmse"]] %>% plot(main = "test_round_rmse")
-```
-15 раундов хватает.
-
-```{r}
-.[xgb_ind_pred, xgb_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test
-)
-
-# perform_stack_MO_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
-# perform_chain_MO_regression(my_XGBoost_model, "XGBoost", X_train, Y_train, X_test, Y_test)
-```
-
-```{r}
-lapply(xgb_ind_pred, \(x) x$calc_importance())
-```
-Для XGBoost (и позже для Random Forest) самая важная фича -- CT_1 (открытость-замкнутость)
-
-Порядок предсказания может иметь значение!
-
-
-## 3.3 LightGBM
-
-```{r}
-.[lgbm_ind_pred, lgbm_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_LightGBM_model, "LightGBM", X_train, Y_train, X_test, Y_test
-)
-```
-
-
-# Выбор предикторов
+## Выбор предикторов
 Stepwise (back, forward), L2-regression
 
 
-# Несколько моделей сразу
+## Несколько моделей сразу
 ```{r}
 models_df <- data.table(
   model = c(my_LightGBM_model, my_XGBoost_model, my_RandomForest_model),
@@ -171,6 +111,74 @@ RF_resid_pred <- my_RandomForest_model$new(code_res_1, Y_test[, 1])
 RF_resid_pred$pred_train
 my_rmse(RF_resid_pred$pred_train, Y_test[, 1])
 ```
+Возможно, стоит просто собрать все фичи + ответы всех алгоримтов по первому (2му, 3му, 4му...) коду, обучить на этом очередной алгоритм.
+
+
+## 3.1 Константный предсказатель
+```{r}
+# const_pred <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
+const_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test))
+show_custom_metrics(const_pred, "Константное")
+```
+
+
+## 3.2 XGBoost
+
+### Число раундов
+Как выглядит модель, сколько раундов требуется:
+```{r}
+ii <- 1
+
+res <- vector("list", 20)
+for (i in 1:20) {
+  xgb_model <- xgboost(data = X_train, label = Y_train[, ii],
+                       nrounds = i, objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
+  
+  pred_y <- predict(xgb_model, X_test)
+  res[[i]] <- data.frame(
+    nrounds = i,
+    test_rmse = my_rmse(Y_test[, ii], pred_y),
+    test_round_rmse = my_rmse(Y_test[, ii], pred_y %>% round())
+  )
+}
+
+res %>% rbindlist() %>% .[["test_rmse"]] %>% plot(main = "test_rmse")
+res %>% rbindlist() %>% .[["test_round_rmse"]] %>% plot(main = "test_round_rmse")
+```
+15 раундов хватает.
+
+```{r}
+perform_stack_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test)
+```
+
+
+
+```{r}
+.[xgb_ind_pred, xgb_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_XGBoost_model, X_train, Y_train, X_test, Y_test, T, F
+)
+
+# perform_stack_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test, T, F)
+# perform_chain_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test, T, F)
+```
+
+```{r}
+lapply(xgb_ind_pred, \(x) x$calc_importance())
+```
+Для XGBoost (и позже для Random Forest) самая важная фича -- CT_1 (открытость-замкнутость)
+
+Порядок предсказания может иметь значение!
+
+
+## 3.3 LightGBM
+
+```{r}
+.[lgbm_ind_pred, lgbm_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_LightGBM_model, X_train, Y_train, X_test, Y_test, T, F
+)
+```
 
 
 ### Cross Validation
@@ -178,7 +186,7 @@ my_rmse(RF_resid_pred$pred_train, Y_test[, 1])
 ```{r}
 .[lgbm_cv_ind_pred, lgbm_cv_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_LightGBM_CV_model, "LightGBM CV", X_train, Y_train, X_test, Y_test
+  my_LightGBM_CV_model, X_train, Y_train, X_test, Y_test, T, F
 )
 ```
 
@@ -188,7 +196,7 @@ my_rmse(RF_resid_pred$pred_train, Y_test[, 1])
 ```{r}
 .[rf_ind_pred, rf_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, "Random Forest", X_train, Y_train, X_test, Y_test
+  my_RandomForest_model, X_train, Y_train, X_test, Y_test, T, F
 )
 ```
 
@@ -208,7 +216,7 @@ show_custom_metrics(lm_ind_pred, "lm")
 ```{r}
 .[lm_ind_pred, lm_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_lm_model, "lm", X_train, Y_train, X_test, Y_test
+  my_lm_model, X_train, Y_train, X_test, Y_test, T, F
 )
 ```
 
@@ -218,7 +226,7 @@ show_custom_metrics(lm_ind_pred, "lm")
 ```{r}
 .[catb_ind_pred, catb_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, "CatBoost", X_train %>% apply(2, as.double), Y_train, X_test %>% apply(2, as.double), Y_test
+  my_Catboost_model, X_train %>% apply(2, as.double), Y_train, X_test %>% apply(2, as.double), Y_test, T, F
 )
 ```
 
@@ -247,19 +255,19 @@ plot(pca_model$sdev^2 / sum(pca_model$sdev^2),
 
 Зависимость k (~PCA) и результатов lm:
 ```{r}
-res_k_lm <- get_k_PCA_model_table(my_lm_model, 1)
+res_k_lm <- get_k_PCA_model_table(my_lm_model, by = 1, metric_f = c_index_dist)
 ```
 
 
 ```{r}
-best_k <- res_k_lm[aRMSE == min(aRMSE), k]
+best_k <- res_k_lm[avg_metric == min(avg_metric), k]
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[lm_pca_ind_pred, lm_pca_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_lm_model, "lm + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+  my_lm_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
 )
 ```
 
@@ -269,19 +277,20 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 Подбор лучшего k для PCA + Random Forest
 
 ```{r}
-res_k_rf <- get_k_PCA_model_table(my_RandomForest_model, 5)
+# res_k_rf <- get_k_PCA_model_table(my_RandomForest_model, by = 5, metric_f = c_index_dist)
+res_k_rf <- get_k_PCA_model_table(my_RandomForest_model, by = 5, metric_f = my_rmse)
 ```
 
-k = 27
+k = 27 (rmse), 17 (C-ind)
 ```{r}
-best_k <- res_k_rf[aRMSE == min(aRMSE), k]
+best_k <- res_k_rf[avg_metric == min(avg_metric), k]
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[rf_pca_ind_pred, rf_pca_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, "Random Forest + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+  my_RandomForest_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
 )
 ```
 
@@ -289,19 +298,19 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 ## 4.3 XGBoost
 
 ```{r}
-res_k_xgb <- get_k_PCA_model_table(my_XGBoost_model, 2)
+res_k_xgb <- get_k_PCA_model_table(my_XGBoost_model, by = 2, metric_f = c_index_dist)
 ```
 
-k = 26
+k = 26 (rmse); 40 (C-index)
 ```{r}
-best_k <- res_k_xgb[aRMSE == min(aRMSE), k]
+best_k <- res_k_xgb[avg_metric == min(avg_metric), k]
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[xgb_pca_ind_pred, xgb_pca_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_XGBoost_model, "XGBoost + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+  my_XGBoost_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
 )
 ```
 
@@ -309,19 +318,19 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 ## 4.4 Catboost
 
 ```{r}
-res_k_catb <- get_k_PCA_model_table(my_Catboost_model, 4)
+res_k_catb <- get_k_PCA_model_table(my_Catboost_model, by = 4, metric_f = c_index_dist)
 ```
 
-k = 30
+k = 30 (rmse); 22 (C-index)
 ```{r}
-best_k <- res_k_catb[aRMSE == min(aRMSE), k]
+best_k <- res_k_catb[avg_metric == min(avg_metric), k]
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[catb_pca_ind_pred, catb_pca_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, "Catboost + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+  my_Catboost_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
 )
 ```
 
@@ -329,19 +338,19 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 ## 4.5 LightGBM
 
 ```{r}
-res_k_lgb <- get_k_PCA_model_table(my_LightGBM_model, 3)
+res_k_lgb <- get_k_PCA_model_table(my_LightGBM_model, by = 3, metric_f = c_index_dist)
 ```
 
-k = 11
+k = 11 (rmse); 8 (C-index)
 ```{r}
-best_k <- res_k_lgb[aRMSE == min(aRMSE), k]
+best_k <- res_k_lgb[avg_metric == min(avg_metric), k]
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[lgb_pca_ind_pred, lgb_pca_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_LightGBM_model, "LightGBM + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+  my_LightGBM_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
 )
 ```
 
@@ -349,19 +358,19 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 ## 4.6 LightGBM CV
 
 ```{r}
-res_k_lgb_cv <- get_k_PCA_model_table(my_LightGBM_CV_model, 3)
+res_k_lgb_cv <- get_k_PCA_model_table(my_LightGBM_CV_model, by = 3, metric_f = c_index_dist)
 ```
 
-k = 11
+k = 11 (rmse); 17 (C-index)
 ```{r}
-best_k <- res_k_lgb_cv[aRMSE == min(aRMSE), k]
+best_k <- res_k_lgb_cv[avg_metric == min(avg_metric), k]
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
 .[lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_LightGBM_CV_model, "LightGBM CV + PCA", X_train_pca, Y_train, X_test_pca, Y_test
+  my_LightGBM_CV_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
 )
 ```
 
@@ -491,7 +500,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "BF")
 
 .[BF_catb_ind, BF_catb_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, "BF - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -505,7 +514,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "EY")
 
 .[EY_catb_ind, EY_catb_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, "EY - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -520,7 +529,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "CT")
 
 .[CT_catb_ind, CT_catb_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, "CT - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -534,7 +543,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "LN")
 
 .[LN_catb_ind, LN_catb_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, "LN - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -548,7 +557,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "SC")
 
 .[SC_catb_ind, SC_catb_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, "SC - CatBoost", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -582,7 +591,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "BF")
 
 .[BF_rf_ind, BF_rf_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, "BF - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -596,7 +605,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "EY")
 
 .[EY_rf_ind, EY_rf_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, "EY - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -611,7 +620,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "CT")
 
 .[CT_rf_ind, CT_rf_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, "CT - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -625,7 +634,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "LN")
 
 .[LN_rf_ind, LN_rf_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, "LN - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -639,7 +648,7 @@ df <- prepare_psytest_dataset(wide_data, wide_data2, "SC")
 
 .[SC_rf_ind, SC_rf_chain] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, "SC - Random Forest", df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]]
+  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
 )
 
 rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
@@ -670,10 +679,10 @@ scalar_matrix_production(w_vec = w3, models_pred) %>%
 
 Перечислим все модели:
 ```{r}
-one_test_model_map <- function(model, model_label, df_ = df) {
+one_test_model_map <- function(model, df_ = df) {
   x <- map(
     list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-    model, model_label, df_[["X_train"]], df_[["Y_train"]], df_[["X_test"]], df_[["Y_test"]]
+    model, df_[["X_train"]], df_[["Y_train"]], df_[["X_test"]], df_[["Y_test"]], T, F
   )
 }
 
@@ -694,10 +703,25 @@ class_models <- data.table(
 
 c("BF", "EY", "CT", "LN", "SC")
 ```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "LN", use_PCA_b = T)
-x <- map2(class_models$models, class_models$labels, one_test_model_map, df_ = df)
-show_constant_pred_metric(df)
+sink("model_log.txt", append = TRUE, split = TRUE)
+
+models_by_tests <- NULL
+
+for (test_lbl in c("BF", "EY", "CT", "LN", "SC")) {
+  cat(test_lbl, "\n")
+  for (pca_b in c(TRUE, FALSE)) {
+    cat("PCA: ", pca_b, "\n")
+    df <- prepare_psytest_dataset(wide_data, wide_data2, test_lbl, use_PCA_b = pca_b)
+    models_by_tests[[test_lbl]][[pca_b]] <- map(class_models$models, one_test_model_map, df_ = df)
+    show_constant_pred_metric(df)
+    cat("---\n")
+  }
+  cat("\n\n")
+}
+
+sink()
 ```
+
 
 ---
 
