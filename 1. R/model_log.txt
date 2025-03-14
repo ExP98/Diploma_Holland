@@ -1,0 +1,165 @@
+BF 
+PCA 
+Train: 552 rows; test: 339 rows (38.05%).
+my_XGBoost_model stack. aRMSE: 2.352; aCosDist: 0.321; aCindex: 9.369
+my_XGBoost_model Chained. aRMSE: 2.447; aCosDist: 0.333; aCindex: 9.124
+my_LightGBM_model stack. aRMSE: 2.205; aCosDist: 0.301; aCindex: 9.817
+my_LightGBM_model Chained. aRMSE: 2.241; aCosDist: 0.306; aCindex: 9.799
+my_LightGBM_CV_model stack. aRMSE: 2.2; aCosDist: 0.3; aCindex: 10.109
+my_LightGBM_CV_model Chained. aRMSE: 2.211; aCosDist: 0.301; aCindex: 10.147
+my_RandomForest_model stack. aRMSE: 2.243; aCosDist: 0.306; aCindex: 9.448
+my_RandomForest_model Chained. aRMSE: 2.231; aCosDist: 0.304; aCindex: 9.142
+my_lm_model stack. aRMSE: 2.175; aCosDist: 0.296; aCindex: 9.705
+my_lm_model Chained. aRMSE: 2.175; aCosDist: 0.296; aCindex: 9.705
+my_Catboost_model stack. aRMSE: 2.196; aCosDist: 0.299; aCindex: 9.673
+my_Catboost_model Chained. aRMSE: 2.192; aCosDist: 0.299; aCindex: 9.717
+
+no PCA 
+Train: 552 rows; test: 339 rows (38.05%).
+my_XGBoost_model stack. aRMSE: 2.42; aCosDist: 0.33; aCindex: 8.811
+my_XGBoost_model Chained. aRMSE: 2.408; aCosDist: 0.328; aCindex: 9.528
+my_LightGBM_model stack. aRMSE: 2.22; aCosDist: 0.303; aCindex: 9.72
+my_LightGBM_model Chained. aRMSE: 2.212; aCosDist: 0.302; aCindex: 9.764
+my_LightGBM_CV_model stack. aRMSE: 2.224; aCosDist: 0.303; aCindex: 9.702
+my_LightGBM_CV_model Chained. aRMSE: 2.237; aCosDist: 0.305; aCindex: 9.649
+my_RandomForest_model stack. aRMSE: 2.238; aCosDist: 0.305; aCindex: 9.44
+my_RandomForest_model Chained. aRMSE: 2.257; aCosDist: 0.308; aCindex: 9.422
+my_lm_model stack. aRMSE: 2.178; aCosDist: 0.297; aCindex: 9.625
+my_lm_model Chained. aRMSE: 2.178; aCosDist: 0.297; aCindex: 9.625
+my_Catboost_model stack. aRMSE: 2.205; aCosDist: 0.301; aCindex: 9.619
+my_Catboost_model Chained. aRMSE: 2.203; aCosDist: 0.3; aCindex: 9.729
+
+
+
+EY 
+PCA 
+Train: 861 rows; test: 339 rows (28.25%).
+my_XGBoost_model stack. aRMSE: 2.307; aCosDist: 0.314; aCindex: 9.133
+my_XGBoost_model Chained. aRMSE: 2.361; aCosDist: 0.322; aCindex: 9.162
+my_LightGBM_model stack. aRMSE: 2.223; aCosDist: 0.303; aCindex: 9.799
+my_LightGBM_model Chained. aRMSE: 2.24; aCosDist: 0.306; aCindex: 9.549
+my_LightGBM_CV_model stack. aRMSE: 2.229; aCosDist: 0.304; aCindex: 9.976
+my_LightGBM_CV_model Chained. aRMSE: 2.25; aCosDist: 0.307; aCindex: 9.584
+my_RandomForest_model stack. aRMSE: 2.254; aCosDist: 0.307; aCindex: 9.472
+my_RandomForest_model Chained. aRMSE: 2.272; aCosDist: 0.31; aCindex: 9.77
+my_lm_model stack. aRMSE: 2.195; aCosDist: 0.299; aCindex: 9.832
+my_lm_model Chained. aRMSE: 2.195; aCosDist: 0.299; aCindex: 9.832
+my_Catboost_model stack. aRMSE: 2.214; aCosDist: 0.302; aCindex: 9.799
+my_Catboost_model Chained. aRMSE: 2.209; aCosDist: 0.301; aCindex: 9.791
+
+no PCA 
+Train: 861 rows; test: 339 rows (28.25%).
+my_XGBoost_model stack. aRMSE: 2.299; aCosDist: NaN; aCindex: 9.673
+my_XGBoost_model Chained. aRMSE: 2.429; aCosDist: 0.331; aCindex: 9.643
+my_LightGBM_model stack. aRMSE: 2.206; aCosDist: 0.301; aCindex: 9.87
+my_LightGBM_model Chained. aRMSE: 2.233; aCosDist: 0.304; aCindex: 9.944
+my_LightGBM_CV_model stack. aRMSE: 2.222; aCosDist: 0.303; aCindex: 9.965
+my_LightGBM_CV_model Chained. aRMSE: 2.238; aCosDist: 0.305; aCindex: 9.628
+my_RandomForest_model stack. aRMSE: 2.241; aCosDist: 0.306; aCindex: 9.678
+my_RandomForest_model Chained. aRMSE: 2.254; aCosDist: 0.307; aCindex: 9.602
+my_lm_model stack. aRMSE: 2.196; aCosDist: 0.299; aCindex: 9.513
+my_lm_model Chained. aRMSE: 2.196; aCosDist: 0.299; aCindex: 9.513
+my_Catboost_model stack. aRMSE: 2.203; aCosDist: 0.3; aCindex: 9.82
+my_Catboost_model Chained. aRMSE: 2.21; aCosDist: 0.301; aCindex: 9.451
+
+
+
+CT 
+PCA 
+Train: 654 rows; test: 339 rows (34.14%).
+my_XGBoost_model stack. aRMSE: 2.257; aCosDist: 0.307; aCindex: 9.634
+my_XGBoost_model Chained. aRMSE: 2.295; aCosDist: 0.312; aCindex: 9.776
+my_LightGBM_model stack. aRMSE: 2.125; aCosDist: 0.289; aCindex: 9.844
+my_LightGBM_model Chained. aRMSE: 2.149; aCosDist: 0.293; aCindex: 10.221
+my_LightGBM_CV_model stack. aRMSE: 2.152; aCosDist: 0.293; aCindex: 9.864
+my_LightGBM_CV_model Chained. aRMSE: 2.146; aCosDist: 0.292; aCindex: 9.912
+my_RandomForest_model stack. aRMSE: 2.136; aCosDist: 0.291; aCindex: 9.817
+my_RandomForest_model Chained. aRMSE: 2.137; aCosDist: 0.291; aCindex: 10.015
+my_lm_model stack. aRMSE: 2.077; aCosDist: 0.283; aCindex: 10.059
+my_lm_model Chained. aRMSE: 2.077; aCosDist: 0.283; aCindex: 10.059
+my_Catboost_model stack. aRMSE: 2.124; aCosDist: 0.289; aCindex: 9.835
+my_Catboost_model Chained. aRMSE: 2.129; aCosDist: 0.29; aCindex: 10.33
+
+no PCA 
+Train: 654 rows; test: 339 rows (34.14%).
+my_XGBoost_model stack. aRMSE: 2.178; aCosDist: 0.296; aCindex: 9.658
+my_XGBoost_model Chained. aRMSE: 2.264; aCosDist: 0.308; aCindex: 9.587
+my_LightGBM_model stack. aRMSE: 2.127; aCosDist: 0.29; aCindex: 10.239
+my_LightGBM_model Chained. aRMSE: 2.118; aCosDist: 0.288; aCindex: 10.265
+my_LightGBM_CV_model stack. aRMSE: 2.129; aCosDist: 0.29; aCindex: 10.029
+my_LightGBM_CV_model Chained. aRMSE: 2.106; aCosDist: 0.287; aCindex: 10.215
+my_RandomForest_model stack. aRMSE: 2.109; aCosDist: 0.287; aCindex: 9.785
+my_RandomForest_model Chained. aRMSE: 2.101; aCosDist: 0.286; aCindex: 10.212
+my_lm_model stack. aRMSE: 2.076; aCosDist: 0.282; aCindex: 9.965
+my_lm_model Chained. aRMSE: 2.076; aCosDist: 0.282; aCindex: 9.965
+my_Catboost_model stack. aRMSE: 2.089; aCosDist: 0.284; aCindex: 9.929
+my_Catboost_model Chained. aRMSE: 2.109; aCosDist: 0.287; aCindex: 10.112
+
+
+
+LN 
+PCA 
+Train: 659 rows; test: 339 rows (33.97%).
+my_XGBoost_model stack. aRMSE: 2.31; aCosDist: 0.315; aCindex: 9.369
+my_XGBoost_model Chained. aRMSE: 2.362; aCosDist: 0.322; aCindex: 9.569
+my_LightGBM_model stack. aRMSE: 2.207; aCosDist: 0.301; aCindex: 9.614
+my_LightGBM_model Chained. aRMSE: 2.211; aCosDist: 0.301; aCindex: 9.425
+my_LightGBM_CV_model stack. aRMSE: 2.225; aCosDist: 0.303; aCindex: 9.504
+my_LightGBM_CV_model Chained. aRMSE: 2.213; aCosDist: 0.302; aCindex: 9.599
+my_RandomForest_model stack. aRMSE: 2.202; aCosDist: 0.3; aCindex: 9.832
+my_RandomForest_model Chained. aRMSE: 2.243; aCosDist: 0.306; aCindex: 9.242
+my_lm_model stack. aRMSE: 2.169; aCosDist: 0.295; aCindex: 9.903
+my_lm_model Chained. aRMSE: 2.169; aCosDist: 0.295; aCindex: 9.903
+my_Catboost_model stack. aRMSE: 2.176; aCosDist: 0.296; aCindex: 9.634
+my_Catboost_model Chained. aRMSE: 2.186; aCosDist: 0.298; aCindex: 9.434
+
+no PCA 
+Train: 659 rows; test: 339 rows (33.97%).
+my_XGBoost_model stack. aRMSE: 2.335; aCosDist: 0.318; aCindex: 9.145
+my_XGBoost_model Chained. aRMSE: 2.386; aCosDist: 0.325; aCindex: 9.257
+my_LightGBM_model stack. aRMSE: 2.178; aCosDist: 0.297; aCindex: 9.838
+my_LightGBM_model Chained. aRMSE: 2.217; aCosDist: 0.302; aCindex: 9.687
+my_LightGBM_CV_model stack. aRMSE: 2.212; aCosDist: 0.302; aCindex: 9.808
+my_LightGBM_CV_model Chained. aRMSE: 2.204; aCosDist: 0.3; aCindex: 9.962
+my_RandomForest_model stack. aRMSE: 2.186; aCosDist: 0.298; aCindex: 9.448
+my_RandomForest_model Chained. aRMSE: 2.21; aCosDist: 0.301; aCindex: 9.563
+my_lm_model stack. aRMSE: 2.182; aCosDist: 0.297; aCindex: 9.673
+my_lm_model Chained. aRMSE: 2.182; aCosDist: 0.297; aCindex: 9.673
+my_Catboost_model stack. aRMSE: 2.149; aCosDist: 0.293; aCindex: 10.15
+my_Catboost_model Chained. aRMSE: 2.18; aCosDist: 0.297; aCindex: 9.965
+
+
+
+SC 
+PCA 
+Train: 408 rows; test: 339 rows (45.38%).
+my_XGBoost_model stack. aRMSE: 2.35; aCosDist: 0.32; aCindex: 9.44
+my_XGBoost_model Chained. aRMSE: 2.448; aCosDist: 0.333; aCindex: 9.463
+my_LightGBM_model stack. aRMSE: 2.217; aCosDist: 0.302; aCindex: 9.752
+my_LightGBM_model Chained. aRMSE: 2.216; aCosDist: 0.302; aCindex: 9.655
+my_LightGBM_CV_model stack. aRMSE: 2.21; aCosDist: 0.301; aCindex: 9.894
+my_LightGBM_CV_model Chained. aRMSE: 2.202; aCosDist: 0.3; aCindex: 10.041
+my_RandomForest_model stack. aRMSE: 2.216; aCosDist: 0.302; aCindex: 9.478
+my_RandomForest_model Chained. aRMSE: 2.263; aCosDist: 0.308; aCindex: 9.59
+my_lm_model stack. aRMSE: 2.18; aCosDist: 0.297; aCindex: 9.994
+my_lm_model Chained. aRMSE: 2.18; aCosDist: 0.297; aCindex: 9.994
+my_Catboost_model stack. aRMSE: 2.207; aCosDist: 0.301; aCindex: 9.737
+my_Catboost_model Chained. aRMSE: 2.199; aCosDist: 0.3; aCindex: 9.693
+
+no PCA 
+Train: 408 rows; test: 339 rows (45.38%).
+my_XGBoost_model stack. aRMSE: 2.364; aCosDist: 0.322; aCindex: 9.484
+my_XGBoost_model Chained. aRMSE: 2.426; aCosDist: 0.33; aCindex: 9.658
+my_LightGBM_model stack. aRMSE: 2.236; aCosDist: 0.305; aCindex: 9.826
+my_LightGBM_model Chained. aRMSE: 2.229; aCosDist: 0.304; aCindex: 9.581
+my_LightGBM_CV_model stack. aRMSE: 2.219; aCosDist: 0.303; aCindex: 10.115
+my_LightGBM_CV_model Chained. aRMSE: 2.243; aCosDist: 0.306; aCindex: 9.808
+my_RandomForest_model stack. aRMSE: 2.207; aCosDist: 0.301; aCindex: 9.861
+my_RandomForest_model Chained. aRMSE: 2.25; aCosDist: 0.307; aCindex: 9.451
+my_lm_model stack. aRMSE: 2.184; aCosDist: 0.298; aCindex: 9.853
+my_lm_model Chained. aRMSE: 2.184; aCosDist: 0.298; aCindex: 9.853
+my_Catboost_model stack. aRMSE: 2.192; aCosDist: 0.299; aCindex: 9.44
+my_Catboost_model Chained. aRMSE: 2.199; aCosDist: 0.3; aCindex: 9.805
+
+
+

@@ -699,6 +699,12 @@ class_models <- data.table(
   models = list(my_XGBoost_model, my_LightGBM_model, my_LightGBM_CV_model, my_RandomForest_model, my_lm_model, my_Catboost_model),
   labels = list("XGBoost", "LightGBM", "LightGBM CV", "Random Forest", "lm", "CatBoost")
 )
+
+
+# class_models2 <- data.table(
+#   models = list(my_lm_model),
+#   labels = list("lm")
+# )
 ```
 
 c("BF", "EY", "CT", "LN", "SC")
@@ -710,11 +716,13 @@ models_by_tests <- NULL
 for (test_lbl in c("BF", "EY", "CT", "LN", "SC")) {
   cat(test_lbl, "\n")
   for (pca_b in c(TRUE, FALSE)) {
-    cat("PCA: ", pca_b, "\n")
+    pca_lbl <- if (pca_b) "PCA" else "no PCA"
+    
+    cat(pca_lbl, "\n")
     df <- prepare_psytest_dataset(wide_data, wide_data2, test_lbl, use_PCA_b = pca_b)
-    models_by_tests[[test_lbl]][[pca_b]] <- map(class_models$models, one_test_model_map, df_ = df)
+    models_by_tests[[test_lbl]][[pca_lbl]] <- map(class_models$models, one_test_model_map, df_ = df)
     show_constant_pred_metric(df)
-    cat("---\n")
+    cat("\n")
   }
   cat("\n\n")
 }
