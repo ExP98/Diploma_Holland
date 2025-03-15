@@ -868,7 +868,6 @@ scalar_matrix_production(w_vec = w3, models_pred2) %>%
 ```
 
 
-
 # 6. Multilabel classification
 
 ```{r}
@@ -896,6 +895,13 @@ Y_pred <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
 
 # Случайные предсказания
 Y_rand <- replicate(n = nrow(Y_b_test), sample(c(rep(TRUE, 3), rep(FALSE, 3)), size = 6)) %>% t()
+```
+
+
+C-index. Результат аналогичен RF regr (что логично и ожидаемо).
+```{r}
+classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
+df_metric(classif_ind_pred, Y_test, func = calc_C_index)
 ```
 
 
@@ -1023,66 +1029,6 @@ jaccard_score(Y_b_test, Y_rand) # 0.3367647
 ```
 
 
-```{r}
-library(mlr3verse)
-library(mlr3spatial)
-
-# Создание dataframe
-n_target <- 6
-full_data <- cbind(features, targets_bool) %>% as.data.table()
-
-target_labels <- paste0("Label_", 1:n_target)
-colnames(full_data)[(ncol(full_data)-6+1):ncol(full_data)] <- target_labels
-
-# getTaskData(yeast.task)
-
-# task <- mlr3::as_task_classif(x = full_data, target = target_labels)
-
-# Создание multilabel задачи
-task <- as_task_classif_st(
-  x = full_data,
-  target = paste0("Label_", 1:n_target),
-  id = "psychology_test",
-  positive = "1",
-  label = "Psychological Scales Classification"
-)
-
-# Установка типа задачи как multilabel
-task$properties <- union(task$properties, "multilabel")
-
-# Разделение данных на обучающую и тестовую выборки
-split <- partition(task, ratio = 0.8)
-
-# Создание модели (Random Forest через ranger)
-learner <- lrn("classif.ranger",
-  num.trees = 100,
-  predict_type = "prob",
-  importance = "impurity"
-)
-
-# Создание мультиметочного ученика с бинарными преобразованиями
-multilabel_learner <- mlr_learners$get("classif.ranger") %>>%
-  po("multilabel", method = "onevsrest") %>>%
-  as_learner()
-
-# Обучение модели
-multilabel_learner$train(task, split$train)
-
-# Предсказание на тестовых данных
-prediction <- multilabel_learner$predict(task, split$test)
-
-# Оценка результатов
-measures <- list(
-  msr("multilabel.hamloss"),
-  msr("multilabel.f1"),
-  msr("multilabel.acc")
-)
-
-prediction$score(measures)
-```
-
-
-
 # 7. Python
 
 ```{r}
@@ -1138,7 +1084,7 @@ def plot_nn_losses(hist):
 ```
 
 ```{python}
-data = pd.read_feather("../0. Data/wide_data.feather")
+data = pd.read_feather("0. Data/wide_data.feather")
 
 X = data.loc[:, ~data.columns.isin(["HL_1", "HL_2", "HL_3", "HL_4", "HL_5", "HL_6", "id"])]
 y = data.loc[:, "HL_1":"HL_6"]
@@ -1149,9 +1095,9 @@ scaler = StandardScaler().fit(X_train)
 X_train = scaler.transform(X_train)
 X_test = scaler.transform(X_test)
 
-y_bool = pd.read_feather("../0. Data/Y_bool.feather")
+# y_bool = pd.read_feather("../0. Data/Y_bool.feather")
 
-y_b_train, y_b_test = train_test_split(y_bool, test_size=0.2, random_state=42)
+# y_b_train, y_b_test = train_test_split(y_bool, test_size=0.2, random_state=42)
 ```
 
 ```{python}
