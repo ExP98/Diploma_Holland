@@ -187,7 +187,9 @@ my_rmse(RF_resid_pred$pred_train, Y_test[, 1])
 ```{r}
 # const_pred <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
 const_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test))
+
 show_custom_metrics(const_pred, "Константное")
+show_custom_metrics(const_pred %>% prediction_correction(), "Константное")
 ```
 
 
@@ -217,7 +219,7 @@ res %>% rbindlist() %>% .[["test_round_rmse"]] %>% plot(main = "test_round_rmse"
 15 раундов хватает.
 
 ```{r}
-perform_stack_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test)
+perform_stack_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test, T)
 ```
 
 
@@ -305,6 +307,28 @@ show_custom_metrics(lm_ind_pred, "lm")
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_Catboost_model, X_train %>% apply(2, as.double), Y_train, X_test %>% apply(2, as.double), Y_test, T, F
 )
+```
+
+
+## 3.7 kNN
+
+```{r}
+library(FNN)
+
+perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 2)
+perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 3)
+perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 5)
+perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 7)
+perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 10)
+perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 15)
+```
+
+
+## 3.8 SVR
+```{r}
+library(fdm2id)
+
+svr <- SVRl(X_train, Y_train)
 ```
 
 

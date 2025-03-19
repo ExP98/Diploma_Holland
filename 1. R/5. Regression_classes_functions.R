@@ -76,7 +76,8 @@ show_custom_metrics <- function(my_pred, case_name, Y_test_ = Y_test) {
   aRMSE_ <- df_metric(my_pred, Y_test_, my_rmse)
   aCosDist_ <- df_metric(my_pred, Y_test_, cosine_dist)
   aCindex_ <- df_metric(my_pred, Y_test_, calc_C_index)
-  msg <- str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCosDist: {round(aCosDist_, 3)}; aCindex: {round(aCindex_, 3)}")
+  # msg <- str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCosDist: {round(aCosDist_, 3)}; aCindex: {round(aCindex_, 3)}")
+  msg <- str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCindex: {round(aCindex_, 3)}")
   return(msg)
 }
 
@@ -182,11 +183,11 @@ perform_MO_regression <- function(model_class, type = c("stack", "chain")) {
 
 
 perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_,
-                                        print_metric = FALSE, print_model_name = TRUE) {
+                                        print_metric = FALSE, print_model_name = TRUE, ...) {
   if (print_model_name) message(paste0("Stack - ", model_class$classname))
   models <- vector("list", 6)
   for (col_i in 1:6) {
-    models[[col_i]] <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i])
+    models[[col_i]] <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i], ...)
     # print(models[[col_i]]$rmse_test)
   }
   
@@ -197,7 +198,7 @@ perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_
 
 
 perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_,
-                                        print_metric = FALSE, print_model_name = TRUE) {
+                                        print_metric = FALSE, print_model_name = TRUE, ...) {
   if (print_model_name) message(paste0("Chain - ", model_class$classname))
   models <- vector("list", 6)
   
@@ -211,7 +212,7 @@ perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_
       colnames(cbind_X_train)[ncol(cbind_X_train)] <- paste0("output_", col_i)
       colnames(cbind_X_test)[ncol(cbind_X_test)] <- paste0("output_", col_i)
     }
-    models[[col_i]] <- model_class$new(cbind_X_train, Y_train_[, col_i], cbind_X_test, Y_test_[, col_i])
+    models[[col_i]] <- model_class$new(cbind_X_train, Y_train_[, col_i], cbind_X_test, Y_test_[, col_i], ...)
     # print(models[[col_i]]$rmse_test)
   }
   
@@ -467,6 +468,35 @@ my_Catboost_model <- R6Class(
     
     predict = function(X_, is_test = FALSE) {
       preds <- catboost.predict(self$model, X_)
+      if (is_test) self$pred_test <- preds
+      return(preds)
+    }
+  )
+)
+
+
+# 3.8 my_knn_model                                          ####
+my_knn_model <- R6Class(
+  classname = "my_knn_model",
+  inherit = my_template_model,
+  
+  public = list(
+    initialize = function(X_train_, y_train_, X_test_, y_test_ = NULL, k = 3, ...) {
+      private$fit(X_train_, y_train_, X_test_, k = k)
+      self$pred_test <- private$predict(X_test_, is_test = TRUE)
+      if (!is.null(y_test_) && !is.null(self$pred_test)) private$calc_rmse(y_test_, self$pred_test)
+      return(invisible(self))
+    }
+  ),
+  
+  private = list(
+    fit = function(X_train_, y_train_, X_test_, k = k) {
+      self$model <- knn.reg(X_train_, test = X_test_, y = y_train_, k = k)
+      return(invisible(self))
+    },
+    
+    predict = function(X_, is_test = FALSE) {
+      preds <- self$model$pred
       if (is_test) self$pred_test <- preds
       return(preds)
     }
