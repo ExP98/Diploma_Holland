@@ -71,27 +71,11 @@ nn <- round(nrow(X_test)/2)
 Stepwise (back, forward), L2-regression
 
 ```{r}
-library(glmnet)    # Для многомерной регрессии
-library(MASS)      # Для stepwise регрессии
-library(pls)       # Для многомерных методов
-
-
 ### Метод 1: Многомерная пошаговая регрессия (отдельные модели для каждого таргета)
-stepwise_results <- list()
-for(target in colnames(Y_train)) {
-  full_model <- lm(y ~ ., data = data.frame(X_train, y = Y_train[, target]))
-  step_model <- stepAIC(full_model, direction = "both", trace = FALSE)
-  stepwise_results[[target]] <- step_model
-}
-
-stepw_pred <- sapply(stepwise_results, \(x) predict(x, data.frame(X_test))) %>% prediction_correction()
-show_custom_metrics(stepw_pred, "Stepwise", Y_test_ = Y_test)
-
-## то же самое
-# .[lm_ind_pred, lm_chain_pred] <- map(
-#   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-#   my_stepwise_lm_model, X_train, Y_train, X_test, Y_test, T, F
-# )
+.[lm_ind_pred, lm_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_stepwise_lm_model, X_train, Y_train, X_test, Y_test, T, F
+)
 ```
 
 Признаки после выполнения пошаговой регрессии
@@ -99,31 +83,6 @@ show_custom_metrics(stepw_pred, "Stepwise", Y_test_ = Y_test)
 features_stepw <- sapply(1:6, \(i) stepwise_results[[i]]$model %>% colnames() %>% .[. != "y"])
 # reduce(features_stepw, union)
 ```
-
-```{r}
-### Метод 2: Многомерная Ridge регрессия (L2-регуляризация)
-# Преобразование данных в матричный формат
-x <- as.matrix(X_train)
-y_mat <- as.matrix(Y_train)
-
-# Обучение модели с кросс-валидацией
-cv_ridge <- cv.glmnet(x, y_mat, family = "mgaussian", alpha = 0)
-ridge_model <- glmnet(x, y_mat, family = "mgaussian", alpha = 0, lambda = cv_ridge$lambda.min)
-
-# Прогноз и оценка
-ridge_pred <- predict(ridge_model, newx = as.matrix(X_test))[,,1]
-show_custom_metrics(ridge_pred, "Ridge Regression", Y_test_ = Y_test)
-```
-
-```{r}
-### Метод 3: Многомерная Lasso регрессия (L1-регуляризация)
-cv_lasso <- cv.glmnet(x, y_mat, family = "mgaussian", alpha = 1)
-lasso_model <- glmnet(x, y_mat, family = "mgaussian", alpha = 1, lambda = cv_lasso$lambda.min)
-
-lasso_pred <- predict(lasso_model, newx = as.matrix(X_test))[,,1]
-show_custom_metrics(lasso_pred, "Lasso Regression", Y_test_ = Y_test)
-```
-
 
 ```{r}
 ### Метод 4: Многомерный случайный лес
@@ -141,6 +100,28 @@ show_custom_metrics(rf_predictions, "RF", Y_test_ = Y_test)
 
 
 ## Несколько моделей сразу
+          
+```{r}
+models_df <- data.table(
+  model = c(my_lm_model, NA, NA, my_XGBoost_model, my_LightGBM_model, my_Catboost_model,
+            my_RandomForest_model, my_knn_model, my_SVR_model),
+  name = c("lm", "Lasso L1", "Ridge L2", "XGBoost", "LightGBM", "CatBoost", 
+           "Random Forest", "kNN", "SVR"),
+  need_MO = c(T, F, F, rep(T, 6))
+)
+
+MO_res <- models_df %>% 
+  copy() %>% 
+  .[need_MO == TRUE, pred := map(model, \(mdl) perform_MO_regression(mdl, "stack"))] %>% 
+  .[name == "Lasso L1", pred := map(model, \(mdl) get_L1_L2_glmnet_preds(alpha = 1))] %>% 
+  .[name == "Ridge L2", pred := map(model, \(mdl) get_L1_L2_glmnet_preds(alpha = 0))] %>% 
+  .[, rmse := map_dbl(pred, \(x) df_metric(x, Y_test, my_rmse))] %>% 
+  .[, cos := map_dbl(pred, \(x) df_metric(x, Y_test, cosine_dist))] %>% 
+  .[map_lgl(pred, \(item) !is.null(item)), C_index := map_dbl(pred, \(x) df_metric(x, Y_test, calc_C_index))]
+```
+
+
+Проба
 ```{r}
 models_df <- data.table(
   model = c(my_LightGBM_model, my_XGBoost_model, my_RandomForest_model),
@@ -299,6 +280,18 @@ show_custom_metrics(lm_ind_pred, "lm")
 )
 ```
 
+```{r}
+get_L1_L2_glmnet_preds(alpha = 0) # Ridge
+get_L1_L2_glmnet_preds(alpha = 1) # Lasso
+```
+
+
+При этом по отдельности результат хуже
+```{r}
+perform_stack_MO_regression(my_L1_L2_glmnet_model, X_train, Y_train, X_test, Y_test, T, alpha = 0)
+perform_stack_MO_regression(my_L1_L2_glmnet_model, X_train, Y_train, X_test, Y_test, T, alpha = 1)
+```
+
 
 ## 3.6 CatBoost
 
@@ -313,22 +306,17 @@ show_custom_metrics(lm_ind_pred, "lm")
 ## 3.7 kNN
 
 ```{r}
-library(FNN)
-
-perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 2)
-perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 3)
-perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 5)
-perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 7)
-perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 10)
-perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, k = 15)
+for (k in c(2, 5, 7, 10, 12)) {
+  message(paste0("k = ", k))
+  perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, F, k = k)
+}
 ```
 
 
 ## 3.8 SVR
 ```{r}
-library(fdm2id)
-
-svr <- SVRl(X_train, Y_train)
+perform_stack_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T)
+perform_chain_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T)
 ```
 
 
@@ -490,6 +478,8 @@ scalar_matrix_production(w_vec = c(0.5, 0.5), list(const_pred, xgb_ind_pred)) %>
 
 ```{r}
 models_pred <- list(xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred)
+
+# models_pred <- MO_res[, pred]
 
 w <- rep(1/length(models_pred), length(models_pred))
 scalar_matrix_production(w_vec = w, models_pred) %>% show_custom_metrics("All", Y_test_ = Y_test)

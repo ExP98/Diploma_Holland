@@ -11,6 +11,11 @@ library(xgboost)
 library(lightgbm)
 library(randomForest)
 library(catboost)
+library(e1071)
+library(FNN)
+library(glmnet)    # Для многомерной регрессии
+library(MASS)      # Для stepwise регрессии
+library(pls)       # Для многомерных методов
 
 
 # 2. Функции                                                     ####
@@ -171,12 +176,12 @@ get_k_PCA_model_table <- function(model, by = 5, X_train_ = X_train, X_test_ = X
 
 
 # 2.3 MO -- multioutput        ####
-perform_MO_regression <- function(model_class, type = c("stack", "chain")) {
+perform_MO_regression <- function(model_class, type = c("stack", "chain"), ...) {
   type <- match.arg(type)
   pred <- if (type == "stack") {
-    perform_stack_MO_regression(model_class, X_train, Y_train, X_test, Y_test, print_metric = FALSE)
+    perform_stack_MO_regression(model_class, X_train, Y_train, X_test, Y_test, print_metric = FALSE, ...)
   } else {
-    perform_chain_MO_regression(model_class, X_train, Y_train, X_test, Y_test, print_metric = FALSE)
+    perform_chain_MO_regression(model_class, X_train, Y_train, X_test, Y_test, print_metric = FALSE, ...)
   }
   return(pred)
 }
@@ -436,6 +441,52 @@ my_stepwise_lm_model <- R6Class(
 )
 
 
+# Обучение модели с кросс-валидацией
+get_L1_L2_glmnet_preds <- function(X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test, 
+                                   alpha = 1, print_metric = TRUE) {
+  cv_glm <- cv.glmnet(X_train_, Y_train_, family = "mgaussian", alpha = alpha)
+  glm_pred <- predict(cv_glm, newx = X_test_, s = "lambda.min")[,,1]
+  
+  lbl <- if (alpha == 1) "Lasso" else if (alpha == 0) "Ridge" else "Wrong"
+  if (print_metric) print(show_custom_metrics(glm_pred, paste0("GLM ", lbl), Y_test_ = Y_test_))
+  return(invisible(glm_pred))
+}
+
+
+my_L1_L2_glmnet_model <- R6Class(
+  classname = "my_L1_L2_glmnet_model",
+  inherit = my_template_model,
+  
+  public = list(
+    initialize = function(X_train_, y_train_, X_test_, y_test_, ...) {
+      alpha <- list(...) %>% pluck("alpha")
+      if (is.null(alpha)) alpha <- 1
+      
+      private$fit(X_train_, y_train_, alpha_ = alpha)
+      self$pred_train <- private$predict(X_train_)
+      
+      if (!is.null(X_test_)) self$pred_test <- private$predict(X_test_, is_test = TRUE)
+      if (!is.null(y_test_) && !is.null(self$pred_test)) private$calc_rmse(y_test_, self$pred_test)
+      
+      return(invisible(self))
+    }
+  ),
+  
+  private = list(
+    fit = function(X_train_, y_train_, alpha_) {
+      self$model <- cv.glmnet(X_train_, y_train_, family = "gaussian", alpha = alpha_)
+      return(invisible(self))
+    },
+    
+    predict = function(X_, is_test = FALSE) {
+      preds <- predict(self$model, newx = X_, s = "lambda.min")
+      if (is_test) self$pred_test <- preds
+      return(preds)
+    }
+  )
+)
+
+
 # 3.7 my_Catboost_model                                          ####
 my_Catboost_model <- R6Class(
   classname = "my_Catboost_model",
@@ -481,7 +532,10 @@ my_knn_model <- R6Class(
   inherit = my_template_model,
   
   public = list(
-    initialize = function(X_train_, y_train_, X_test_, y_test_ = NULL, k = 3, ...) {
+    initialize = function(X_train_, y_train_, X_test_, y_test_ = NULL, ...) {
+      k <- list(...) %>% pluck("k")
+      if (is.null(k)) k <- 10
+      
       private$fit(X_train_, y_train_, X_test_, k = k)
       self$pred_test <- private$predict(X_test_, is_test = TRUE)
       if (!is.null(y_test_) && !is.null(self$pred_test)) private$calc_rmse(y_test_, self$pred_test)
@@ -490,7 +544,7 @@ my_knn_model <- R6Class(
   ),
   
   private = list(
-    fit = function(X_train_, y_train_, X_test_, k = k) {
+    fit = function(X_train_, y_train_, X_test_, k) {
       self$model <- knn.reg(X_train_, test = X_test_, y = y_train_, k = k)
       return(invisible(self))
     },
@@ -499,6 +553,20 @@ my_knn_model <- R6Class(
       preds <- self$model$pred
       if (is_test) self$pred_test <- preds
       return(preds)
+    }
+  )
+)
+
+
+# 3.9 my_SVR_model                                          ####
+my_SVR_model <- R6Class(
+  classname = "my_SVR_model",
+  inherit = my_template_model,
+  
+  private = list(
+    fit = function(X_train_, y_train_, ...) {
+      self$model <- svm(x = X_train_, y = y_train_, ...)
+      return(invisible(self))
     }
   )
 )
