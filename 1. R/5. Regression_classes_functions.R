@@ -77,7 +77,9 @@ df_metric <- function(pred_df, Y_test_, func = my_rmse) {
 }
 
 
-show_custom_metrics <- function(my_pred, case_name, Y_test_ = Y_test) {
+show_custom_metrics <- function(my_pred, case_name, Y_test_ = Y_test, need_to_correct = FALSE) {
+  if (need_to_correct) my_pred <- my_pred %>% prediction_correction()
+  
   aRMSE_ <- df_metric(my_pred, Y_test_, my_rmse)
   aCosDist_ <- df_metric(my_pred, Y_test_, cosine_dist)
   aCindex_ <- df_metric(my_pred, Y_test_, calc_C_index)
@@ -188,7 +190,7 @@ perform_MO_regression <- function(model_class, type = c("stack", "chain"), ...) 
 
 
 perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_,
-                                        print_metric = FALSE, print_model_name = TRUE, ...) {
+                                        print_metric = FALSE, print_model_name = TRUE, need_to_correct = FALSE, ...) {
   if (print_model_name) message(paste0("Stack - ", model_class$classname))
   models <- vector("list", 6)
   for (col_i in 1:6) {
@@ -196,7 +198,9 @@ perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_
     # print(models[[col_i]]$rmse_test)
   }
   
-  stack_pred <- sapply(models, \(x) x$pred_test) %>% prediction_correction()
+  stack_pred <- sapply(models, \(x) x$pred_test)
+  if (need_to_correct == TRUE) stack_pred <- stack_pred %>% prediction_correction()
+  
   if (print_metric) print(show_custom_metrics(stack_pred, paste0(model_class$classname, " stack"), Y_test_ = Y_test_))
   return(invisible(stack_pred))
 }
@@ -443,9 +447,10 @@ my_stepwise_lm_model <- R6Class(
 
 # Обучение модели с кросс-валидацией
 get_L1_L2_glmnet_preds <- function(X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test, 
-                                   alpha = 1, print_metric = TRUE) {
+                                   alpha = 1, print_metric = TRUE, need_to_correct = FALSE) {
   cv_glm <- cv.glmnet(X_train_, Y_train_, family = "mgaussian", alpha = alpha)
   glm_pred <- predict(cv_glm, newx = X_test_, s = "lambda.min")[,,1]
+  if (need_to_correct == TRUE) glm_pred <- glm_pred %>% prediction_correction()
   
   lbl <- if (alpha == 1) "Lasso" else if (alpha == 0) "Ridge" else "Wrong"
   if (print_metric) print(show_custom_metrics(glm_pred, paste0("GLM ", lbl), Y_test_ = Y_test_))

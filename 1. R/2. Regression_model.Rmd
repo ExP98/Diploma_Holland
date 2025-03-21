@@ -99,28 +99,6 @@ show_custom_metrics(rf_predictions, "RF", Y_test_ = Y_test)
 ```
 
 
-## Несколько моделей сразу
-          
-```{r}
-models_df <- data.table(
-  model = c(my_lm_model, NA, NA, my_XGBoost_model, my_LightGBM_model, my_Catboost_model,
-            my_RandomForest_model, my_knn_model, my_SVR_model),
-  name = c("lm", "Lasso L1", "Ridge L2", "XGBoost", "LightGBM", "CatBoost", 
-           "Random Forest", "kNN", "SVR"),
-  need_MO = c(T, F, F, rep(T, 6))
-)
-
-MO_res <- models_df %>% 
-  copy() %>% 
-  .[need_MO == TRUE, pred := map(model, \(mdl) perform_MO_regression(mdl, "stack"))] %>% 
-  .[name == "Lasso L1", pred := map(model, \(mdl) get_L1_L2_glmnet_preds(alpha = 1))] %>% 
-  .[name == "Ridge L2", pred := map(model, \(mdl) get_L1_L2_glmnet_preds(alpha = 0))] %>% 
-  .[, rmse := map_dbl(pred, \(x) df_metric(x, Y_test, my_rmse))] %>% 
-  .[, cos := map_dbl(pred, \(x) df_metric(x, Y_test, cosine_dist))] %>% 
-  .[map_lgl(pred, \(item) !is.null(item)), C_index := map_dbl(pred, \(x) df_metric(x, Y_test, calc_C_index))]
-```
-
-
 Проба
 ```{r}
 models_df <- data.table(
@@ -200,12 +178,6 @@ res %>% rbindlist() %>% .[["test_round_rmse"]] %>% plot(main = "test_round_rmse"
 15 раундов хватает.
 
 ```{r}
-perform_stack_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test, T)
-```
-
-
-
-```{r}
 .[xgb_ind_pred, xgb_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_XGBoost_model, X_train, Y_train, X_test, Y_test, T, F
@@ -230,6 +202,29 @@ lapply(xgb_ind_pred, \(x) x$calc_importance())
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_LightGBM_model, X_train, Y_train, X_test, Y_test, T, F
 )
+```
+
+
+### importance
+```{r}
+LightGBM_models <- vector("list", 6)
+for (col_i in 1:6) {
+  LightGBM_models[[col_i]] <- my_LightGBM_model$new(X_train, Y_train[, col_i], X_test, Y_test_[, col_i])
+}
+
+res <- lapply(1:6, \(i) lgb.importance(LightGBM_models[[i]]$model, percentage = TRUE)[, .(col = i, Feature, Gain)]) %>% 
+  rbindlist() %>% 
+  dcast(col ~ Feature, value.var = "Gain", fill = 0) %>% 
+  .[, -c("col")]
+
+importance_df <- data.table(
+  feature = colnames(res),
+  avg_imp = res %>% colMeans()
+) %>% 
+  .[order(-avg_imp)] %>% 
+  .[, cumsum_imp := cumsum(avg_imp)] %>% 
+  .[cumsum_imp <= 0.5] %>% 
+  .[, names(.SD) := round(.SD, 3), .SDcols = c("avg_imp", "cumsum_imp")]
 ```
 
 
@@ -274,15 +269,15 @@ show_custom_metrics(lm_ind_pred, "lm")
 
 
 ```{r}
-.[lm_ind_pred, lm_chain_pred] <- map(
+.[lm_stepw_ind_pred, lm_stepw_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_stepwise_lm_model, X_train, Y_train, X_test, Y_test, T, F
 )
 ```
 
 ```{r}
-get_L1_L2_glmnet_preds(alpha = 0) # Ridge
-get_L1_L2_glmnet_preds(alpha = 1) # Lasso
+lm_L2_pred <- get_L1_L2_glmnet_preds(alpha = 0) # Ridge
+lm_L1_pred <- get_L1_L2_glmnet_preds(alpha = 1) # Lasso
 ```
 
 
@@ -315,8 +310,38 @@ for (k in c(2, 5, 7, 10, 12)) {
 
 ## 3.8 SVR
 ```{r}
-perform_stack_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T)
-perform_chain_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T)
+.[svr_ind_pred, svr_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_SVR_model, X_train, Y_train, X_test, Y_test, T, F
+)
+```
+
+
+## 3.9 Результирущий датасет с предсказаниями
+          
+```{r}
+models_df <- data.table(
+  model = c(NA, my_lm_model, NA, NA, my_XGBoost_model, my_LightGBM_model, my_Catboost_model,
+            my_RandomForest_model, my_knn_model, my_SVR_model),
+  name = c("const", "lm", "Lasso L1", "Ridge L2", "XGBoost", "LightGBM", "CatBoost", 
+           "Random Forest", "kNN", "SVR"),
+  need_MO = c(F, T, F, F, rep(T, 6))
+)
+
+MO_res <- models_df %>% 
+  copy() %>% 
+  .[need_MO == TRUE, pred := map(model, \(mdl) perform_MO_regression(mdl, "stack"))] %>% 
+  .[name == "const", pred := map(model, \(mdl) matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test)))] %>% 
+  .[name == "Lasso L1", pred := map(model, \(mdl) get_L1_L2_glmnet_preds(alpha = 1))] %>% 
+  .[name == "Ridge L2", pred := map(model, \(mdl) get_L1_L2_glmnet_preds(alpha = 0))] %>% 
+  .[, rmse := map_dbl(pred, \(x) df_metric(x, Y_test, my_rmse) %>% round(3))] %>% 
+  .[, cos := map_dbl(pred, \(x) df_metric(x, Y_test, cosine_dist) %>% round(3))] %>% 
+  .[map_lgl(pred, \(item) !is.null(item)), C_index := map_dbl(pred, \(x) df_metric(x, Y_test, calc_C_index) %>% round(3))]
+
+MO_res[, -c("model", "need_MO", "pred", "cos")]
+MO_res[order(-C_index), -c("model", "need_MO", "pred", "cos")]
+
+xlsx::write.xlsx(MO_res[, -c("model", "need_MO", "pred", "cos")], "temporal.xlsx")
 ```
 
 
@@ -344,12 +369,13 @@ plot(pca_model$sdev^2 / sum(pca_model$sdev^2),
 
 Зависимость k (~PCA) и результатов lm:
 ```{r}
-res_k_lm <- get_k_PCA_model_table(my_lm_model, by = 1, metric_f = c_index_dist)
+res_k_lm1 <- get_k_PCA_model_table(my_lm_model, by = 1, metric_f = c_index_dist)
+res_k_lm2 <- get_k_PCA_model_table(my_lm_model, by = 1, metric_f = c_index_dist)
 ```
 
-
+k = 29
 ```{r}
-best_k <- res_k_lm[avg_metric == min(avg_metric), k]
+best_k <- res_k_lm1[avg_metric == min(avg_metric), k]
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
@@ -366,13 +392,13 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 Подбор лучшего k для PCA + Random Forest
 
 ```{r}
-# res_k_rf <- get_k_PCA_model_table(my_RandomForest_model, by = 5, metric_f = c_index_dist)
-res_k_rf <- get_k_PCA_model_table(my_RandomForest_model, by = 5, metric_f = my_rmse)
+res_k_rf1 <- get_k_PCA_model_table(my_RandomForest_model, by = 3, metric_f = c_index_dist)
+res_k_rf2 <- get_k_PCA_model_table(my_RandomForest_model, by = 3, metric_f = my_rmse)
 ```
 
-k = 27 (rmse), 17 (C-ind)
+k = 11 (rmse), 32 (C-ind)
 ```{r}
-best_k <- res_k_rf[avg_metric == min(avg_metric), k]
+best_k <- res_k_rf1[avg_metric == min(avg_metric), k]
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
@@ -381,18 +407,39 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_RandomForest_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
 )
+
+# best_k <- res_k_rf2[avg_metric == min(avg_metric), k]
+# print(str_glue("Best k: {best_k}"))
+# X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+# X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+# 
+# .[rf_pca_ind_pred, rf_pca_chain_pred] <- map(
+#   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+#   my_RandomForest_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
+# )
 ```
 
 
 ## 4.3 XGBoost
 
 ```{r}
-res_k_xgb <- get_k_PCA_model_table(my_XGBoost_model, by = 2, metric_f = c_index_dist)
+res_k_xgb1 <- get_k_PCA_model_table(my_XGBoost_model, by = 2, metric_f = my_rmse)
+res_k_xgb2 <- get_k_PCA_model_table(my_XGBoost_model, by = 2, metric_f = c_index_dist)
 ```
 
-k = 26 (rmse); 40 (C-index)
+k = 26 (rmse); 32 (C-index)
 ```{r}
-best_k <- res_k_xgb[avg_metric == min(avg_metric), k]
+# best_k <- res_k_xgb1[avg_metric == min(avg_metric), k]
+# print(str_glue("Best k: {best_k}"))
+# X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+# X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+# 
+# .[xgb_pca_ind_pred, xgb_pca_chain_pred] <- map(
+#   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+#   my_XGBoost_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
+# )
+
+best_k <- res_k_xgb2[avg_metric == min(avg_metric), k]
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
@@ -407,12 +454,27 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 ## 4.4 Catboost
 
 ```{r}
-res_k_catb <- get_k_PCA_model_table(my_Catboost_model, by = 4, metric_f = c_index_dist)
+res_k_catb1 <- get_k_PCA_model_table(my_Catboost_model, by = 4, metric_f = my_rmse)
+# res_k_catb2 <- get_k_PCA_model_table(my_Catboost_model, by = 4, metric_f = c_index_dist)
 ```
 
 k = 30 (rmse); 22 (C-index)
 ```{r}
-best_k <- res_k_catb[avg_metric == min(avg_metric), k]
+# best_k <- res_k_catb1[avg_metric == min(avg_metric), k]
+best_k <- 30
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[catb_pca_ind_pred, catb_pca_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_Catboost_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
+)
+```
+
+
+```{r}
+best_k <- 22
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
@@ -427,12 +489,14 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 ## 4.5 LightGBM
 
 ```{r}
-res_k_lgb <- get_k_PCA_model_table(my_LightGBM_model, by = 3, metric_f = c_index_dist)
+res_k_lgb1 <- get_k_PCA_model_table(my_LightGBM_model, by = 3, metric_f = my_rmse)
+res_k_lgb2 <- get_k_PCA_model_table(my_LightGBM_model, by = 3, metric_f = c_index_dist)
 ```
 
 k = 11 (rmse); 8 (C-index)
 ```{r}
-best_k <- res_k_lgb[avg_metric == min(avg_metric), k]
+# best_k <- res_k_lgb[avg_metric == min(avg_metric), k]
+best_k <- 11
 print(str_glue("Best k: {best_k}"))
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
@@ -464,6 +528,94 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 ```
 
 
+## 4.7 kNN
+
+```{r}
+res_k_knn1 <- get_k_PCA_model_table(my_knn_model, by = 1, metric_f = my_rmse)
+res_k_knn2 <- get_k_PCA_model_table(my_knn_model, by = 1, metric_f = c_index_dist)
+```
+
+k = 25 (rmse); 19 (C-index)
+```{r}
+best_k <- res_k_knn1[avg_metric == min(avg_metric), k]
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[knn_pca_ind_pred] <- map(
+  list(perform_stack_MO_regression), exec,
+  my_knn_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
+)
+
+best_k <- res_k_knn2[avg_metric == min(avg_metric), k]
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[knn_pca_ind_pred] <- map(
+  list(perform_stack_MO_regression), exec,
+  my_knn_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
+)
+```
+
+
+## 4.8 SVR
+
+```{r}
+res_k_svr1 <- get_k_PCA_model_table(my_SVR_model, by = 1, metric_f = my_rmse)
+res_k_svr2 <- get_k_PCA_model_table(my_SVR_model, by = 1, metric_f = c_index_dist)
+```
+
+k = 40 (rmse); 26 (C-index)
+```{r}
+best_k <- res_k_svr1[avg_metric == min(avg_metric), k]
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[svr_pca_ind_pred, svr_pca_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_SVR_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
+)
+
+best_k <- res_k_svr2[avg_metric == min(avg_metric), k]
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[svr_pca_ind_pred, svr_pca_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_SVR_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
+)
+```
+
+## 4.9 Lasso and Ridge
+
+only alpha 1 (lasso)
+```{r}
+res_k_glmnet <- get_k_PCA_model_table(my_L1_L2_glmnet_model, by = 1, metric_f = my_rmse)
+res_k_glmnet <- get_k_PCA_model_table(my_L1_L2_glmnet_model, by = 1, metric_f = c_index_dist)
+```
+
+k = 22 (rmse); 23 (C-index)
+```{r}
+best_k <- res_k_glmnet[avg_metric == min(avg_metric), k]
+print(str_glue("Best k: {best_k}"))
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+.[glmnet_pca_ind_pred, glmnet_pca_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_L1_L2_glmnet_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
+)
+```
+
+```{r}
+L1_pca_pred <- get_L1_L2_glmnet_preds(X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca, alpha = 1)
+L2_pca_pred <- get_L1_L2_glmnet_preds(X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca, alpha = 0)
+```
+
+
 # 5. Ensemble
 
 ## 5.1 Стэкинг моделей на данных без пропусков
@@ -472,76 +624,197 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 const_pred, xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred
 
 ```{r}
+MO_res[order(rmse), -c("model", "need_MO", "pred")]
+MO_res[order(-C_index), -c("model", "need_MO", "pred")]
+```
+
+1. Проба на случайных
+```{r}
 scalar_matrix_production(w_vec = c(0.5, 0.5), list(const_pred, xgb_ind_pred)) %>% 
+  show_custom_metrics(., "Const & Xgb", Y_test_ = Y_test)
+
+scalar_matrix_production(w_vec = c(0.5, 0.5), MO_res[name %in% c("const", "XGBoost"), pred]) %>%
   show_custom_metrics(., "Const & Xgb", Y_test_ = Y_test)
 ```
 
+2. Все или почти все вместе
 ```{r}
 models_pred <- list(xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred)
 
-# models_pred <- MO_res[, pred]
-
 w <- rep(1/length(models_pred), length(models_pred))
 scalar_matrix_production(w_vec = w, models_pred) %>% show_custom_metrics("All", Y_test_ = Y_test)
+
+models_pred2 <- MO_res[name != "const_round", pred]
+w2 <- rep(1/length(models_pred2), length(models_pred2))
+scalar_matrix_production(w_vec = w2, models_pred2) %>% 
+  show_custom_metrics("All", Y_test_ = Y_test)
 ```
 
-
+3. Выборочные старые ансамбли: 
+3.1
 ```{r}
 selected_models_pred <- list(xgb_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, rf_ind_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred)
-
 w <- c(1, 5, 5, 5, 1, 2, 6)
+scalar_matrix_production(w_vec = w, selected_models_pred) %>% show_custom_metrics("Selected", Y_test_ = Y_test)
+
+
+selected_models_pred <- MO_res[name %in% c("XGBoost", "LightGBM", "Random Forest", "lm", "CatBoost"), pred]
+w <- c(1, 10, 5, 1, 8)
 scalar_matrix_production(w_vec = w, selected_models_pred) %>% show_custom_metrics("Selected", Y_test_ = Y_test)
 ```
 
+3.2
 ```{r}
 selected2_models_pred <- list(lgbm_chain_pred, lgbm_cv_ind_pred, rf_ind_pred, catb_ind_pred, catb_chain_pred)
+w <- rep(1/length(selected2_models_pred), length(selected2_models_pred))
+scalar_matrix_production(w_vec = w, selected2_models_pred) %>% show_custom_metrics("Selected 2", Y_test_ = Y_test)
 
+selected2_models_pred <- MO_res[name %in% c("LightGBM", "Random Forest", "CatBoost"), pred]
 w <- rep(1/length(selected2_models_pred), length(selected2_models_pred))
 scalar_matrix_production(w_vec = w, selected2_models_pred) %>% show_custom_metrics("Selected 2", Y_test_ = Y_test)
 ```
 
+3.3
 ```{r}
 selected3_models_pred <- list(lgbm_ind_pred, rf_ind_pred, lm_ind_pred, catb_ind_pred)
 
 w <- c(1, 1, 1, 3)
-# w <- rep(1/length(selected3_models_pred), length(selected3_models_pred))
-scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3.1", Y_test_ = Y_test)
+
+w <- rep(1/length(selected3_models_pred), length(selected3_models_pred))
+scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3.2", Y_test_ = Y_test)
+
+
+selected3_models_pred <- MO_res[name %in% c("LightGBM", "Random Forest", "lm", "CatBoost"), pred]
+
+w <- c(1, 1, 1, 3)
+scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3.3", Y_test_ = Y_test)
+
+w <- rep(1/length(selected3_models_pred), length(selected3_models_pred))
+scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3.4", Y_test_ = Y_test)
 ```
+
+4. Выборочные новые ансамбли
+
+c("const", "const_round", "lm", "Lasso L1", "Ridge L2", "XGBoost", "LightGBM", "CatBoost", "Random Forest", "kNN", "SVR")
+```{r}
+models_pred1 <- MO_res[name %in% c("CatBoost", "Lasso L1", "LightGBM", "Random Forest", "Ridge L2"), pred]
+w1.1 <- rep(1/length(models_pred1), length(models_pred1))
+w1.2 <- c(10, 4, 1, 1, 1)
+w1.3 <- c(11, 6, 1, 2, 2)
+w1.4 <- c(0.6, 0.25, 0.05, 0.05, 0.05)
+
+scalar_matrix_production(w_vec = w1.1, models_pred1) %>% show_custom_metrics("1.1", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w1.2, models_pred1) %>% show_custom_metrics("1.2", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w1.3, models_pred1) %>% show_custom_metrics("1.3", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w1.4, models_pred1) %>% show_custom_metrics("1.4", Y_test_ = Y_test)
+```
+
+```{r}
+models_pred2 <- MO_res[name %in% c("Random Forest", "LightGBM", "kNN", "SVR", "Lasso L1", "Ridge L2"), pred]
+w2.1 <- rep(1/length(models_pred2), length(models_pred2))
+w2.2 <- c(7, 5, 3, 1, 1, 1)
+w2.3 <- c(4, 3, 1, 0, 0, 0)
+w2.4 <- c(7, 3, 1, 0, 0, 0)
+
+scalar_matrix_production(w_vec = w2.1, models_pred2) %>% show_custom_metrics("2.1", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w2.2, models_pred2) %>% show_custom_metrics("2.2", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w2.3, models_pred2) %>% show_custom_metrics("2.3", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w2.4, models_pred2) %>% show_custom_metrics("2.4", Y_test_ = Y_test)
+```
+
+```{r}
+models_pred3 <- MO_res[name %in% c("Random Forest", "LightGBM", "Lasso L1"), pred]
+w3.1 <- rep(1/length(models_pred3), length(models_pred3))
+w3.2 <- c(5, 5, 1)
+w3.3 <- c(5, 5, 0)
+
+scalar_matrix_production(w_vec = w3.1, models_pred3) %>% show_custom_metrics("3.1", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w3.2, models_pred3) %>% show_custom_metrics("3.2", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w3.3, models_pred3) %>% show_custom_metrics("3.3", Y_test_ = Y_test)
+```
+
+```{r}
+models_pred4 <- MO_res[name %in% c("SVR", "LightGBM", "Lasso L1"), pred]
+w4.1 <- rep(1/length(models_pred4), length(models_pred4))
+w4.2 <- c(1, 5, 5)
+w4.3 <- c(0, 1, 1)
+
+scalar_matrix_production(w_vec = w4.1, models_pred4) %>% show_custom_metrics("4.1", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w4.2, models_pred4) %>% show_custom_metrics("4.2", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w4.3, models_pred4) %>% show_custom_metrics("4.3", Y_test_ = Y_test)
+```
+
+
+5. Выборочные ансамбли без округления
+```{r}
+models_pred5 <- MO_res[name %in% c("SVR", "lm", "LightGBM", "Lasso L1"), pred]
+w5.1 <- rep(1/length(models_pred5), length(models_pred5))
+w5.2 <- c(1, 1, 10, 10)
+w5.3 <- c(0, 0, 10, 10)
+
+scalar_matrix_production(w_vec = w5.1, models_pred5) %>% show_custom_metrics("5.1", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w5.2, models_pred5) %>% show_custom_metrics("5.2", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w5.3, models_pred5) %>% show_custom_metrics("5.3", Y_test_ = Y_test)
+```
+
+Выделим следующие ансамбли:
+1) all - 1.935 - 9.632
+2) RF* , LightGBM*, kNN - 1.913 - 10.132
+3) CatBoost* , L1*, LightGBM, RF, L2 - 1.911 - 10.118 
 
 
 ### С PCA
 lm_pca_ind_pred, lm_pca_chain_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, xgb_pca_chain_pred, catb_pca_ind_pred, catb_pca_chain_pred, lgb_pca_ind_pred, lgb_pca_chain_pred, lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred
 
 ```{r}
-models_pred <- list(lm_pca_ind_pred, lm_pca_chain_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, xgb_pca_chain_pred, catb_pca_ind_pred, catb_pca_chain_pred, lgb_pca_ind_pred, lgb_pca_chain_pred, lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred)
+# models_pred <- list(lm_pca_ind_pred, lm_pca_chain_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, xgb_pca_chain_pred, catb_pca_ind_pred, catb_pca_chain_pred, lgb_pca_ind_pred, lgb_pca_chain_pred, lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred)
+models_pred1 <- list(lm_pca_ind_pred, lm_pca_chain_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, xgb_pca_chain_pred, catb_pca_ind_pred, catb_pca_chain_pred, lgb_pca_ind_pred, lgb_pca_chain_pred)
+models_pred2 <- list(lm_pca_ind_pred, rf_pca_ind_pred, xgb_pca_ind_pred, catb_pca_ind_pred, lgb_pca_ind_pred)
 
-w <- rep(1/length(models_pred), length(models_pred))
-scalar_matrix_production(w_vec = w, models_pred) %>% show_custom_metrics("All", Y_test_ = Y_test)
+# new
+models_pred3 <- list(lm_pca_ind_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, catb_pca_ind_pred, lgb_pca_ind_pred, knn_pca_ind_pred, svr_pca_ind_pred, L1_pca_pred, L2_pca_pred)
+
+w <- rep(1/length(models_pred1), length(models_pred1))
+scalar_matrix_production(w_vec = w, models_pred1) %>% show_custom_metrics("All", Y_test_ = Y_test)
+
+w <- rep(1/length(models_pred2), length(models_pred2))
+scalar_matrix_production(w_vec = w, models_pred2) %>% show_custom_metrics("All", Y_test_ = Y_test)
+
+w <- rep(1/length(models_pred3), length(models_pred3))
+scalar_matrix_production(w_vec = w, models_pred3) %>% show_custom_metrics("All", Y_test_ = Y_test)
 ```
 
 
 ```{r}
-selected_models_pred <- list(xgb_pca_ind_pred, lgb_pca_chain_pred, lgb_cv_pca_ind_pred, rf_pca_ind_pred, lm_pca_ind_pred, catb_pca_ind_pred, catb_pca_chain_pred)
+selected_models_pred <- list(xgb_pca_ind_pred, lgb_pca_chain_pred, rf_pca_ind_pred, lm_pca_ind_pred, catb_pca_ind_pred, catb_pca_chain_pred)
 
-w <- c(1, 5, 5, 5, 1, 2, 6)
+w <- c(1, 5, 5, 1, 2, 6)
 scalar_matrix_production(w_vec = w, selected_models_pred) %>% show_custom_metrics("Selected", Y_test_ = Y_test)
 ```
 
 ```{r}
-selected2_models_pred <- list(lgb_pca_chain_pred, lgb_cv_pca_ind_pred, rf_pca_ind_pred, catb_pca_ind_pred, catb_pca_chain_pred)
+selected2_models_pred <- list(lgb_pca_chain_pred, rf_pca_ind_pred, catb_pca_ind_pred, catb_pca_chain_pred)
 
 w <- rep(1/length(selected2_models_pred), length(selected2_models_pred))
-sel2_preds <- scalar_matrix_production(w_vec = w, selected2_models_pred)
-sel2_preds %>% show_custom_metrics("Selected 2", Y_test_ = Y_test)
+scalar_matrix_production(w_vec = w, selected2_models_pred) %>% show_custom_metrics("Selected 2", Y_test_ = Y_test)
 ```
 
+models_pred3 <- list(lm_pca_ind_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, catb_pca_ind_pred, lgb_pca_ind_pred, knn_pca_ind_pred, svr_pca_ind_pred, L1_pca_pred, L2_pca_pred)
 ```{r}
-selected3_models_pred <- list(lgb_pca_ind_pred, rf_pca_ind_pred, lm_pca_ind_pred, catb_pca_ind_pred)
+selected3_models_pred <- list(rf_pca_ind_pred, lgb_pca_ind_pred, knn_pca_ind_pred)
 
-w <- c(1, 1, 1, 3)
+w <- c(7, 3, 1)
 # w <- rep(1/length(selected3_models_pred), length(selected3_models_pred))
 scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3", Y_test_ = Y_test)
 ```
+
+```{r}
+selected4_models_pred <- list(catb_pca_ind_pred, L1_pca_pred, lgb_pca_ind_pred, rf_pca_ind_pred, L2_pca_pred)
+w <- c(0.6, 0.25, 0.05, 0.05, 0.05)
+scalar_matrix_production(w_vec = w, selected4_models_pred) %>% show_custom_metrics("Selected 4", Y_test_ = Y_test)
+```
+
 
 
 ## 5.2 Стэкинг моделей отдельно на психологических тестах
