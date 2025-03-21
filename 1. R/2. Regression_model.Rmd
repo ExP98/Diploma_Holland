@@ -205,7 +205,7 @@ lapply(xgb_ind_pred, \(x) x$calc_importance())
 ```
 
 
-### importance
+### Feature Importance
 ```{r}
 LightGBM_models <- vector("list", 6)
 for (col_i in 1:6) {
@@ -223,8 +223,10 @@ importance_df <- data.table(
 ) %>% 
   .[order(-avg_imp)] %>% 
   .[, cumsum_imp := cumsum(avg_imp)] %>% 
-  .[cumsum_imp <= 0.5] %>% 
+  .[cumsum_imp <= 0.55] %>% 
   .[, names(.SD) := round(.SD, 3), .SDcols = c("avg_imp", "cumsum_imp")]
+
+xlsx::write.xlsx(importance_df, "temporal.xlsx")
 ```
 
 
@@ -1045,7 +1047,7 @@ scalar_matrix_production(w_vec = w3, models_pred) %>%
 ```{r}
 one_test_model_map <- function(model, df_ = df) {
   x <- map(
-    list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+    list(perform_stack_MO_regression), exec, # perform_chain_MO_regression
     model, df_[["X_train"]], df_[["Y_train"]], df_[["X_test"]], df_[["Y_test"]], T, F
   )
 }
@@ -1060,8 +1062,8 @@ show_constant_pred_metric <- function(df_) {
 
 
 class_models <- data.table(
-  models = list(my_XGBoost_model, my_LightGBM_model, my_LightGBM_CV_model, my_RandomForest_model, my_lm_model, my_Catboost_model),
-  labels = list("XGBoost", "LightGBM", "LightGBM CV", "Random Forest", "lm", "CatBoost")
+  models = list(my_lm_model, my_XGBoost_model, my_LightGBM_model, my_Catboost_model, my_RandomForest_model, my_knn_model, my_SVR_model),
+  labels = list("lm", "XGBoost", "LightGBM", "CatBoost", "Random Forest", "kNN", "SVR")
 )
 
 
@@ -1073,63 +1075,54 @@ class_models <- data.table(
 
 c("BF", "EY", "CT", "LN", "SC")
 ```{r}
-sink("model_log.txt", append = TRUE, split = TRUE)
+sink("model_log_noPCA.txt", append = TRUE, split = TRUE)
 
 models_by_tests <- NULL
 
 for (test_lbl in c("BF", "EY", "CT", "LN", "SC")) {
   cat(test_lbl, "\n")
-  for (pca_b in c(TRUE, FALSE)) {
-    pca_lbl <- if (pca_b) "PCA" else "no PCA"
+  # for (pca_b in c(TRUE, FALSE)) {
+    # pca_lbl <- if (pca_b) "PCA" else "no PCA"
     
-    cat(pca_lbl, "\n")
-    df <- prepare_psytest_dataset(wide_data, wide_data2, test_lbl, use_PCA_b = pca_b)
-    models_by_tests[[test_lbl]][[pca_lbl]] <- map(class_models$models, one_test_model_map, df_ = df)
-    show_constant_pred_metric(df)
+    # cat(pca_lbl, "\n")
+    df <- prepare_psytest_dataset(wide_data, wide_data2, test_lbl, use_PCA_b = FALSE)
+    # models_by_tests[[test_lbl]][[pca_lbl]] <- map(class_models$models, one_test_model_map, df_ = df)
+    
+    for (i in 1:nrow(class_models)) {
+      models_by_tests[[test_lbl]][[class_models[i, labels][[1]]]] <- one_test_model_map(class_models[i, models][[1]], df)
+    }
+    
+    # models_by_tests[[test_lbl]] <- map(class_models$models, one_test_model_map, df_ = df)
+    models_by_tests[[test_lbl]][["Lasso"]] <- get_L1_L2_glmnet_preds(df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], alpha = 1)
+    models_by_tests[[test_lbl]][["Ridge"]] <- get_L1_L2_glmnet_preds(df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], alpha = 0)
+    show_constant_pred_metric(df) %>% cat()
     cat("\n")
-  }
-  cat("\n\n")
+  # }
+  # cat("\n\n")
 }
 
 sink()
 ```
 
+```{r}
+for (test_lbl in c("BF", "EY", "CT", "LN", "SC")) {
+  cat(test_lbl, "\n")
+  df <- prepare_psytest_dataset(wide_data, wide_data2, test_lbl, use_PCA_b = FALSE)
+  show_constant_pred_metric(df) %>% cat()
+  cat("\n")
+}
+```
 
----
-
-*CT**: 
-1) *no PCA*
-XGBoost stack. aRMSE: 2.178; aCosDist: 0.296
-XGBoost Chained. aRMSE: 2.264; aCosDist: 0.308
-LightGBM stack. aRMSE: 2.127; aCosDist: 0.29
-LightGBM Chained. aRMSE: 2.118; aCosDist: 0.288
-LightGBM CV stack. aRMSE: 2.116; aCosDist: 0.288
-LightGBM CV Chained. aRMSE: 2.123; aCosDist: 0.289
-Random Forest stack. aRMSE: 2.101; aCosDist: 0.286
-Random Forest Chained. aRMSE: 2.104; aCosDist: 0.287
-lm stack. aRMSE: 2.076; aCosDist: 0.282
-lm Chained. aRMSE: 2.076; aCosDist: 0.282
-CatBoost stack. aRMSE: 2.089; aCosDist: 0.284
-CatBoost Chained. aRMSE: 2.109; aCosDist: 0.287
-Константное. aRMSE: 2.23; aCosDist: 0.304
-
-2) *PCA*
-Train: 654 rows; test: 339 rows (34.14%).
-XGBoost stack. aRMSE: 2.257; aCosDist: 0.307
-XGBoost Chained. aRMSE: 2.295; aCosDist: 0.312
-LightGBM stack. aRMSE: 2.125; aCosDist: 0.289
-LightGBM Chained. aRMSE: 2.149; aCosDist: 0.293
-LightGBM CV stack. aRMSE: 2.14; aCosDist: 0.292
-LightGBM CV Chained. aRMSE: 2.117; aCosDist: 0.288
-Random Forest stack. aRMSE: 2.135; aCosDist: 0.291
-Random Forest Chained. aRMSE: 2.156; aCosDist: 0.294
-lm stack. aRMSE: 2.077; aCosDist: 0.283
-lm Chained. aRMSE: 2.077; aCosDist: 0.283
-CatBoost stack. aRMSE: 2.124; aCosDist: 0.289
-CatBoost Chained. aRMSE: 2.129; aCosDist: 0.29
-Константное. aRMSE: 2.23; aCosDist: 0.304
-
----
+```{r}
+for (cur_label in c("BF", "EY", "CT", "LN", "SC")) {
+  df <- prepare_psytest_dataset(wide_data, wide_data2, cur_label, use_PCA_b = FALSE)
+  mbt <- models_by_tests[[cur_label]]
+  
+  scalar_matrix_production(w_vec = rep(1/length(mbt), length(mbt)), lapply(names(mbt), \(ii) pluck(x, ii, 1))) %>% 
+    show_custom_metrics("All equal", Y_test_ = df[["Y_test"]]) %>% 
+    print()
+}
+```
 
 ```{r}
 # models_pred <- list(x[[1]][[1]], x[[2]][[2]], x[[3]][[1]], x[[4]][[2]], x[[5]][[1]], x[[6]][[1]])

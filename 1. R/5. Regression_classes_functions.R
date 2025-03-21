@@ -446,14 +446,14 @@ my_stepwise_lm_model <- R6Class(
 
 
 # Обучение модели с кросс-валидацией
-get_L1_L2_glmnet_preds <- function(X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test, 
+get_L1_L2_glmnet_preds <- function(X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test, Y_test_ = Y_test,
                                    alpha = 1, print_metric = TRUE, need_to_correct = FALSE) {
   cv_glm <- cv.glmnet(X_train_, Y_train_, family = "mgaussian", alpha = alpha)
   glm_pred <- predict(cv_glm, newx = X_test_, s = "lambda.min")[,,1]
   if (need_to_correct == TRUE) glm_pred <- glm_pred %>% prediction_correction()
   
   lbl <- if (alpha == 1) "Lasso" else if (alpha == 0) "Ridge" else "Wrong"
-  if (print_metric) print(show_custom_metrics(glm_pred, paste0("GLM ", lbl), Y_test_ = Y_test_))
+  if (print_metric) print(show_custom_metrics(glm_pred, paste0("GLM ", lbl), Y_test_ = Y_test))
   return(invisible(glm_pred))
 }
 

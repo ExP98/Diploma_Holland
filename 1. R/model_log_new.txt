@@ -1,0 +1,135 @@
+BF 
+PCA 
+Train: 552 rows; test: 339 rows (38.05%).
+my_lm_model stack. aRMSE: 2.16; aCindex: 9.519
+my_XGBoost_model stack. aRMSE: 2.341; aCindex: 9.513
+my_LightGBM_model stack. aRMSE: 2.199; aCindex: 9.345
+my_Catboost_model stack. aRMSE: 2.184; aCindex: 9.649
+my_RandomForest_model stack. aRMSE: 2.222; aCindex: 9.537
+my_knn_model stack. aRMSE: 2.246; aCindex: 9.563
+my_SVR_model stack. aRMSE: 2.242; aCindex: 9.581
+GLM Lasso. aRMSE: 2.134; aCindex: 9.309
+GLM Ridge. aRMSE: 2.127; aCindex: 9.176
+
+no PCA 
+Train: 552 rows; test: 339 rows (38.05%).
+my_lm_model stack. aRMSE: 2.157; aCindex: 9.419
+my_XGBoost_model stack. aRMSE: 2.403; aCindex: 9.236
+my_LightGBM_model stack. aRMSE: 2.208; aCindex: 9.395
+my_Catboost_model stack. aRMSE: 2.188; aCindex: 9.687
+my_RandomForest_model stack. aRMSE: 2.233; aCindex: 9.333
+my_knn_model stack. aRMSE: 2.265; aCindex: 9.159
+my_SVR_model stack. aRMSE: 2.261; aCindex: 9.552
+GLM Lasso. aRMSE: 2.186; aCindex: 9.676
+GLM Ridge. aRMSE: 2.193; aCindex: 9.794
+
+
+
+EY 
+PCA 
+Train: 861 rows; test: 339 rows (28.25%).
+my_lm_model stack. aRMSE: 2.171; aCindex: 9.687
+my_XGBoost_model stack. aRMSE: 2.299; aCindex: 9.342
+my_LightGBM_model stack. aRMSE: 2.202; aCindex: 9.398
+my_Catboost_model stack. aRMSE: 2.193; aCindex: 9.513
+my_RandomForest_model stack. aRMSE: 2.234; aCindex: 9.726
+my_knn_model stack. aRMSE: 2.254; aCindex: 9.401
+my_SVR_model stack. aRMSE: 2.22; aCindex: 9.549
+GLM Lasso. aRMSE: 2.131; aCindex: 10.074
+GLM Ridge. aRMSE: 2.134; aCindex: 10.265
+
+no PCA 
+Train: 861 rows; test: 339 rows (28.25%).
+my_lm_model stack. aRMSE: 2.173; aCindex: 9.54
+my_XGBoost_model stack. aRMSE: 2.298; aCindex: 9.696
+my_LightGBM_model stack. aRMSE: 2.202; aCindex: 9.578
+my_Catboost_model stack. aRMSE: 2.182; aCindex: 9.369
+my_RandomForest_model stack. aRMSE: 2.223; aCindex: 9.649
+my_knn_model stack. aRMSE: 2.271; aCindex: 9.528
+my_SVR_model stack. aRMSE: 2.246; aCindex: 9.516
+GLM Lasso. aRMSE: 2.127; aCindex: 10.029
+GLM Ridge. aRMSE: 2.126; aCindex: 9.706
+
+
+
+CT 
+PCA 
+Train: 654 rows; test: 339 rows (34.14%).
+my_lm_model stack. aRMSE: 2.059; aCindex: 9.882
+my_XGBoost_model stack. aRMSE: 2.263; aCindex: 9.643
+my_LightGBM_model stack. aRMSE: 2.117; aCindex: 10.047
+my_Catboost_model stack. aRMSE: 2.091; aCindex: 9.923
+my_RandomForest_model stack. aRMSE: 2.109; aCindex: 9.705
+my_knn_model stack. aRMSE: 2.155; aCindex: 9.572
+my_SVR_model stack. aRMSE: 2.168; aCindex: 9.622
+GLM Lasso. aRMSE: 2.244; aCindex: 9.794
+GLM Ridge. aRMSE: 2.241; aCindex: 9.662
+
+no PCA 
+Train: 654 rows; test: 339 rows (34.14%).
+my_lm_model stack. aRMSE: 2.054; aCindex: 9.879
+my_XGBoost_model stack. aRMSE: 2.184; aCindex: 9.558
+my_LightGBM_model stack. aRMSE: 2.106; aCindex: 9.976
+my_Catboost_model stack. aRMSE: 2.069; aCindex: 10.109
+my_RandomForest_model stack. aRMSE: 2.083; aCindex: 10.056
+my_knn_model stack. aRMSE: 2.15; aCindex: 9.599
+my_SVR_model stack. aRMSE: 2.135; aCindex: 9.941
+GLM Lasso. aRMSE: 2.279; aCindex: 9.956
+GLM Ridge. aRMSE: 2.276; aCindex: 9.941
+
+
+
+LN 
+PCA 
+Train: 659 rows; test: 339 rows (33.97%).
+my_lm_model stack. aRMSE: 2.147; aCindex: 9.487
+my_XGBoost_model stack. aRMSE: 2.303; aCindex: 9.212
+my_LightGBM_model stack. aRMSE: 2.184; aCindex: 9.658
+my_Catboost_model stack. aRMSE: 2.163; aCindex: 9.431
+my_RandomForest_model stack. aRMSE: 2.188; aCindex: 9.422
+my_knn_model stack. aRMSE: 2.261; aCindex: 9.463
+my_SVR_model stack. aRMSE: 2.257; aCindex: 9.08
+GLM Lasso. aRMSE: 2.129; aCindex: 9.176
+GLM Ridge. aRMSE: 2.129; aCindex: 9.088
+
+no PCA 
+Train: 659 rows; test: 339 rows (33.97%).
+my_lm_model stack. aRMSE: 2.151; aCindex: 9.658
+my_XGBoost_model stack. aRMSE: 2.329; aCindex: 9.46
+my_LightGBM_model stack. aRMSE: 2.159; aCindex: 9.894
+my_Catboost_model stack. aRMSE: 2.143; aCindex: 9.864
+my_RandomForest_model stack. aRMSE: 2.17; aCindex: 9.342
+my_knn_model stack. aRMSE: 2.224; aCindex: 9.204
+my_SVR_model stack. aRMSE: 2.234; aCindex: 9.572
+GLM Lasso. aRMSE: 2.141; aCindex: 9.103
+GLM Ridge. aRMSE: 2.142; aCindex: 9.029
+
+
+
+SC 
+PCA 
+Train: 408 rows; test: 339 rows (45.38%).
+my_lm_model stack. aRMSE: 2.167; aCindex: 9.894
+my_XGBoost_model stack. aRMSE: 2.346; aCindex: 9.522
+my_LightGBM_model stack. aRMSE: 2.202; aCindex: 9.858
+my_Catboost_model stack. aRMSE: 2.182; aCindex: 9.823
+my_RandomForest_model stack. aRMSE: 2.195; aCindex: 9.637
+my_knn_model stack. aRMSE: 2.262; aCindex: 9.354
+my_SVR_model stack. aRMSE: 2.271; aCindex: 9.351
+GLM Lasso. aRMSE: 2.119; aCindex: 9.147
+GLM Ridge. aRMSE: 2.113; aCindex: 9.324
+
+no PCA 
+Train: 408 rows; test: 339 rows (45.38%).
+my_lm_model stack. aRMSE: 2.183; aCindex: 9.861
+my_XGBoost_model stack. aRMSE: 2.373; aCindex: 9.702
+my_LightGBM_model stack. aRMSE: 2.21; aCindex: 9.451
+my_Catboost_model stack. aRMSE: 2.18; aCindex: 9.885
+my_RandomForest_model stack. aRMSE: 2.194; aCindex: 9.761
+my_knn_model stack. aRMSE: 2.269; aCindex: 9.416
+my_SVR_model stack. aRMSE: 2.236; aCindex: 9.611
+GLM Lasso. aRMSE: 2.157; aCindex: 8.309
+GLM Ridge. aRMSE: 2.167; aCindex: 8.338
+
+
+
