@@ -453,7 +453,7 @@ get_L1_L2_glmnet_preds <- function(X_train_ = X_train, Y_train_ = Y_train, X_tes
   if (need_to_correct == TRUE) glm_pred <- glm_pred %>% prediction_correction()
   
   lbl <- if (alpha == 1) "Lasso" else if (alpha == 0) "Ridge" else "Wrong"
-  if (print_metric) print(show_custom_metrics(glm_pred, paste0("GLM ", lbl), Y_test_ = Y_test))
+  if (print_metric) print(show_custom_metrics(glm_pred, paste0("GLM ", lbl), Y_test_ = Y_test_))
   return(invisible(glm_pred))
 }
 

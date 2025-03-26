@@ -1391,3 +1391,59 @@ print(f"ExtraTree. RMSE: {rmse(y_test, etr.predict(X_test))}")
 print(f"Random Forest. RMSE: {rmse(y_test, rf.predict(X_test))}")
 print(f"kNN. RMSE: {rmse(y_test, knn.predict(X_test))}")
 ```
+
+
+# 8. Распределение и сбалансированность значений кодов Голланда
+
+Распределение значений кодов HL_1:HL_6 предсказаний:
+```{r}
+df_long_preds <- as.data.table(rf_ind_pred) %>%  # lm_L1_pred
+  setnames(paste0("HL_", 1:6)) %>% 
+  .[, id := .I] %>% 
+  pivot_longer(cols = HL_1:HL_6, names_to = "Group", values_to = "Value")
+
+
+ggplot(df_long_preds, aes(x = Value, color = Group, fill = Group)) +
+  geom_density(alpha = 0.2) +
+  labs(title = "Накладывающиеся графики плотности предсказаний", x = "Значение", y = "Плотность") +
+  theme_minimal()
+
+ggplot(df_long_preds, aes(x = Value, color = Group, fill = Group)) +
+  geom_density(alpha = 0.2) +
+  labs(title = "Накладывающиеся графики плотности предсказаний", x = "Значение", y = "Плотность") +
+  facet_wrap(~ Group) +
+  theme_minimal()
+
+ggplot(df_long_preds, aes(x = Value, y = Group, fill = stat(x))) +
+  geom_density_ridges_gradient() +
+  scale_fill_viridis_c(name = "Temp.", option = "C") +
+  labs(title = "Накладывающиеся графики плотности предсказаний", x = "Значение", y = "Плотность") +
+  theme_minimal()
+```
+
+Распределение значений топ1:топ6 предсказаний:
+```{r}
+value_rank_df <- df_long_preds %>% 
+  as.data.table() %>% 
+  .[order(id, -Value)] %>% 
+  .[, rank := paste0("rank_", 1:.N), by = .(id)] %>% 
+  .[, .(Value, rank)]
+
+ggplot(value_rank_df, aes(x = Value, color = rank, fill = rank)) +
+  geom_density(alpha = 0.2) +
+  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
+  facet_wrap(~ rank) +
+  theme_minimal()
+
+ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
+  geom_density_ridges_gradient() +
+  scale_fill_viridis_c(name = "Temp.", option = "C") +
+  labs(title = "Частоты значений кодов предсказаний по убыванию") +
+  theme_minimal()
+```
+
+```{r}
+
+```
+
+

@@ -492,3 +492,51 @@ untd_dt %>%
   mutate(`dots` = "...", .before = "LN_9") %>% 
   write.xlsx2("../../0. Data/Output/slice_data.xlsx")
 ```
+
+
+# 7. Распределение значений кодов
+```{r}
+library(ggridges)
+
+
+df_long <- untd_dt[, .SD, .SDcols = patterns("id|HL_")] %>% 
+   pivot_longer(cols = HL_1:HL_6, names_to = "Group", values_to = "Value")
+
+ggplot(df_long, aes(x = Value, color = Group, fill = Group)) +
+  geom_density(alpha = 0.2) +
+  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
+  theme_minimal()
+
+ggplot(df_long, aes(x = Value, color = Group, fill = Group)) +
+  geom_density(alpha = 0.2) +
+  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
+  facet_wrap(~ Group) +
+  theme_minimal()
+
+ggplot(df_long, aes(x = Value, y = Group, fill = stat(x))) +
+  geom_density_ridges_gradient() +
+  scale_fill_viridis_c(name = "Temp.", option = "C") +
+  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
+  theme_minimal()
+```
+
+Какие обычно значения у 1-6 кодов (неважно, какой именно код)
+```{r}
+value_rank_df <- df_long %>% 
+  as.data.table() %>% 
+  .[order(id, -Value)] %>% 
+  .[, rank := paste0("rank_", 1:.N), by = .(id)] %>% 
+  .[, .(Value, rank)]
+
+ggplot(value_rank_df, aes(x = Value, color = rank, fill = rank)) +
+  geom_density(alpha = 0.2) +
+  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
+  facet_wrap(~ rank) +
+  theme_minimal()
+
+ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
+  geom_density_ridges_gradient() +
+  scale_fill_viridis_c(name = "Temp.", option = "C") +
+  labs(title = "Частоты значений кодов по убыванию") +
+  theme_minimal()
+```
