@@ -319,6 +319,142 @@ for (k in c(2, 5, 7, 10, 12)) {
 ```
 
 
+## 3.9 Stacking glm
+
+```{r}
+library(stacking)
+
+Method <- list(glmnet = data.frame(alpha = c(0.5, 0.8), lambda = c(0.1, 1)),
+               pls = data.frame(ncomp = 5))
+
+stacking_train_result <- NULL
+
+for (i in 1:6) {
+  stacking_train_result[[i]] <- stacking_train(
+    X = X_train,
+    Y = Y_train[, i],
+    Method = Method,
+    Metamodel = "glmnet",
+    core = 2,
+    cross_validation = FALSE,
+    use_X = TRUE,
+    TrainEachFold = TRUE,
+    num_sample = 3,
+    proportion = 0.8
+  ) 
+}
+```
+
+
+```{r}
+st_pred <- lapply(1:6, \(i) stacking_predict(newX = X_test, stacking_train_result[[i]]))
+st_pred %>% 
+  as.data.table() %>% 
+  as.matrix() %>% 
+  show_custom_metrics(case_name = "Stacking", need_to_correct = TRUE)
+```
+
+
+```{r}
+library(MASS)
+library(caret)
+library(rpart)
+library(randomForest)
+
+set.seed(123)
+final_pred <- NULL
+
+for (hol_i in 1:6) {
+  y_train <- Y_train[, hol_i]
+  y_test <- Y_test[, hol_i]
+  folds <- createFolds(y_train, k = 5, list = TRUE)
+  
+  base_preds <- matrix(0, nrow = nrow(X_train), ncol = 5)
+  colnames(base_preds) <- c("lasso", "ridge", "lightgbm", "catboost", "rf")
+  
+  # Обучение базовых моделей с out-of-fold предсказаниями
+  for (i in 1:length(folds)) {
+    fold_idx <- folds[[i]]
+    
+    # Разделение данных на тренировочную и валидационную части
+    X_fold_train <- X_train[-fold_idx, ]
+    y_fold_train <- y_train[-fold_idx]
+    X_fold_val <- X_train[fold_idx, ]
+    
+    # L1-регрессия (Lasso)
+    lasso <- cv.glmnet(X_fold_train, y_fold_train, alpha = 1)
+    base_preds[fold_idx, "lasso"] <- predict(lasso, X_fold_val, s = "lambda.min")
+    
+    # L2-регрессия (Ridge)
+    ridge <- cv.glmnet(X_fold_train, y_fold_train, alpha = 0)
+    base_preds[fold_idx, "ridge"] <- predict(ridge, X_fold_val, s = "lambda.min")
+    
+    # LightGBM
+    dtrain <- lgb.Dataset(data = X_fold_train, label = y_fold_train)
+    params <- list(objective = "regression", metric = "rmse", num_leaves = 31)
+    lgb_model <- lgb.train(params, dtrain, 100, verbose = -1)
+    base_preds[fold_idx, "lightgbm"] <- predict(lgb_model, X_fold_val)
+    
+    # CatBoost
+    pool_train <- catboost.load_pool(data = X_fold_train, label = y_fold_train)
+    pool_val <- catboost.load_pool(data = X_fold_val)
+    cat_model <- catboost.train(pool_train, NULL, params = list(iterations = 100, loss_function = 'RMSE', depth = 6, logging_level = "Silent"))
+    base_preds[fold_idx, "catboost"] <- catboost.predict(cat_model, pool_val)
+    
+    # Random Forest
+    rf_model <- randomForest(X_fold_train, y_fold_train, ntree = 100)
+    base_preds[fold_idx, "rf"] <- predict(rf_model, X_fold_val)
+  }
+  
+  # Обучение мета-модели на предсказаниях базовых моделей
+  meta_train <- data.frame(base_preds, target = y_train)
+  meta_model <- lm(target ~  ., data = meta_train)
+  
+  # Переобучение базовых моделей на полных данных
+  final_lasso <- cv.glmnet(X_train, y_train, alpha = 1)
+  final_ridge <- cv.glmnet(X_train, y_train, alpha = 0)
+  final_rf <- randomForest(X_train, y_train, ntree = 100)
+  
+  # LightGBM final
+  dtrain_full <- lgb.Dataset(data = X_train, label = y_train)
+  lgb_final <- lgb.train(params, dtrain_full, 100, verbose = -1)
+  
+  # CatBoost final
+  pool_full <- catboost.load_pool(X_train, label = y_train)
+  cat_final <- catboost.train(pool_full, NULL, params = list(
+    iterations = 100, loss_function = 'RMSE', depth = 6, logging_level = "Silent"))
+  
+  # Предсказания на тестовых данных
+  test_preds <- data.table(
+    lasso = predict(final_lasso, X_test, s = "lambda.min"),
+    ridge = predict(final_ridge, X_test, s = "lambda.min"),
+    lightgbm = predict(lgb_final, X_test),
+    catboost = catboost.predict(cat_final, catboost.load_pool(X_test)),
+    rf = predict(final_rf, X_test)
+  ) %>% setnames(c("lasso", "ridge", "lightgbm", "catboost", "rf"))
+  
+  # Финальное предсказание мета-модели
+  final_pred[[hol_i]] <- predict(meta_model, newdata = test_preds)
+}
+```
+
+```{r}
+final_pred %>% 
+  as.data.table() %>% 
+  as.matrix() %>% 
+  show_custom_metrics(case_name = "Stacking", need_to_correct = TRUE)
+```
+
+
+```{r}
+final_pred %>% 
+  as.data.table() %>% 
+  as.matrix() %>% 
+  show_custom_metrics(case_name = "Stacking", need_to_correct = TRUE)
+```
+
+
+
 ## 3.9 Результирущий датасет с предсказаниями
           
 ```{r}
