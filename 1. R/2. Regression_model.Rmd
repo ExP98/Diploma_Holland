@@ -319,7 +319,7 @@ for (k in c(2, 5, 7, 10, 12)) {
 ```
 
 
-## 3.9 Stacking glm
+## 3.9 Stacking 
 
 ```{r}
 library(stacking)
@@ -343,10 +343,8 @@ for (i in 1:6) {
     proportion = 0.8
   ) 
 }
-```
 
 
-```{r}
 st_pred <- lapply(1:6, \(i) stacking_predict(newX = X_test, stacking_train_result[[i]]))
 st_pred %>% 
   as.data.table() %>% 
@@ -359,7 +357,6 @@ st_pred %>%
 library(MASS)
 library(caret)
 library(rpart)
-library(randomForest)
 
 set.seed(123)
 final_pred <- NULL
@@ -391,18 +388,18 @@ for (hol_i in 1:6) {
     
     # LightGBM
     dtrain <- lgb.Dataset(data = X_fold_train, label = y_fold_train)
-    params <- list(objective = "regression", metric = "rmse", num_leaves = 31)
+    params <- list(objective = "regression", metric = "rmse", num_iterations = 250)
     lgb_model <- lgb.train(params, dtrain, 100, verbose = -1)
     base_preds[fold_idx, "lightgbm"] <- predict(lgb_model, X_fold_val)
     
     # CatBoost
     pool_train <- catboost.load_pool(data = X_fold_train, label = y_fold_train)
     pool_val <- catboost.load_pool(data = X_fold_val)
-    cat_model <- catboost.train(pool_train, NULL, params = list(iterations = 100, loss_function = 'RMSE', depth = 6, logging_level = "Silent"))
+    cat_model <- catboost.train(pool_train, NULL, params = list(loss_function = 'RMSE', logging_level = "Silent"))
     base_preds[fold_idx, "catboost"] <- catboost.predict(cat_model, pool_val)
     
     # Random Forest
-    rf_model <- randomForest(X_fold_train, y_fold_train, ntree = 100)
+    rf_model <- randomForest(X_fold_train, y_fold_train, ntree = 1000)
     base_preds[fold_idx, "rf"] <- predict(rf_model, X_fold_val)
   }
   
@@ -413,7 +410,7 @@ for (hol_i in 1:6) {
   # Переобучение базовых моделей на полных данных
   final_lasso <- cv.glmnet(X_train, y_train, alpha = 1)
   final_ridge <- cv.glmnet(X_train, y_train, alpha = 0)
-  final_rf <- randomForest(X_train, y_train, ntree = 100)
+  final_rf <- randomForest(X_train, y_train, ntree = 1000)
   
   # LightGBM final
   dtrain_full <- lgb.Dataset(data = X_train, label = y_train)
@@ -421,8 +418,8 @@ for (hol_i in 1:6) {
   
   # CatBoost final
   pool_full <- catboost.load_pool(X_train, label = y_train)
-  cat_final <- catboost.train(pool_full, NULL, params = list(
-    iterations = 100, loss_function = 'RMSE', depth = 6, logging_level = "Silent"))
+  cat_final <- catboost.train(pool_full, NULL, 
+                              params = list(loss_function = 'RMSE', logging_level = "Silent"))
   
   # Предсказания на тестовых данных
   test_preds <- data.table(
@@ -431,7 +428,8 @@ for (hol_i in 1:6) {
     lightgbm = predict(lgb_final, X_test),
     catboost = catboost.predict(cat_final, catboost.load_pool(X_test)),
     rf = predict(final_rf, X_test)
-  ) %>% setnames(c("lasso", "ridge", "lightgbm", "catboost", "rf"))
+  ) %>% 
+    setnames(c("lasso", "ridge", "lightgbm", "catboost", "rf"))
   
   # Финальное предсказание мета-модели
   final_pred[[hol_i]] <- predict(meta_model, newdata = test_preds)
@@ -445,14 +443,7 @@ final_pred %>%
   show_custom_metrics(case_name = "Stacking", need_to_correct = TRUE)
 ```
 
-
-```{r}
-final_pred %>% 
-  as.data.table() %>% 
-  as.matrix() %>% 
-  show_custom_metrics(case_name = "Stacking", need_to_correct = TRUE)
-```
-
+Стэкинг из lm, rpart, randomForest: Stacking. aRMSE: 1.98; aCindex: 9.926
 
 
 ## 3.9 Результирущий датасет с предсказаниями
@@ -1578,8 +1569,39 @@ ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
   theme_minimal()
 ```
 
+# 9. Попытка решения задачи другими способами
 ```{r}
+cooccurrence <- function(y) {
+  co_mat <- t(y) %*% y
+  return(co_mat)
+}
 
+co_mat <- cooccurrence(Y_b_train)
 ```
 
+1. Предсказание главного кода i, затем с вероятностью p_ij предсказывается код j.
+Как предсказывать третий код? Или второй максимум в p_ij, или максимум по комбинации двух кодов.
+
+2. Ранжирование
+
+```{r}
+library(xgboost)
+library(caret)
+
+
+data <- wide_data %>%
+  copy() %>% 
+  mutate(acrossa(HL_1:HL_6, ~rank(-., ties.method = "random"), .names = "rank_{.col}")) %>% 
+  as_tibble()
+
+# Разделение данных
+set.seed(42)
+
+model <- xgboost(data = X_train, label = y_train, nrounds = 500, verbose = 0,
+                 objective = "rank:pairwise", eval_metric = "ndcg@3")
+
+pred_scores <- predict(model, X_test)
+
+pred_ranks <- apply(matrix(pred_scores, ncol = 6), 1, function(x) rank(-x, ties.method = "random"))
+```
 
