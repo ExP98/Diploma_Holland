@@ -1582,13 +1582,266 @@ co_mat <- cooccurrence(Y_b_train)
 1. Предсказание главного кода i, затем с вероятностью p_ij предсказывается код j.
 Как предсказывать третий код? Или второй максимум в p_ij, или максимум по комбинации двух кодов.
 
+```{r}
+untd_targets_bool <- untd_dt %>% 
+  .[, .SD, .SDcols = patterns("HL_")] %>% 
+  apply(1, bool_mask_row) 
+
+cooccur_mat <- untd_targets_bool %*% t(untd_targets_bool)
+diag(cooccur_mat) <- 0
+cooccur_mat <- cooccur_mat / rowSums(cooccur_mat)
+```
+
+```{r}
+predict_linkage_rnd_max <- function(cooccur_mat, first_ind = NULL) {
+  if (is.null(first_ind)) first_ind <- sample(1:6, 1)
+  second_ind <- cooccur_mat[first_ind, ] %>% which.max()
+  
+  third_probs <- cooccur_mat[c(first_ind, second_ind), ] %>% colSums()
+  third_probs[c(first_ind, second_ind)] <- 0
+  third_ind <- third_probs %>% which.max()
+  
+  return(c(first_ind, second_ind, third_ind))
+}
+
+
+predict_linkage_rnd_prob <- function(cooccur_mat, first_ind = NULL) {
+  if (is.null(first_ind)) first_ind <- sample(1:6, 1) 
+  second_ind <- sample(1:6, size = 1, prob = cooccur_mat[first_ind, ])
+  
+  third_probs <- cooccur_mat[c(first_ind, second_ind), ] %>% colSums()
+  third_probs[c(first_ind, second_ind)] <- 0
+  third_ind <- sample(1:6, size = 1, prob = third_probs)
+  
+  return(c(first_ind, second_ind, third_ind))
+}
+
+
+predict_by_linkage_metrics <- function(cooccur_mat, first_inds_vec = NULL, avg_prob_b = TRUE, n_repeat = 10^2) {
+  rnd_max_score <- sapply(1:nrow(Y_test),
+                          \(i) calc_C_index_threes(
+                            predict_three_rnd_max(cooccur_mat, first_inds_vec[i]),
+                            get_max_indx(Y_test[i, ])
+                          )) %>% mean()
+  
+  # rnd_prob_score <- sapply(1:nrow(Y_test),
+  #                          \(i) calc_C_index_threes(
+  #                            predict_three_rnd_prob(cooccur_mat, first_inds_vec[i]),
+  #                            get_max_indx(Y_test[i, ])
+  #                          )) %>% mean()
+  
+  if (avg_prob_b == FALSE) n_repeat <- 1
+  
+  rnd_prob_score <- sapply(1:n_repeat, \(ii) sapply(
+    1:nrow(Y_test),
+    \(i) calc_C_index_threes(
+      predict_three_rnd_prob(cooccur_mat, first_inds_vec[i]),
+      get_max_indx(Y_test[i, ])
+    )
+  ) %>% mean()) %>%
+    median()
+  
+  cat(rnd_max_score, rnd_prob_score)
+  return(invisible(c(rnd_max_score, rnd_prob_score)))
+}
+```
+
+Без указания первого главного кода (рандом):
+```{r}
+predict_by_linkage_metrics(cooccur_mat, first_inds_vec = NULL)
+```
+
+PCA:
+
+RF:
+```{r}
+best_k <- 32
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+pred <- perform_stack_MO_regression(my_RandomForest_model, X_train_pca, Y_train, X_test_pca, Y_test, print_metric = TRUE)
+first_inds_vec <- apply(pred, 1, \(x) which.max(x)) %>% unname()
+predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
+```
+
+Lasso:
+```{r}
+best_k <- 23
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+pred <- perform_stack_MO_regression(my_L1_L2_glmnet_model, X_train_pca, Y_train, X_test_pca, Y_test, print_metric = TRUE)
+first_inds_vec <- apply(pred, 1, \(x) which.max(x)) %>% unname()
+predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
+```
+
+LightGBM
+```{r}
+best_k <- 31
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+pred <- perform_stack_MO_regression(my_LightGBM_model, X_train_pca, Y_train, X_test_pca, Y_test, print_metric = TRUE)
+first_inds_vec <- apply(pred, 1, \(x) which.max(x)) %>% unname()
+predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
+```
+
+
+not PCA:
+```{r}
+# my_RandomForest_model, my_LightGBM_model
+pred <- perform_stack_MO_regression(my_LightGBM_model, X_train, Y_train, X_test, Y_test, print_metric = TRUE)
+# pred <- get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, print_metric = TRUE)
+first_inds_vec <- apply(pred, 1, \(x) which.max(x)) %>% unname()
+predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
+```
+RandomForest: 9.761194 9.731343 (orig 9.627)
+RandomForest PCA: 9.835821 9.5 (orig 9.657)
+my_LightGBM_model: 9.522388 9.470149 (orig 9.687)
+my_LightGBM_model: 9.701493 9.723881 (orig 10.045)
+Lasso PCA: 9.776119 9.597015 (orig 9.746)
+Lasso: 9.701493 9.61194 (orig 10.045)
+
+Вывод: предсказание первой буквы и уже по ней по "статистике" второй и третьей (притом константно) работает лучше рандома, но хуже предсказания регрессией 2 и 3 факторов тройки
+
+
+С классификацией первого фактора вместо регрессора с выбором первого:
+```{r}
+Y_train_classif <- apply(Y_train, 1, \(x) which.max(x)) %>% unname() %>% factor(levels = 1:6)
+Y_test_classif <- apply(Y_test, 1, \(x) which.max(x)) %>% unname() %>% factor(levels = 1:6)
+
+model_rf <- randomForest(
+  x = X_train,
+  y = Y_train_classif,
+  ntree = 500,
+  importance = TRUE
+)
+
+pred <- predict(model_rf, X_test)
+# confusionMatrix(pred, Y_test_classif)
+first_inds_vec <- pred %>% unname()
+predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
+```
+
+XGBoost
+```{r}
+dtrain <- xgb.DMatrix(X_train, label = as.integer(Y_train_classif)-1)
+dtest <- xgb.DMatrix(X_test)
+
+params <- list(
+  objective = "multi:softprob",
+  num_class = 6,
+  eval_metric = "mlogloss"
+)
+
+model_xgb <- xgb.train(params, dtrain, nrounds = 100)
+first_inds_vec <- predict(model_xgb, dtest, reshape = TRUE) %>% max.col()
+predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
+```
+
+LightGBM:
+```{r}
+dtrain <- lgb.Dataset(
+  data = X_train %>% data.matrix(),
+  label = as.integer(Y_train_classif)-1,
+  params = list(feature_pre_filter = FALSE)
+)
+
+params <- list(
+  objective = "multiclass",
+  metric = "multi_logloss",
+  num_class = 6,
+  boosting_type = "gbdt"
+)
+
+model_lgb <- lgb.train(
+  params = params,
+  data = dtrain,
+  nrounds = 100,
+  verbose = -1
+)
+
+first_inds_vec <- predict(model_lgb, X_test) %>% max.col()
+predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
+```
+
+
+PCA:
+```{r}
+best_k <- 32
+X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
+X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
+
+model_rf <- randomForest(
+  x = X_train_pca,
+  y = Y_train_classif,
+  ntree = 500,
+  importance = TRUE
+)
+
+pred <- predict(model_rf, X_test_pca)
+first_inds_vec <- pred %>% unname()
+predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
+```
+
+
 2. Ранжирование
 
 ```{r}
-library(xgboost)
-library(caret)
+prepare_ranking_data <- function(data) {
+  df <- data %>% 
+    copy() %>% 
+    melt(id.vars = c("id", colnames(features)), measure.vars = colnames(targets), variable.name = "Holland_code", value.name = "Score") %>% 
+    .[order(id, Holland_code)] %>% 
+    .[, score_rank := rank(Score, ties.method = "random"), by = id]
+  return(df)
+}
 
 
+prepare_model_data <- function(df) {
+  model_data <- xgb.DMatrix(data = df[, .SD, .SDcols = colnames(features)] %>% as.matrix(),
+                            label = df[["score_rank"]],
+                            group = df[, .(n = .N), by = id][, n])
+  return(model_data)
+}
+```
+
+
+```{r}
+dtrain <- wide_data[split_idx] %>% prepare_ranking_data() %>% prepare_model_data()
+test_df <- wide_data[!split_idx] %>% prepare_ranking_data()
+dtest <- test_df %>% prepare_model_data()
+
+params <- list(
+  objective = "rank:pairwise",
+  eval_metric = "ndcg@3",
+  eta = 0.1,
+  gamma = 1,
+  max_depth = 6,
+  subsample = 0.8
+)
+
+xgb_model <- xgb.train(
+  params,
+  data = dtrain,
+  nrounds = 100,
+  watchlist = list(train = dtrain),
+  print_every_n = 30
+)
+
+scores <- predict(xgb_model, dtest)
+
+test_df %>% 
+  copy() %>% 
+  .[, scores := scores] %>% 
+  .[]
+```
+
+
+
+
+
+```{r}
 data <- wide_data %>%
   copy() %>% 
   mutate(acrossa(HL_1:HL_6, ~rank(-., ties.method = "random"), .names = "rank_{.col}")) %>% 

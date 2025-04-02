@@ -25,9 +25,8 @@ my_rmse     <- function(y1, y2) sqrt(sum((y1 - y2)^2) / length(y1))
 cosine_sim  <- function(y1, y2) (sum(y1 * y2)) / (sqrt(sum(y1 ^ 2)) * sqrt(sum(y2 ^ 2)))
 cosine_dist <- function(y1, y2) sqrt(2 * (1 - cosine_sim(y1, y2)))
 
-## C-индекс: C = 3(X1, Y1) + 2(X2, Y2) + 1(X3, Y3), где
-##   (Xi, Yi) = 3 (Xi == Yi); 2 (Xi, Yi -- соседи); 1 (Xi, Yi -- через 1 позицию); 0 (противоположные)
-calc_C_index <- function(row1, row2) {
+
+calc_C_index_threes <- function(r1, r2) {
   get_max_indx <- \(row) row %>% order(decreasing = TRUE) %>% .[1:3]
   calc_pair_match <- function(x, y) {
     if (x == y) return(3)
@@ -36,13 +35,20 @@ calc_C_index <- function(row1, row2) {
     if (x == ((y + 2) %% 6 + 1)) return(0)
   }
   
-  r1 <- row1 %>% get_max_indx()
-  r2 <- row2 %>% get_max_indx()
-  
   C_index <- calc_pair_match(r1[1], r2[1]) * 3 +
     calc_pair_match(r1[2], r2[2]) * 2 +
     calc_pair_match(r1[3], r2[3]) * 1
+  
   return(C_index)
+}
+
+
+## C-индекс: C = 3(X1, Y1) + 2(X2, Y2) + 1(X3, Y3), где
+##   (Xi, Yi) = 3 (Xi == Yi); 2 (Xi, Yi -- соседи); 1 (Xi, Yi -- через 1 позицию); 0 (противоположные)
+calc_C_index <- function(row1, row2) {
+  r1 <- row1 %>% get_max_indx()
+  r2 <- row2 %>% get_max_indx()
+  return(calc_C_index_threes(r1, r2))
 }
 
 # чтобы минимильное значение было лучшим (ибо чем больше С-индекс, тем предсказание точнее)
