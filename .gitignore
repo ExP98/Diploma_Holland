@@ -11,3 +11,5 @@
 /1. R/catboost_info
 /2. Python/catboost_info
 /2. Python/__pycache__
+/2. Python/lightning_logs
+/2. Python/model_checkpoints
