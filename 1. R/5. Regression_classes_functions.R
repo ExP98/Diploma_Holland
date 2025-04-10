@@ -26,8 +26,9 @@ cosine_sim  <- function(y1, y2) (sum(y1 * y2)) / (sqrt(sum(y1 ^ 2)) * sqrt(sum(y
 cosine_dist <- function(y1, y2) sqrt(2 * (1 - cosine_sim(y1, y2)))
 
 
+get_max_indx <- \(row) row %>% order(decreasing = TRUE) %>% .[1:3]
+
 calc_C_index_threes <- function(r1, r2) {
-  get_max_indx <- \(row) row %>% order(decreasing = TRUE) %>% .[1:3]
   calc_pair_match <- function(x, y) {
     if (x == y) return(3)
     if (x == ((y - 2) %% 6 + 1) | x == (y %% 6 + 1)) return(2)

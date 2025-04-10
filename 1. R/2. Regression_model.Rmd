@@ -1289,6 +1289,7 @@ targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
 .[Y_b_train, Y_b_test] <- list(targets_bool[split_idx, ], targets_bool[!split_idx, ])
 ```
 
+randomForest
 ```{r}
 ind_pred <- vector("list", 6)
 
@@ -1297,16 +1298,41 @@ for (col_i in 1:6) {
   ind_pred[[col_i]] <- predict(rf, X_test, type = "prob")[, "TRUE"]
 }
 
-Y_pred <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
-# Y_b_test
+## Для C-index
+classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
+df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+
+
+## Для метрик классификации
+Y_pred_rf <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
 
 # Случайные предсказания
 Y_rand <- replicate(n = nrow(Y_b_test), sample(c(rep(TRUE, 3), rep(FALSE, 3)), size = 6)) %>% t()
 ```
+C-index. Результат аналогичен RF regr (что логично и ожидаемо)
 
 
-C-index. Результат аналогичен RF regr (что логично и ожидаемо).
+Catboost
 ```{r}
+ind_pred <- vector("list", 6)
+
+for (col_i in 1:6) {
+  train_pool <- catboost.load_pool(data = X_train, label = Y_b_train[, col_i] %>% as.integer)
+  test_pool  <- catboost.load_pool(data = X_test,  label = Y_b_test[, col_i] %>% as.integer)
+  
+  model <- catboost.train(
+    learn_pool = train_pool,
+    test_pool = test_pool,
+    params = list(loss_function = 'CrossEntropy', logging_level = "Silent") # Logloss
+  )
+  
+  # preds <- catboost.predict(model, test_pool, prediction_type = "Class")
+  ind_pred[[col_i]] <- catboost.predict(model, test_pool, prediction_type = "Probability")
+}
+
+Y_pred_cb <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
+
+## Для C-index
 classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
 df_metric(classif_ind_pred, Y_test, func = calc_C_index)
 ```
@@ -1321,27 +1347,41 @@ hamming_loss <- function(y_true, y_pred) {
   mean(y_true != y_pred)
 }
 
-hamming_loss(Y_b_test, Y_pred) # 0.377451
+hamming_loss(Y_b_test, Y_pred_rf) # 0.377451
+hamming_loss(Y_b_test, Y_pred_cb) # 0.377451
 hamming_loss(Y_b_test, Y_rand) # 0.5392157
 # hamming_loss(Y_b_test, Y_b_test)
 # hamming_loss(Y_b_test, !Y_b_test)
 ```
 
 2. Top-k Accuracy
+
+RF
 ```{r}
 # Расчет точности
-mean(rowSums(Y_pred * Y_b_test) >= 1)  # Хотя бы одна верная - 0.9852941
-mean(rowSums(Y_pred * Y_b_test) >= 2)  # Хотя бы 2 верные    - 0.7352941
-mean(rowSums(Y_pred * Y_b_test) >= 3)  # Все 3 верные        - 0.1470588
+mean(rowSums(Y_pred_rf * Y_b_test) >= 1)  # Хотя бы одна верная - 0.9852941
+mean(rowSums(Y_pred_rf * Y_b_test) >= 2)  # Хотя бы 2 верные    - 0.7352941
+mean(rowSums(Y_pred_rf * Y_b_test) >= 3)  # Все 3 верные        - 0.1470588
 
 # последнее аналогично Subset Accuracy (Exact Match) - Доля объектов с полностью правильными метками
 subset_accuracy <- function(y_true, y_pred) {
   mean(apply(y_true == y_pred, 1, all))
 }
 
-subset_accuracy(Y_b_test, Y_pred) # 0.1470588
+subset_accuracy(Y_b_test, Y_pred_rf) # 0.1470588
 ```
 
+Catboost
+```{r}
+# Расчет точности
+mean(rowSums(Y_pred_cb * Y_b_test) >= 1) # 0.9852941
+mean(rowSums(Y_pred_cb * Y_b_test) >= 2) # 0.7205882
+mean(rowSums(Y_pred_cb * Y_b_test) >= 3) # 0.1617647
+
+subset_accuracy(Y_b_test, Y_pred_cb)
+```
+
+Rand
 ```{r}
 # Расчет точности
 mean(rowSums(Y_rand * Y_b_test) >= 1)  # Хотя бы одна верная - 0.8970588
@@ -1354,7 +1394,7 @@ subset_accuracy(Y_b_test, Y_rand)
 
 3. Precision, Recall, F1-Score
 ```{r}
-library(Metrics)
+# library(Metrics)
 
 calc_class_metrics <- function(y_true, y_pred) {
   answ <- data.table(y_true = y_true, y_pred = y_pred)
@@ -1417,9 +1457,10 @@ calc_multiclass_metrics <- function(Y_true, Y_pred) {
 
 ```{r}
 bind_rows(
-  pred = calc_multiclass_metrics(Y_b_test, Y_pred),
+  RF = calc_multiclass_metrics(Y_b_test, Y_pred_rf),
+  CB = calc_multiclass_metrics(Y_b_test, Y_pred_cb),
   rand = calc_multiclass_metrics(Y_b_test, Y_rand)
-) %>% mutate(Y = c("pred", "rand"), .before = 1)
+) %>% mutate(Y = c("RF", "CB", "rand"), .before = 1)
 ```
 
 4. Jaccard Similarity Score
@@ -1431,8 +1472,9 @@ jaccard_score <- function(y_true, y_pred) {
   mean(intersection / union)
 }
 
-jaccard_score(Y_b_test, Y_pred) # 0.4911765
-jaccard_score(Y_b_test, Y_rand) # 0.3367647
+jaccard_score(Y_b_test, Y_pred_rf) # 0.4867647
+jaccard_score(Y_b_test, Y_pred_cb) # 0.4941176
+jaccard_score(Y_b_test, Y_rand) # 0.3632353
 ```
 
 
@@ -1570,15 +1612,8 @@ ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
 ```
 
 # 9. Попытка решения задачи другими способами
-```{r}
-cooccurrence <- function(y) {
-  co_mat <- t(y) %*% y
-  return(co_mat)
-}
 
-co_mat <- cooccurrence(Y_b_train)
-```
-
+## 9.1 Предсказание главного кода + все остальные
 1. Предсказание главного кода i, затем с вероятностью p_ij предсказывается код j.
 Как предсказывать третий код? Или второй максимум в p_ij, или максимум по комбинации двух кодов.
 
@@ -1620,13 +1655,13 @@ predict_linkage_rnd_prob <- function(cooccur_mat, first_ind = NULL) {
 predict_by_linkage_metrics <- function(cooccur_mat, first_inds_vec = NULL, avg_prob_b = TRUE, n_repeat = 10^2) {
   rnd_max_score <- sapply(1:nrow(Y_test),
                           \(i) calc_C_index_threes(
-                            predict_three_rnd_max(cooccur_mat, first_inds_vec[i]),
+                            predict_linkage_rnd_max(cooccur_mat, first_inds_vec[i]),
                             get_max_indx(Y_test[i, ])
                           )) %>% mean()
   
   # rnd_prob_score <- sapply(1:nrow(Y_test),
   #                          \(i) calc_C_index_threes(
-  #                            predict_three_rnd_prob(cooccur_mat, first_inds_vec[i]),
+  #                            predict_linkage_rnd_prob(cooccur_mat, first_inds_vec[i]),
   #                            get_max_indx(Y_test[i, ])
   #                          )) %>% mean()
   
@@ -1635,7 +1670,7 @@ predict_by_linkage_metrics <- function(cooccur_mat, first_inds_vec = NULL, avg_p
   rnd_prob_score <- sapply(1:n_repeat, \(ii) sapply(
     1:nrow(Y_test),
     \(i) calc_C_index_threes(
-      predict_three_rnd_prob(cooccur_mat, first_inds_vec[i]),
+      predict_linkage_rnd_prob(cooccur_mat, first_inds_vec[i]),
       get_max_indx(Y_test[i, ])
     )
   ) %>% mean()) %>%
@@ -1651,11 +1686,13 @@ predict_by_linkage_metrics <- function(cooccur_mat, first_inds_vec = NULL, avg_p
 predict_by_linkage_metrics(cooccur_mat, first_inds_vec = NULL)
 ```
 
-PCA:
-
+### Регрессия
+#### PCA
 RF:
 ```{r}
 best_k <- 32
+pca_model <- prcomp(X_train, center = TRUE, scale. = TRUE)
+
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
@@ -1687,7 +1724,7 @@ predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
 ```
 
 
-not PCA:
+#### без PCA
 ```{r}
 # my_RandomForest_model, my_LightGBM_model
 pred <- perform_stack_MO_regression(my_LightGBM_model, X_train, Y_train, X_test, Y_test, print_metric = TRUE)
@@ -1705,6 +1742,7 @@ Lasso: 9.701493 9.61194 (orig 10.045)
 Вывод: предсказание первой буквы и уже по ней по "статистике" второй и третьей (притом константно) работает лучше рандома, но хуже предсказания регрессией 2 и 3 факторов тройки
 
 
+### Классификация первого кода
 С классификацией первого фактора вместо регрессора с выбором первого:
 ```{r}
 Y_train_classif <- apply(Y_train, 1, \(x) which.max(x)) %>% unname() %>% factor(levels = 1:6)
@@ -1785,7 +1823,7 @@ predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
 ```
 
 
-2. Ранжирование
+## 9.2. Ранжирование
 
 ```{r}
 prepare_ranking_data <- function(data) {
@@ -1798,7 +1836,7 @@ prepare_ranking_data <- function(data) {
 }
 
 
-prepare_model_data <- function(df) {
+prepare_XGmodel_data <- function(df) {
   model_data <- xgb.DMatrix(data = df[, .SD, .SDcols = colnames(features)] %>% as.matrix(),
                             label = df[["score_rank"]],
                             group = df[, .(n = .N), by = id][, n])
@@ -1806,11 +1844,11 @@ prepare_model_data <- function(df) {
 }
 ```
 
-
+Работает неверно:
 ```{r}
-dtrain <- wide_data[split_idx] %>% prepare_ranking_data() %>% prepare_model_data()
+dtrain <- wide_data[split_idx] %>% prepare_ranking_data() %>% prepare_XGmodel_data()
 test_df <- wide_data[!split_idx] %>% prepare_ranking_data()
-dtest <- test_df %>% prepare_model_data()
+dtest <- test_df %>% prepare_XGmodel_data()
 
 params <- list(
   objective = "rank:pairwise",
@@ -1837,24 +1875,6 @@ test_df %>%
   .[]
 ```
 
-
-
-
-
 ```{r}
-data <- wide_data %>%
-  copy() %>% 
-  mutate(acrossa(HL_1:HL_6, ~rank(-., ties.method = "random"), .names = "rank_{.col}")) %>% 
-  as_tibble()
 
-# Разделение данных
-set.seed(42)
-
-model <- xgboost(data = X_train, label = y_train, nrounds = 500, verbose = 0,
-                 objective = "rank:pairwise", eval_metric = "ndcg@3")
-
-pred_scores <- predict(model, X_test)
-
-pred_ranks <- apply(matrix(pred_scores, ncol = 6), 1, function(x) rank(-x, ties.method = "random"))
 ```
-
