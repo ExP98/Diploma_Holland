@@ -1,12 +1,14 @@
 import numpy as np
 import warnings
 
+
 def my_rmse(y1, y2):
     """
     Вычисляет RMSE между y1 и y2.
     """
     y1, y2 = np.array(y1), np.array(y2)
     return np.sqrt(np.sum((y1 - y2) ** 2) / len(y1))
+
 
 def cosine_sim(y1, y2):
     """
@@ -19,12 +21,14 @@ def cosine_sim(y1, y2):
         return 0
     return np.sum(y1 * y2) / (norm1 * norm2)
 
+
 def cosine_dist(y1, y2):
     """
     Вычисляет косинусное расстояние:
     sqrt(2 * (1 - cosine_sim)).
     """
     return np.sqrt(2 * (1 - cosine_sim(y1, y2)))
+
 
 def get_max_indx(row):
     """
@@ -33,6 +37,7 @@ def get_max_indx(row):
     row = np.array(row)
     # np.argsort возвращает индексы по возрастанию; для убывания сортируем по -row
     return np.argsort(-row)[:3] + 1  # добавляем 1 для перехода к 1-индексации
+
 
 def calc_pair_match(x, y):
     """
@@ -55,6 +60,7 @@ def calc_pair_match(x, y):
         return 0
     return 0  # на случай, если ни одно условие не сработало
 
+
 def calc_C_index(row1, row2):
     """
     Вычисляет C-индекс между двумя векторами.
@@ -67,9 +73,11 @@ def calc_C_index(row1, row2):
             calc_pair_match(r1[1], r2[1]) * 2 +
             calc_pair_match(r1[2], r2[2]) * 1)
 
+
 # Функция расстояния по C-индексу: чем больше C-индекс, тем лучше предсказание, поэтому
 # чтобы минимальное значение соответствовало лучшему предсказанию, определяем:
 c_index_dist = lambda row1, row2: 18 - calc_C_index(row1, row2)
+
 
 def smart_integer_round(six_vals):
     """
@@ -98,6 +106,7 @@ def smart_integer_round(six_vals):
         warnings.warn(f"Sum of {int_rnd_values} != 42. Input: {six_vals}.")
     return int_rnd_values
 
+
 def prediction_correction(preds):
     """
     Применяет smart_integer_round к каждой строке массива предсказаний.
@@ -106,6 +115,7 @@ def prediction_correction(preds):
     preds = np.array(preds)
     corrected = np.apply_along_axis(smart_integer_round, 1, preds)
     return corrected
+
 
 def df_metric(pred_df, Y_test_, func=my_rmse):
     """
@@ -118,28 +128,11 @@ def df_metric(pred_df, Y_test_, func=my_rmse):
     metrics = [func(pred_df[i, :], Y_test_[i, :]) for i in range(pred_df.shape[0])]
     return np.mean(metrics)
 
-## Пример использования функций:
-# if __name__ == "__main__":
-#     # Пример для RMSE, косинусного сходства и расстояния
-#     y1 = np.array([1, 2, 3, 4, 5, 6])
-#     y2 = np.array([6, 5, 4, 3, 2, 1])
-#     print("RMSE:", my_rmse(y1, y2))
-#     print("Cosine similarity:", cosine_sim(y1, y2))
-#     print("Cosine distance:", cosine_dist(y1, y2))
-    
-#     # Пример для C-индекса
-#     print("C-index:", calc_C_index(y1, y2))
-#     print("C-index distance:", c_index_dist(y1, y2))
-    
-#     # Пример для smart_integer_round
-#     six_vals = [10, 10, 10, 10, 1, 1]
-#     print("Smart integer round:", smart_integer_round(six_vals))
-    
 
-    
-#     # Пример для df_metric
-#     pred_df = np.array([[1, 2, 3, 4, 5, 6],
-#                         [6, 5, 4, 3, 2, 1]])
-#     Y_test_ = np.array([[1, 2, 3, 4, 5, 6],
-#                         [6, 5, 4, 3, 2, 1]])
-#     print("df_metric (RMSE):", df_metric(pred_df, Y_test_))
+def rmse(y_true, y_pred):
+    return df_metric(y_pred, y_true, my_rmse)
+
+
+def print_model_res(y_test_, y_pred, model_name = "", MO_type_name = "", round_digits = 3):
+    print(f"{model_name}{MO_type_name}. RMSE: {round(df_metric(y_pred, y_test_, my_rmse), round_digits)}. C-index: {round(df_metric(y_pred, y_test_, calc_C_index), round_digits)}")
+    return(None)
