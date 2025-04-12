@@ -88,7 +88,7 @@ show_custom_metrics <- function(my_pred, case_name, Y_test_ = Y_test, need_to_co
   if (need_to_correct) my_pred <- my_pred %>% prediction_correction()
   
   aRMSE_ <- df_metric(my_pred, Y_test_, my_rmse)
-  aCosDist_ <- df_metric(my_pred, Y_test_, cosine_dist)
+  # aCosDist_ <- df_metric(my_pred, Y_test_, cosine_dist)
   aCindex_ <- df_metric(my_pred, Y_test_, calc_C_index)
   # msg <- str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCosDist: {round(aCosDist_, 3)}; aCindex: {round(aCindex_, 3)}")
   msg <- str_glue("{case_name}. aRMSE: {round(aRMSE_, 3)}; aCindex: {round(aCindex_, 3)}")
@@ -197,12 +197,12 @@ perform_MO_regression <- function(model_class, type = c("stack", "chain"), ...) 
 
 
 perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_,
-                                        print_metric = FALSE, print_model_name = TRUE, need_to_correct = FALSE, ...) {
+                                        print_metric = FALSE, print_model_name = TRUE, 
+                                        need_to_correct = FALSE, ...) {
   if (print_model_name) message(paste0("Stack - ", model_class$classname))
   models <- vector("list", 6)
   for (col_i in 1:6) {
     models[[col_i]] <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i], ...)
-    # print(models[[col_i]]$rmse_test)
   }
   
   stack_pred <- sapply(models, \(x) x$pred_test)
@@ -214,7 +214,8 @@ perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_
 
 
 perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_,
-                                        print_metric = FALSE, print_model_name = TRUE, ...) {
+                                        print_metric = FALSE, print_model_name = TRUE, 
+                                        need_to_correct = FALSE, ...) {
   if (print_model_name) message(paste0("Chain - ", model_class$classname))
   models <- vector("list", 6)
   
@@ -229,10 +230,11 @@ perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_
       colnames(cbind_X_test)[ncol(cbind_X_test)] <- paste0("output_", col_i)
     }
     models[[col_i]] <- model_class$new(cbind_X_train, Y_train_[, col_i], cbind_X_test, Y_test_[, col_i], ...)
-    # print(models[[col_i]]$rmse_test)
   }
   
-  chain_pred <- sapply(models, \(x) x$pred_test) %>% prediction_correction()
+  chain_pred <- sapply(models, \(x) x$pred_test)
+  if (need_to_correct == TRUE) chain_pred <- chain_pred %>% prediction_correction()
+  
   if (print_metric) print(show_custom_metrics(chain_pred, paste0(model_class$classname, " Chained"), Y_test_ = Y_test_))
   return(invisible(chain_pred))
 }

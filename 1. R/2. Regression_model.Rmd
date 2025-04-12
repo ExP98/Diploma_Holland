@@ -1877,4 +1877,25 @@ test_df %>%
 
 ```{r}
 
+
+## 9.4 Nearest neigbour
+Показывать результат ближайшего объекта, затем и кластера
+```{r}
+find_nearest_neighbour <- function(input_vec, X_train_, Y_train_, dist_func = cosine_dist) {
+  sim_vec <- sapply(1:nrow(X_train_),
+                    \(n_row) dist_func(input_vec, X_train_[n_row, ]) %>% abs())
+  return(Y_train_[which.min(sim_vec), ])
+}
+
+
+oneNN <- function(X_test_, X_train_, Y_train_, dist_func = cosine_dist) {
+  Y_pred <- apply(X_test_, MARGIN = 1, find_nearest_neighbour, 
+                  X_train_ = X_train_, Y_train_ = Y_train_, dist_func = dist_func) %>% t()
+  return(Y_pred)
+}
+```
+
+```{r}
+oneNN(X_test, X_train, Y_train, cosine_dist) %>% show_custom_metrics("OneNN. Cosine")
+oneNN(X_test, X_train, Y_train, my_rmse) %>% show_custom_metrics("OneNN RMSE")
 ```
