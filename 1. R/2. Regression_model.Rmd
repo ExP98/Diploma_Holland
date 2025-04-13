@@ -1928,18 +1928,18 @@ pairwise_data
 
 ## 9.3 Nearest neigbour
 
-### 1 ближайший объект
+### 1 ближайший сосед
 
 Показывать результат ближайшего объекта, затем и кластера
 ```{r}
-find_nearest_neighbour <- function(input_vec, X_train_, Y_train_, dist_func = cosine_dist) {
+find_nearest_neighbour <- function(input_vec, X_train_, Y_train_, dist_func = my_rmse) {
   sim_vec <- sapply(1:nrow(X_train_),
                     \(n_row) dist_func(input_vec, X_train_[n_row, ]) %>% abs())
   return(Y_train_[which.min(sim_vec), ])
 }
 
 
-oneNN <- function(X_test_, X_train_, Y_train_, dist_func = cosine_dist, 
+oneNN <- function(X_test_, X_train_, Y_train_, dist_func = my_rmse, 
                   need_dim_red = TRUE, k_dim = 38) {
   if (need_dim_red == TRUE) {
     pca_model <- prcomp(X_train_, center = TRUE, scale. = TRUE)
@@ -2031,6 +2031,101 @@ plot_rmse_vs_cind(res_1NN, x_name = "k_dim")
 k_dim  rmse  cind
  38    2.77  9.99
  40    2.72  9.81
+
+### k ближайших соседей
+
+```{r}
+find_K_nearest_neighbour <- function(input_vec, X_train_, Y_train_, k_nn = 5,
+                                     dist_func = cosine_dist, avg_func = median) {
+  sim_vec <- sapply(1:nrow(X_train_),
+                    \(n_row) dist_func(input_vec, X_train_[n_row, ]) %>% abs())
+  
+  ind_nn <- data.table(sim_vec) %>% 
+    .[, ind := .I] %>% 
+    .[order(sim_vec)] %>% 
+    .[1:k_nn, ind]
+  
+  return(apply(Y_train_[ind_nn, , drop = F], 2, avg_func))
+}
+
+
+my_kNN <- function(X_test_, X_train_, Y_train_, dist_func = my_rmse, k_nn = 1,
+                   avg_func = median, need_dim_red = TRUE, k_dim = 38) {
+  if (need_dim_red == TRUE) {
+    pca_model <- prcomp(X_train_, center = TRUE, scale. = TRUE)
+    X_train_ <- pca_scaler(X_train_, pca_model, k = k_dim)
+    X_test_  <- pca_scaler(X_test_, pca_model, k = k_dim)
+  }
+    
+  Y_pred <- apply(X_test_, MARGIN = 1, find_K_nearest_neighbour, X_train_ = X_train_,
+                  Y_train_ = Y_train_, k_nn = k_nn, dist_func = dist_func,
+                  avg_func = avg_func) %>% t()
+  return(Y_pred)
+}
+```
+
+```{r}
+my_kNN(X_test, X_train, Y_train, cosine_dist) %>% show_custom_metrics("kNN. Cosine")
+my_kNN(X_test, X_train, Y_train, my_rmse) %>% show_custom_metrics("kNN RMSE")
+```
+
+```{r}
+k_to_explore <- 2:100
+
+res_kNN <- sapply(k_to_explore, function(k_nn) {
+  pred.kNN <- my_kNN(X_test, X_train, Y_train, my_rmse, k_nn = k_nn, avg_func = median) 
+  list(
+    rmse = df_metric(pred.kNN, Y_test, my_rmse),
+    cind = df_metric(pred.kNN, Y_test, calc_C_index)
+  )
+}) %>% 
+  t() %>% as.data.table() %>% 
+  unnest(cols = c(rmse, cind)) %>% 
+  mutate(k_nn = k_to_explore, .before = 1)
+
+plot_rmse_vs_cind(res_kNN, x_name = "k_nn")
+```
+
+Лучше использовать median (вместо mean), потому что:
+```{r}
+res_kNN <- sapply(k_to_explore, function(k_nn) {
+  pred.kNN <- my_kNN(X_test, X_train, Y_train, my_rmse, k_nn = k_nn, avg_func = mean) 
+  list(
+    rmse = df_metric(pred.kNN, Y_test, my_rmse),
+    cind = df_metric(pred.kNN, Y_test, calc_C_index)
+  )
+}) %>% 
+  t() %>% as.data.table() %>% 
+  unnest(cols = c(rmse, cind)) %>% 
+  mutate(k_nn = k_to_explore, .before = 1)
+
+plot_rmse_vs_cind(res_kNN, x_name = "k_nn")
+```
+
+k_nn или 5, или (лучше) 53-55.
+
+Поиск наилучшего n_dim:
+```{r}
+k_to_explore <- 2:ncol(X_train)
+
+res_kNN <- sapply(k_to_explore, function(k_dim) {
+  pred.kNN <- my_kNN(X_test, X_train, Y_train, my_rmse, k_dim = k_dim, 
+                     k_nn = 55, avg_func = median) 
+  list(
+    rmse = df_metric(pred.kNN, Y_test, my_rmse),
+    cind = df_metric(pred.kNN, Y_test, calc_C_index)
+  )
+}) %>% 
+  t() %>% as.data.table() %>% 
+  unnest(cols = c(rmse, cind)) %>% 
+  mutate(k_dim = k_to_explore, .before = 1)
+
+plot_rmse_vs_cind(res_kNN, x_name = "k_dim")
+```
+k_dim = 35 (или 13)
+
+Надо написать автоподбор гиперпараметров:
+
 
 ### Кластеры
 
