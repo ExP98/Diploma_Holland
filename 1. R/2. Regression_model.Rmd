@@ -2032,6 +2032,7 @@ k_dim  rmse  cind
  38    2.77  9.99
  40    2.72  9.81
 
+
 ### k ближайших соседей
 
 ```{r}
@@ -2049,10 +2050,20 @@ find_K_nearest_neighbour <- function(input_vec, X_train_, Y_train_, k_nn = 5,
 }
 
 
-my_kNN <- function(X_test_, X_train_, Y_train_, dist_func = my_rmse, k_nn = 1,
-                   avg_func = median, need_dim_red = TRUE, k_dim = 38) {
+my_kNN <- function(X_test_, X_train_, Y_train_, k_nn = 43,
+                   # аргументы далее лучше не трогать (выбраны лучшие согласно тестам)
+                   dist_func = my_rmse, avg_func = median, 
+                   need_dim_red = TRUE, k_dim = NULL, limit_ssq = 0.9) {
   if (need_dim_red == TRUE) {
     pca_model <- prcomp(X_train_, center = TRUE, scale. = TRUE)
+    
+    if (is.null(k_dim)) {
+      k_dim <- data.table(k = 1:length(pca_model$sdev),
+                          ssq = pca_model$sdev^2) %>% 
+        .[, cumsum := cumsum(ssq / sum(ssq))] %>% 
+        .[, limit_b := cumsum >= limit_ssq] %>% 
+        .[limit_b == TRUE, min(k)]
+    }
     X_train_ <- pca_scaler(X_train_, pca_model, k = k_dim)
     X_test_  <- pca_scaler(X_test_, pca_model, k = k_dim)
   }
@@ -2064,67 +2075,42 @@ my_kNN <- function(X_test_, X_train_, Y_train_, dist_func = my_rmse, k_nn = 1,
 }
 ```
 
+k = 1:
 ```{r}
-my_kNN(X_test, X_train, Y_train, cosine_dist) %>% show_custom_metrics("kNN. Cosine")
-my_kNN(X_test, X_train, Y_train, my_rmse) %>% show_custom_metrics("kNN RMSE")
-```
+my_kNN(X_test, X_train, Y_train, dist_func = cosine_dist, k_nn = 1) %>% 
+  show_custom_metrics("kNN. Cosine")
 
-```{r}
-k_to_explore <- 2:100
-
-res_kNN <- sapply(k_to_explore, function(k_nn) {
-  pred.kNN <- my_kNN(X_test, X_train, Y_train, my_rmse, k_nn = k_nn, avg_func = median) 
-  list(
-    rmse = df_metric(pred.kNN, Y_test, my_rmse),
-    cind = df_metric(pred.kNN, Y_test, calc_C_index)
-  )
-}) %>% 
-  t() %>% as.data.table() %>% 
-  unnest(cols = c(rmse, cind)) %>% 
-  mutate(k_nn = k_to_explore, .before = 1)
-
-plot_rmse_vs_cind(res_kNN, x_name = "k_nn")
+my_kNN(X_test, X_train, Y_train, dist_func = my_rmse, k_nn = 1) %>% 
+  show_custom_metrics("kNN RMSE")
 ```
 
 Лучше использовать median (вместо mean), потому что:
 ```{r}
-res_kNN <- sapply(k_to_explore, function(k_nn) {
-  pred.kNN <- my_kNN(X_test, X_train, Y_train, my_rmse, k_nn = k_nn, avg_func = mean) 
-  list(
-    rmse = df_metric(pred.kNN, Y_test, my_rmse),
-    cind = df_metric(pred.kNN, Y_test, calc_C_index)
-  )
-}) %>% 
-  t() %>% as.data.table() %>% 
-  unnest(cols = c(rmse, cind)) %>% 
-  mutate(k_nn = k_to_explore, .before = 1)
+knn_avg_func_test <- function(avg_func, 
+                              X_test_ = X_test, X_train_ = X_train,
+                              Y_train_ = Y_train, Y_test_ = Y_test, 
+                              k_to_explore = 2:100) {
+  res_kNN <- sapply(k_to_explore, function(k_nn) {
+    pred.kNN <- my_kNN(X_test_, X_train_, Y_train_, k_nn = k_nn, avg_func = avg_func) 
+    list(
+      rmse = df_metric(pred.kNN, Y_test_, my_rmse),
+      cind = df_metric(pred.kNN, Y_test_, calc_C_index)
+    )
+  }) %>% 
+    t() %>% as.data.table() %>% 
+    unnest(cols = c(rmse, cind)) %>% 
+    mutate(k_nn = k_to_explore, .before = 1)
+  
+  plot <- plot_rmse_vs_cind(res_kNN, x_name = "k_nn", 
+                            additional_title = substitute(avg_func) %>% as.character())
+  return(plot)
+}
 
-plot_rmse_vs_cind(res_kNN, x_name = "k_nn")
+knn_avg_func_test(avg_func = mean)
+knn_avg_func_test(avg_func = median)
 ```
-
-k_nn или 5, или (лучше) 53-55.
-
-Поиск наилучшего n_dim:
-```{r}
-k_to_explore <- 2:ncol(X_train)
-
-res_kNN <- sapply(k_to_explore, function(k_dim) {
-  pred.kNN <- my_kNN(X_test, X_train, Y_train, my_rmse, k_dim = k_dim, 
-                     k_nn = 55, avg_func = median) 
-  list(
-    rmse = df_metric(pred.kNN, Y_test, my_rmse),
-    cind = df_metric(pred.kNN, Y_test, calc_C_index)
-  )
-}) %>% 
-  t() %>% as.data.table() %>% 
-  unnest(cols = c(rmse, cind)) %>% 
-  mutate(k_dim = k_to_explore, .before = 1)
-
-plot_rmse_vs_cind(res_kNN, x_name = "k_dim")
-```
-k_dim = 35 (или 13)
-
-Надо написать автоподбор гиперпараметров:
+Median лучше mean (как avg_func)
+k_nn = 43.
 
 
 ### Кластеры

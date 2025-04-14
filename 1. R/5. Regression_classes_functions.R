@@ -17,6 +17,9 @@ library(glmnet)    # Для многомерной регрессии
 library(MASS)      # Для stepwise регрессии
 library(pls)       # Для многомерных методов
 
+# library(Rcpp)
+# sourceCpp(paste0(here::here(), "/1. R/rcpp_functions.cpp")) # rcpp_rmse
+
 
 # 2. Функции                                                     ####
 # 2.1 Метрики, функции потерь, корректировка предсказания        ####
