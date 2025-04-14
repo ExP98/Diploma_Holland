@@ -1,0 +1,144 @@
+---
+title: "Модели классификации"
+author: "Egor Glushkov"
+---
+
+# 1. Библиотеки и функции
+
+Библиотеки:
+```{r include=FALSE}
+# source(paste0(here::here(), "/1. R/00. Source_all.R"))
+# source(paste0(here::here(), "/1. R/10. Classification_functions.R"))
+```
+
+
+# 2. Данные
+
+```{r}
+# .[features, targets] <- separate_X_y(wide_data)
+# .[X_train, X_test, Y_train, Y_test, split_idx] <- train_test_split(features, targets)
+
+targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
+.[Y_b_train, Y_b_test] <- list(targets_bool[split_idx, ], targets_bool[!split_idx, ])
+```
+
+
+# 3. Модели
+
+## 3.1 RandomForest
+```{r}
+ind_pred <- vector("list", 6)
+
+for (col_i in 1:6) {
+  rf <- randomForest(x = X_train, y = as.factor(Y_b_train[, col_i]), ntree = 1000, importance = TRUE) 
+  ind_pred[[col_i]] <- predict(rf, X_test, type = "prob")[, "TRUE"]
+}
+
+## Для C-index
+classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
+df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+
+
+## Для метрик классификации
+Y_pred_rf <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
+
+# Случайные предсказания
+Y_rand <- replicate(n = nrow(Y_b_test), sample(c(rep(TRUE, 3), rep(FALSE, 3)), size = 6)) %>% t()
+```
+C-index. Результат аналогичен RF regr (что логично и ожидаемо)
+
+
+## 3.2 Catboost
+```{r}
+ind_pred <- vector("list", 6)
+
+for (col_i in 1:6) {
+  train_pool <- catboost.load_pool(data = X_train, label = Y_b_train[, col_i] %>% as.integer)
+  test_pool  <- catboost.load_pool(data = X_test,  label = Y_b_test[, col_i] %>% as.integer)
+  
+  model <- catboost.train(
+    learn_pool = train_pool,
+    test_pool = test_pool,
+    params = list(loss_function = 'CrossEntropy', logging_level = "Silent") # Logloss
+  )
+  
+  # preds <- catboost.predict(model, test_pool, prediction_type = "Class")
+  ind_pred[[col_i]] <- catboost.predict(model, test_pool, prediction_type = "Probability")
+}
+
+Y_pred_cb <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
+
+## Для C-index
+classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
+df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+```
+
+
+# 4. Метрики классификации
+
+## 4.1. Hamming Loss 
+Доля неправильно предсказанных меток
+```{r}
+hamming_loss(Y_b_test, Y_pred_rf) # 0.377451
+hamming_loss(Y_b_test, Y_pred_cb) # 0.377451
+hamming_loss(Y_b_test, Y_rand) # 0.5392157
+# hamming_loss(Y_b_test, Y_b_test)
+# hamming_loss(Y_b_test, !Y_b_test)
+```
+
+## 4.2. Top-k Accuracy
+
+RF
+```{r}
+# Расчет точности
+mean(rowSums(Y_pred_rf * Y_b_test) >= 1)  # Хотя бы одна верная - 0.9852941
+mean(rowSums(Y_pred_rf * Y_b_test) >= 2)  # Хотя бы 2 верные    - 0.7352941
+mean(rowSums(Y_pred_rf * Y_b_test) >= 3)  # Все 3 верные        - 0.1470588
+
+subset_accuracy(Y_b_test, Y_pred_rf) # 0.1470588
+```
+
+Catboost
+```{r}
+# Расчет точности
+mean(rowSums(Y_pred_cb * Y_b_test) >= 1) # 0.9852941
+mean(rowSums(Y_pred_cb * Y_b_test) >= 2) # 0.7205882
+mean(rowSums(Y_pred_cb * Y_b_test) >= 3) # 0.1617647
+
+subset_accuracy(Y_b_test, Y_pred_cb)
+```
+
+Rand
+```{r}
+# Расчет точности
+mean(rowSums(Y_rand * Y_b_test) >= 1)  # Хотя бы одна верная - 0.8970588
+mean(rowSums(Y_rand * Y_b_test) >= 2)  # Хотя бы 2 верные    - 0.4264706
+mean(rowSums(Y_rand * Y_b_test) >= 3)  # Все 3 верные        - 0.05882353
+
+subset_accuracy(Y_b_test, Y_rand)
+```
+
+
+## 4.3. Precision, Recall, F1-Score
+```{r}
+bind_rows(
+  RF = calc_multiclass_metrics(Y_b_test, Y_pred_rf),
+  CB = calc_multiclass_metrics(Y_b_test, Y_pred_cb),
+  rand = calc_multiclass_metrics(Y_b_test, Y_rand)
+) %>% mutate(Y = c("RF", "CB", "rand"), .before = 1)
+```
+
+
+## 4.4. Jaccard Similarity Score
+Сходство между метками:
+```{r}
+jaccard_score <- function(y_true, y_pred) {
+  intersection <- rowSums(y_true * y_pred)
+  union <- rowSums((y_true + y_pred) > 0)
+  mean(intersection / union)
+}
+
+jaccard_score(Y_b_test, Y_pred_rf) # 0.4867647
+jaccard_score(Y_b_test, Y_pred_cb) # 0.4941176
+jaccard_score(Y_b_test, Y_rand) # 0.3632353
+```

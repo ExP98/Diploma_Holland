@@ -1,0 +1,123 @@
+---
+title: "Методы ранжирования"
+author: "Egor Glushkov"
+---
+
+# 1. Библиотеки и функции
+
+Библиотеки:
+```{r include=FALSE}
+source(paste0(here::here(), "/1. R/00. Source_all.R"))
+```
+
+
+# 2. Данные
+
+```{r}
+# .[features, targets] <- separate_X_y(wide_data)
+# .[X_train, X_test, Y_train, Y_test, split_idx] <- train_test_split(features, targets)
+```
+
+
+# 3. Методы ранжирования
+
+```{r}
+prepare_ranking_data <- function(data) {
+  df <- data %>% 
+    copy() %>% 
+    melt(id.vars = c("id", colnames(features)), measure.vars = colnames(targets), variable.name = "Holland_code", value.name = "Score") %>% 
+    .[order(id, Holland_code)] %>% 
+    .[, score_rank := rank(Score, ties.method = "random"), by = id]
+  return(df)
+}
+
+
+prepare_XGmodel_data <- function(df) {
+  model_data <- xgb.DMatrix(data = df[, .SD, .SDcols = colnames(features)] %>% as.matrix(),
+                            label = df[["score_rank"]],
+                            group = df[, .(n = .N), by = id][, n])
+  return(model_data)
+}
+```
+
+Работает неверно:
+```{r}
+dtrain <- wide_data[split_idx] %>% prepare_ranking_data() %>% prepare_XGmodel_data()
+test_df <- wide_data[!split_idx] %>% prepare_ranking_data()
+dtest <- test_df %>% prepare_XGmodel_data()
+
+params <- list(
+  objective = "rank:pairwise",
+  eval_metric = "ndcg@3",
+  eta = 0.1,
+  gamma = 1,
+  max_depth = 6,
+  subsample = 0.8
+)
+
+xgb_model <- xgb.train(
+  params,
+  data = dtrain,
+  nrounds = 100,
+  watchlist = list(train = dtrain),
+  print_every_n = 30
+)
+
+scores <- predict(xgb_model, dtest)
+
+test_df %>% 
+  copy() %>% 
+  .[, scores := scores] %>% 
+  .[]
+```
+
+---
+
+```{r}
+data <- list(
+  list(X = c(5, 3, 7),    Y = c(10, 5, 8, 12, 3, 14)),
+  list(X = c(2, 8, 4),    Y = c(7, 9, 2, 14, 1, 11)),
+  list(X = c(6, 2, 9),    Y = c(4, 14, 6, 10, 0, 13))
+)
+
+# Вычисление рангов для Y внутри каждого объекта
+for (i in seq_along(data)) {
+  data[[i]]$ranks <- rank(-data[[i]]$Y, ties.method = "min") # Чем выше Y, тем выше ранг
+}
+
+# 1. Pairwise подход (попарные сравнения факторов)
+library(dplyr)
+
+# Создаем датасет парных сравнений
+pairwise_data <- data.frame()
+for (obj in data) {
+  pairs <- combn(1:6, 2, simplify = FALSE)
+  for (pair in pairs) {
+    i <- pair[1]
+    j <- pair[2]
+    pairwise_data <- rbind(pairwise_data, 
+      data.frame(
+        X1 = obj$X[1],
+        X2 = obj$X[2],
+        X3 = obj$X[3],
+        factor1 = i,
+        factor2 = j,
+        label = as.numeric(obj$ranks[i] > obj$ranks[j])
+      )
+    )
+  }
+}
+
+# Обучаем модель (логистическая регрессия)
+model_pairwise <- glm(
+  label ~ X1 + X2 + X3 + factor(factor1) + factor(factor2),
+  data = pairwise_data,
+  family = binomial()
+)
+
+predict(model_pairwise, pairwise_data %>% as.data.table() %>% .[1:5, -"label"])
+```
+
+```{r}
+pairwise_data
+```
