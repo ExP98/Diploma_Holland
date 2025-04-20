@@ -1,0 +1,180 @@
+---
+title: Классификация и регрессия с помощью кластеров
+jupyter: python3
+---
+
+# Импорты 
+
+```{python}
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.multioutput import MultiOutputRegressor
+from skmultilearn.cluster import LabelCooccurrenceGraphBuilder
+from skmultilearn.ensemble import LabelSpacePartitioningClassifier
+from skmultilearn.problem_transform import LabelPowerset
+from community import community_louvain
+import networkx as nx
+from scipy.stats import spearmanr
+from regr_metrics_func import df_metric, prediction_correction, calc_C_index, my_rmse
+```
+
+Кластеризация Louvan: community_louvain.best_partition
+
+
+# Классификация
+Попытка решить как задачу классификации (PS. но кластер получается лишь один)
+
+## Функции
+```{python}
+# 1. Кастомный кластеризатор для фиксированных кластеров
+class FixedClusterer:
+    def __init__(self, clusters):
+        self.clusters = clusters
+        
+    def fit_predict(self, X, y):
+        return self.clusters
+
+
+# 1. Загрузка и подготовка данных
+def load_data(filename):
+    data = pd.read_feather(filename)
+    
+    # Преобразование в бинарные метки (топ-3 кода)
+    y = pd.DataFrame(np.zeros((len(data), 6), dtype=bool), columns=[f'HL_{i+1}' for i in range(6)])
+    for i, row in data.iterrows():
+        top3 = row[['HL_1', 'HL_2', 'HL_3', 'HL_4', 'HL_5', 'HL_6']].nlargest(3).index
+        y.loc[i, top3] = True
+    
+    X = data.drop(columns=['HL_1', 'HL_2', 'HL_3', 'HL_4', 'HL_5', 'HL_6'])
+    return X, y
+
+# 2. Построение графа совместной встречаемости
+def build_cooccurrence_graph(y):
+    y_np = y.values
+    graph_builder = LabelCooccurrenceGraphBuilder(weighted=True, include_self_edges=False)
+    edge_map = graph_builder.transform(y_np)
+    n_labels = y_np.shape[1]
+    adj_matrix = np.zeros((n_labels, n_labels), dtype=np.float64)
+    for (i, j), weight in edge_map.items():
+        adj_matrix[i, j] = weight
+    return nx.from_numpy_array(adj_matrix)
+
+# 3. Кластеризация меток
+def get_label_clusters(graph):
+    partition = community_louvain.best_partition(graph, resolution=1.35)
+    clusters = {}
+    for node, cluster_id in partition.items():
+        clusters.setdefault(cluster_id, []).append(node)
+    return list(clusters.values())
+
+# 4. Обучение модели
+def train_model(X_train, y_train, clusters):
+    base_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
+    clusterer = FixedClusterer(clusters)  # Используем кастомный кластеризатор
+    return LabelSpacePartitioningClassifier(
+        classifier=LabelPowerset(classifier=base_classifier),
+        clusterer=clusterer
+    ).fit(X_train, y_train)
+```
+
+## Код выполнения
+
+```{python}
+X, y = load_data("../0. Data/wide_data.feather")
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+graph = build_cooccurrence_graph(y_train)
+clusters = get_label_clusters(graph)
+model = train_model(X_train, y_train.values, clusters)  # Преобразуем y_train в numpy array
+accuracy = model.score(X_test, y_test)
+print(f'Model Accuracy: {accuracy:.4f}')
+```
+
+```{python}
+answ = model.predict(X_test)
+print(answ)
+```
+Всё распределяет на первый кластер...
+
+
+# Регрессия
+
+## Функции
+```{python}
+# 1. Загрузка и подготовка данных для регрессии
+def load_data():
+    data = pd.read_feather("../0. Data/wide_data.feather")
+    y = data[['HL_1', 'HL_2', 'HL_3', 'HL_4', 'HL_5', 'HL_6']]
+    X = data.drop(columns=['HL_1', 'HL_2', 'HL_3', 'HL_4', 'HL_5', 'HL_6'])
+    return X, y
+
+# 2. Построение корреляционного графа целевых переменных
+def build_correlation_graph(y):
+    corr_matrix, _ = spearmanr(y)
+    graph = nx.from_numpy_array(corr_matrix)
+    return graph
+
+# 3. Кластеризация целевых переменных
+def get_target_clusters(graph, resolution=1.0):
+    partition = community_louvain.best_partition(graph, resolution=resolution, random_state=42)
+    clusters = {}
+    for node, cluster_id in partition.items():
+        clusters.setdefault(cluster_id, []).append(node)
+    return list(clusters.values())
+
+# 4. Обучение модели регрессии
+def train_regression_model(X_train, y_train, clusters):
+    base_regressor = RandomForestRegressor(n_estimators=100, random_state=42)
+    if clusters:
+        models = []
+        for cluster in clusters:
+            # Обучаем отдельную модель на группу связанных целей
+            cluster_regressor = MultiOutputRegressor(base_regressor)
+            cluster_regressor.fit(X_train, y_train.iloc[:, cluster])
+            models.append(cluster_regressor)
+        return models
+    else:
+        return MultiOutputRegressor(base_regressor).fit(X_train, y_train)
+
+
+# 5. Предсказание и оценка
+def evaluate_model(models, X_test, y_test, clusters):
+    if clusters:
+        # Собираем предсказания по кластерам
+        y_pred = np.zeros_like(y_test)
+        for model, cluster in zip(models, clusters):
+            y_pred[:, cluster] = model.predict(X_test)
+    else:
+        y_pred = models.predict(X_test)
+    
+    Cind1, Cind2 = df_metric(prediction_correction(y_pred), y_test, calc_C_index), df_metric(y_pred, y_test, calc_C_index)
+    rmse1, rmse2 = df_metric(prediction_correction(y_pred), y_test, my_rmse),      df_metric(y_pred, y_test, my_rmse)
+    
+    print(f"No changes: C_index = {Cind2:.3f}, RMSE = {rmse2:.3f}")
+    print(f"Corrected: C_index = {Cind1:.3f}, RMSE = {rmse1:.3f}")
+
+    return y_pred
+```
+
+## Код выполнения
+```{python}
+X, y = load_data()
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+graph = build_correlation_graph(y_train)
+
+clusters = get_target_clusters(graph, resolution=0.5)
+print(f"Found {len(clusters)} target clusters; {clusters}")
+model = train_regression_model(X_train, y_train, clusters)
+y_pred = evaluate_model(model, X_test, y_test, clusters)
+```
+
+```{python}
+clusters = get_target_clusters(graph, resolution=0)
+print(f"Found {len(clusters)} target clusters; {clusters}")
+model = train_regression_model(X_train, y_train, clusters)
+y_pred = evaluate_model(model, X_test, y_test, clusters)
+```
+
+Вывод: на результат не влияет
