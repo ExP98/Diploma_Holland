@@ -21,7 +21,6 @@ from sklearn.model_selection import train_test_split
 ```
 
 
-
 # Данные
 
 ```{python}
@@ -92,7 +91,25 @@ def predict_scores(model, X_new):
     with torch.no_grad():
         scores = model(X_tensor)
     # top3 = torch.topk(scores, k=3, dim=1).indices.tolist()
-    return scores
+    return scores.numpy()
+
+  
+def ndcg_at_k(y_pred, y_true, k = 3):
+    y_pred = y_pred
+    y_true = y_true.values
+  
+    # y_true, y_pred — массивы shape (n_queries, n_items)
+    ndcgs = []
+    for true, pred in zip(y_true, y_pred):
+        order = np.argsort(pred)[::-1][:k]
+        gains = 2**true[order] - 1
+        discounts = np.log2(np.arange(2, k+2))
+        dcg = (gains / discounts).sum()
+        # ideal
+        ideal = np.sort(true)[::-1][:k]
+        idcg = ((2**ideal - 1) / discounts).sum()
+        ndcgs.append(dcg / (idcg + 1e-10))
+    return round(np.mean(ndcgs), 4)
 ```
 
 
@@ -125,16 +142,18 @@ class ListNet(nn.Module):
 def listnet_loss(y_pred, y_true):
     P_pred = torch.softmax(y_pred, dim=1)
     P_true = torch.softmax(y_true, dim=1)
+    # кросс-энтропия (вместо дивергенции KL как некое приближение)
     return -torch.mean(torch.sum(P_true * torch.log(P_pred + 1e-10), dim=1))
 ```
 
 
 ```{python}
-listnet_model = ListNet(input_dim=X_train.shape[1])
+listnet_model = ListNet()
 listnet_model = train_model(listnet_model, listnet_loss, X_train, y_train, num_epochs=100)
 
 LTR_LN_preds = predict_scores(listnet_model, X_test)
 print(f"C-index: {round(df_metric(LTR_LN_preds, y_test, calc_C_index), 3)}")
+print(f"NDCG@k: {ndcg_at_k(LTR_LN_preds, y_test, k=3)}")
 ```
 
 
@@ -144,69 +163,6 @@ print(f"C-index: {round(df_metric(LTR_LN_preds, y_test, calc_C_index), 3)}")
 class DeepRanker(nn.Module):
     def __init__(self, input_dim=55, output_dim=6):
         super().__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(input_dim, 128), 
-            nn.BatchNorm1d(128), 
-            nn.Dropout(0.1), 
-
-            nn.Linear(128, 64), 
-            nn.BatchNorm1d(64), 
-            nn.Dropout(0.1), 
-
-            nn.Linear(64, 32), 
-            nn.BatchNorm1d(32), 
-            nn.Dropout(0.1), 
-
-            nn.Linear(32, output_dim)
-        )
-    
-    def forward(self, x):
-        return self.fc(x)
-
-
-# Функция потерь ApproxNDCG (дифференцируемая)
-def approx_ndcg_loss(scores, relevance, eps=1e-10):
-    """
-    scores: предсказанные оценки модели (batch_size, 6)
-    relevance: истинные значения целей (batch_size, 6)
-    """
-    batch_size, num_targets = scores.shape
-    
-    # 1. Аппроксимируем ранги через попарные сравнения
-    diff = scores.unsqueeze(2) - scores.unsqueeze(1)  # (batch, 6, 6)
-    approx_ranks = torch.sigmoid(diff).sum(dim=2)  # (batch, 6)
-    
-    # 2. Рассчитываем DCG
-    dcg = (torch.pow(2.0, relevance) - 1) / torch.log2(approx_ranks + 1 + eps)
-    dcg = dcg.sum(dim=1)  # (batch, )
-    
-    # 3. Рассчитываем IDCG (идеальное ранжирование)
-    ideal_sorted, _ = torch.sort(relevance, dim=1, descending=True)  # (batch, 6)
-    ideal_ranks = torch.arange(1, num_targets + 1, device=scores.device).float().unsqueeze(0)  # (1, 6)
-    idcg = (torch.pow(2.0, ideal_sorted) - 1) / torch.log2(ideal_ranks + 1 + eps)
-    idcg = idcg.sum(dim=1)  # (batch, )
-    
-    # 4. NDCG = DCG / IDCG, loss = 1 - NDCG
-    ndcg = dcg / (idcg + eps)
-    return 1 - ndcg.mean()
-```
-
-```{python}
-ApproxNDCG_model = DeepRanker() # input_dim=X_train.shape[1]
-ApproxNDCG_model = train_model(ApproxNDCG_model, approx_ndcg_loss, X_train, y_train, num_epochs=100)
-
-AN_preds = predict_scores(ApproxNDCG_model, X_test)
-print(f"C-index: {round(df_metric(AN_preds, y_test, calc_C_index), 3)}")
-```
-
-
-## LambdaRank
-### Classic
-
-```{python}
-class DeepRanker_relu(nn.Module):
-    def __init__(self, input_dim=55, output_dim=6):
-        super(DeepRanker_relu, self).__init__()
         self.fc = nn.Sequential(
             nn.Linear(input_dim, 128),
             nn.BatchNorm1d(128),
@@ -230,6 +186,49 @@ class DeepRanker_relu(nn.Module):
         return self.fc(x)
 
 
+# Функция потерь ApproxNDCG (дифференцируемая)
+def approx_ndcg_loss(scores, relevance, eps=1e-10):
+    """
+    scores: предсказанные оценки модели (batch_size, 6)
+    relevance: истинные значения целей (batch_size, 6)
+    """
+    batch_size, num_targets = scores.shape
+    
+    # 1. Аппроксимируем ранги через попарные сравнения
+    diff = scores.unsqueeze(2) - scores.unsqueeze(1)  # (batch, 6, 6)
+    
+    # здесь сигмоида ("релаксация рангов"), чтобы NDCG была дифференциируемой
+    approx_ranks = torch.sigmoid(diff).sum(dim=2)  # (batch, 6)
+    
+    # 2. Рассчитываем DCG
+    dcg = (torch.pow(2.0, relevance) - 1) / torch.log2(approx_ranks + 1 + eps)
+    dcg = dcg.sum(dim=1)  # (batch, )
+    
+    # 3. Рассчитываем IDCG (идеальное ранжирование)
+    ideal_sorted, _ = torch.sort(relevance, dim=1, descending=True)  # (batch, 6)
+    ideal_ranks = torch.arange(1, num_targets + 1, device=scores.device).float().unsqueeze(0)  # (1, 6)
+    idcg = (torch.pow(2.0, ideal_sorted) - 1) / torch.log2(ideal_ranks + 1 + eps)
+    idcg = idcg.sum(dim=1)  # (batch, )
+    
+    # 4. NDCG = DCG / IDCG, loss = 1 - NDCG
+    ndcg = dcg / (idcg + eps)
+    return 1 - ndcg.mean()
+```
+
+```{python}
+ApproxNDCG_model = DeepRanker() # input_dim=X_train.shape[1]
+ApproxNDCG_model = train_model(ApproxNDCG_model, approx_ndcg_loss, X_train, y_train, num_epochs=100)
+
+AN_preds = predict_scores(ApproxNDCG_model, X_test)
+print(f"C-index: {round(df_metric(AN_preds, y_test, calc_C_index), 3)}")
+print(f"NDCG@k: {ndcg_at_k(AN_preds, y_test, k=3)}")
+```
+
+
+## LambdaRank
+### Classic
+
+```{python}
 def lambda_rank_loss(scores, relevance, sigma=1.0):
     """
     scores: tensor of shape (batch_size, n_items)
@@ -270,12 +269,22 @@ def lambda_rank_loss(scores, relevance, sigma=1.0):
 
 
 ```{python}
-ll_model = DeepRanker_relu()
+ll_model = DeepRanker()
 ll_model = train_model(ll_model, lambda_rank_loss, X_train, y_train, num_epochs=100)
 
 ll_preds = predict_scores(ll_model, X_test)
 print(f"C-index: {round(df_metric(ll_preds, y_test, calc_C_index), 3)}")
+print(f"NDCG@k: {ndcg_at_k(ll_preds, y_test, k=3)}")
 ```
+
+Архитектура: простая последовательность полносвязных слоёв (MLP) с BatchNorm, Dropout, ReLU.
+
+Обработка: каждый документ (item) обрабатывается независимо — модель выдаёт скоринг si=f(xi) без учёта остальных элементов списка.
+
+Особенности:
+    Минимальная способность моделировать зависимость между элементами.
+    Легковесен и быстр в вычислении, легко масштабируется на большие батчи.
+    Подходит в качестве baseline, когда списки короткие и зависимости между элементами несущественны.
 
 
 ### Listwise Transformer (Cross‑item Attention)
@@ -322,9 +331,22 @@ class ListwiseTransformerUI(nn.Module):
 LWT = ListwiseTransformerUI()
 LWT = train_model(LWT, lambda_rank_loss, X_train, y_train)
 
-preds = predict_scores(LWT, X_test)
-print(f"C-index: {round(df_metric(preds, y_test, calc_C_index), 3)}")
+LWT_preds = predict_scores(LWT, X_test)
+print(f"C-index: {round(df_metric(LWT_preds, y_test, calc_C_index), 3)}")
+print(f"NDCG@k: {ndcg_at_k(LWT_preds, y_test, k=3)}")
 ```
+
+Архитектура: поверх входных векторов каждого item сначала проекция в пространство размерности d, затем несколько слоёв TransformerEncoder (self‑attention), и в конце линейный выход.
+
+Обработка: всё n-элементное «предложение» подаётся как единый тензор (batch,n,d). Модель через механизм внимания явно учитывает, как каждый item соотносится со всеми остальными.
+
+Плюсы:
+    Позволяет захватывать «конкуренцию» внутри списка, перенастраивая скоринг одного элемента в зависимости от соседей.
+    Гибко масштабируется на разные длины списков (через positional‑encoding, если нужен порядок).
+
+Минусы:
+    O(n2) в памяти и вычислениях из‑за попарных attention‑весов.
+    Чувствителен к гиперпараметрам трансформера (число голов, слоёв).
 
 
 ### Deep & Cross Network (DCN)
@@ -392,6 +414,21 @@ class DCNUserItemRanker(nn.Module):
 dcn_model = DCNUserItemRanker()
 dcn_model = train_model(dcn_model, lambda_rank_loss, X_train, y_train)
 
-preds = predict_scores(dcn_model, X_test)
-print(f"C-index: {round(df_metric(preds, y_test, calc_C_index), 3)}")
+dcn_preds = predict_scores(dcn_model, X_test)
+print(f"C-index: {round(df_metric(dcn_preds, y_test, calc_C_index), 3)}")
+print(f"NDCG@k: {ndcg_at_k(dcn_preds, y_test, k=3)}")
 ```
+
+Архитектура: для каждого item комбинирует два «потока»
+    Cross‑Network: рекурсивные «кросс‑слои», которые моделируют мультипликативные и полиномиальные пересечения признаков, сохраняя при этом тот же размер.
+    Deep‑Network: классический MLP. Затем конкатенирует выходы обоих потоков и выдаёт скоринг.
+
+Обработка: по‑прежнему каждый item обрабатывается самостоятельно, но внутри него усиливаются сложные feature‑interactions.
+
+Плюсы:
+    Очень эффективно моделирует высокоуровневые пересечения признаков без экспоненциального роста числа параметров.
+    Хорошо работает, когда у вас много категориальных/биннинговых фич и важны их комбинации.
+
+Минусы:
+    По сравнению с классическим MLP чуть более тяжеловесен.
+    Не учитывает взаимовлияние разных items внутри одной группы.
