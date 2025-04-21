@@ -20,6 +20,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 ```
 
+
+
 # Данные
 
 ```{python}
@@ -35,16 +37,15 @@ X_train = scaler.transform(X_train)
 X_test = scaler.transform(X_test)
 ```
 
+
 # Learn-to-rank
 Ранжирование, listwise-подход
-
-## ListNet
 
 ```{python}
 class CustomDataset(Dataset):
     def __init__(self, X, y):
-        self.X = X.astype(np.float32)         # Признаки (n_users, n_features)
-        self.y = y.astype(np.float32).values  # Цели (n_users, 6)
+        self.X = X.astype(np.float32)
+        self.y = y.astype(np.float32).values
         
     def __len__(self):
         return len(self.X)
@@ -61,7 +62,43 @@ class CustomDataset(Dataset):
             'targets': targets_normalized
         }
 
-# Модель ListNet
+
+# Обучение модели
+def train_model(model, loss_func, X_train, y_train, num_epochs=100, batch_size=62):
+    dataset = CustomDataset(X_train, y_train)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+    
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0
+        for batch in dataloader:
+            features = batch['features']
+            targets = batch['targets']
+            
+            optimizer.zero_grad()
+            preds = model(features)
+            loss = loss_func(preds, targets)
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+    print(f"Loss: {total_loss / len(dataloader):.4f}")    
+    return model
+
+
+def predict_scores(model, X_new):
+    X_tensor = torch.tensor(X_new.astype(np.float32))
+    with torch.no_grad():
+        scores = model(X_tensor)
+    # top3 = torch.topk(scores, k=3, dim=1).indices.tolist()
+    return scores
+```
+
+
+## ListNet
+
+```{python}
 class ListNet(nn.Module):
     def __init__(self, input_dim=55, output_dim=6):
         super().__init__()
@@ -89,71 +126,21 @@ def listnet_loss(y_pred, y_true):
     P_pred = torch.softmax(y_pred, dim=1)
     P_true = torch.softmax(y_true, dim=1)
     return -torch.mean(torch.sum(P_true * torch.log(P_pred + 1e-10), dim=1))
-
-# Обучение модели
-def train_ListNet_model(X_train, y_train, num_epochs=50, batch_size=64):
-    dataset = CustomDataset(X_train, y_train)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    
-    # input_dim = число признаков в X_train
-    model = ListNet(input_dim=X_train.shape[1])
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    
-    for epoch in range(num_epochs):
-        total_loss = 0
-        for batch in dataloader:
-            features = batch['features']
-            targets = batch['targets']
-            
-            optimizer.zero_grad()
-            preds = model(features)
-            loss = listnet_loss(preds, targets)
-            loss.backward()
-            optimizer.step()
-            
-            total_loss += loss.item()
-        
-    print(f"ListNet Loss: {total_loss / len(dataloader):.4f}")    
-    
-    return model
-
-
-def predict_scores(model, X_new):
-    """
-    X_new: pd.DataFrame или np.array с признаками пользователей.
-    Возвращает список топ-3 индексов целей для каждого пользователя.
-    """
-    X_tensor = torch.tensor(X_new.astype(np.float32))
-    with torch.no_grad():
-        scores = model(X_tensor)
-    # top3 = torch.topk(scores, k=3, dim=1).indices.tolist()
-    return scores
 ```
+
 
 ```{python}
-LN_model = train_ListNet_model(X_train, y_train)
+listnet_model = ListNet(input_dim=X_train.shape[1])
+listnet_model = train_model(listnet_model, listnet_loss, X_train, y_train, num_epochs=100)
 
-LTR_LN_preds = predict_scores(LN_model, X_test)
+LTR_LN_preds = predict_scores(listnet_model, X_test)
 print(f"C-index: {round(df_metric(LTR_LN_preds, y_test, calc_C_index), 3)}")
 ```
+
 
 ## ApproxNDCG
 
 ```{python}
-class CustomDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = X.astype(np.float32)         # Признаки (n_users, 55)
-        self.y = y.astype(np.float32).values  # Цели (n_users, 6), значения 0-14
-    
-    def __len__(self):
-        return len(self.X)
-    
-    def __getitem__(self, idx):
-        return {
-            'features': self.X[idx],
-            'targets': self.y[idx]
-        }
-
 class DeepRanker(nn.Module):
     def __init__(self, input_dim=55, output_dim=6):
         super().__init__()
@@ -175,6 +162,7 @@ class DeepRanker(nn.Module):
     
     def forward(self, x):
         return self.fc(x)
+
 
 # Функция потерь ApproxNDCG (дифференцируемая)
 def approx_ndcg_loss(scores, relevance, eps=1e-10):
@@ -201,64 +189,24 @@ def approx_ndcg_loss(scores, relevance, eps=1e-10):
     # 4. NDCG = DCG / IDCG, loss = 1 - NDCG
     ndcg = dcg / (idcg + eps)
     return 1 - ndcg.mean()
-
-# Обучение
-def train_ApproxNDCG_model(X_train, y_train, num_epochs=50, batch_size=32):
-    dataset = CustomDataset(X_train, y_train)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    
-    model = DeepRanker(input_dim=X_train.shape[1])
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
-    
-    for epoch in range(num_epochs):
-        model.train()
-        total_loss = 0
-        for batch in dataloader:
-            features = batch['features']
-            targets = batch['targets']
-            
-            optimizer.zero_grad()
-            pred_scores = model(features)
-            loss = approx_ndcg_loss(pred_scores, targets)
-            loss.backward()
-            optimizer.step()
-            
-            total_loss += loss.item()
-        
-    print(f"ApproxNDCG Loss: {total_loss / len(dataloader):.4f}")
-    
-    return model
 ```
 
 ```{python}
-AN_model = train_ApproxNDCG_model(X_train, y_train)
+ApproxNDCG_model = DeepRanker() # input_dim=X_train.shape[1]
+ApproxNDCG_model = train_model(ApproxNDCG_model, approx_ndcg_loss, X_train, y_train, num_epochs=100)
 
-LTR_AN_preds = predict_scores(AN_model, X_test)
-print(f"C-index: {round(df_metric(LTR_AN_preds, y_test, calc_C_index), 3)}")
+AN_preds = predict_scores(ApproxNDCG_model, X_test)
+print(f"C-index: {round(df_metric(AN_preds, y_test, calc_C_index), 3)}")
 ```
 
-## LambdaRank
 
+## LambdaRank
 ### Classic
 
 ```{python}
-class CustomDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = X.astype(np.float32)
-        self.y = y.astype(np.float32).values
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        return {
-            'features': torch.from_numpy(self.X[idx]),
-            'targets': torch.from_numpy(self.y[idx])
-        }
-
-class DeepRanker(nn.Module):
+class DeepRanker_relu(nn.Module):
     def __init__(self, input_dim=55, output_dim=6):
-        super(DeepRanker, self).__init__()
+        super(DeepRanker_relu, self).__init__()
         self.fc = nn.Sequential(
             nn.Linear(input_dim, 128),
             nn.BatchNorm1d(128),
@@ -314,59 +262,28 @@ def lambda_rank_loss(scores, relevance, sigma=1.0):
 
     # ΔNDCG = |gain diff| / ideal_dcg
     delta_ndcg = delta_gain / (ideal_dcg.unsqueeze(1).unsqueeze(2) + 1e-10)
-
-    # Lambda weights
     lambda_ij = sigma * torch.abs(delta_ndcg) * (0.5 * (1 - torch.sign(S_diff)))  # only positive when s_i < s_j
-
-    # Sum lambdas per item
     lambda_i = torch.sum(lambda_ij, dim=2) - torch.sum(lambda_ij, dim=1)
-
-    # Loss is sum of scores * lambdas (can also use dot product)
     loss = torch.sum(scores * lambda_i) / batch_size
     return loss
-
-
-def train_lambda_rank(X_train, y_train, num_epochs=50, batch_size=32, lr=1e-3, sigma=1.0):
-    dataset = CustomDataset(X_train, y_train)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-    model = DeepRanker(input_dim=X_train.shape[1], output_dim=y_train.shape[1])
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
-
-    for epoch in range(1, num_epochs+1):
-        model.train()
-        total_loss = 0.0
-        for batch in dataloader:
-            features = batch['features']
-            targets = batch['targets']
-
-            optimizer.zero_grad()
-            scores = model(features)
-            loss = lambda_rank_loss(scores, targets, sigma)
-            loss.backward()
-            optimizer.step()
-
-            total_loss += loss.item()
-
-        avg_loss = total_loss / len(dataloader)
-    print(f"LambdaRank Loss: {avg_loss:.4f}")
-
-    return model
 ```
 
+
 ```{python}
-ll_model = train_lambda_rank(X_train, y_train)
+ll_model = DeepRanker_relu()
+ll_model = train_model(ll_model, lambda_rank_loss, X_train, y_train, num_epochs=100)
 
 ll_preds = predict_scores(ll_model, X_test)
 print(f"C-index: {round(df_metric(ll_preds, y_test, calc_C_index), 3)}")
 ```
+
 
 ### Listwise Transformer (Cross‑item Attention)
 
 ```{python}
 # Listwise Transformer с item‑embedding
 class ListwiseTransformerUI(nn.Module):
-    def __init__(self, user_dim, item_embed_dim=8, d_model=64, nhead=4, num_layers=2, n_items=6):
+    def __init__(self, user_dim=55, item_embed_dim=8, d_model=64, nhead=4, num_layers=2, n_items=6):
         super().__init__()
         self.n_items = n_items
 
@@ -399,36 +316,16 @@ class ListwiseTransformerUI(nn.Module):
         h = h.permute(1,0,2)          # (b, 6, d_model)
         scores = self.out(h).squeeze(-1)  # (b, 6)
         return scores
-
-def train_model(model, X_train, y_train, num_epochs=50, batch_size=32, lr=1e-3):
-    ds = CustomDataset(X_train, y_train)
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True)
-
-    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
-    for epoch in range(1, num_epochs+1):
-        model.train()
-        total_loss = 0
-        for batch in loader:
-            u_feats = batch['features']   # (b, user_dim)
-            targets = batch['targets']      # (b,6)
-            opt.zero_grad()
-            preds = model(u_feats)          # (b,6)
-            loss = lambda_rank_loss(preds, targets)
-            loss.backward()
-            opt.step()
-            total_loss += loss.item()
-    print(f"Loss: {total_loss/len(loader):.4f}")
-    return model
 ```
 
 ```{python}
-# Listwise Transformer
-LWT = ListwiseTransformerUI(user_dim=X_train.shape[1])
-LWT = train_model(LWT, X_train, y_train)
+LWT = ListwiseTransformerUI()
+LWT = train_model(LWT, lambda_rank_loss, X_train, y_train)
 
 preds = predict_scores(LWT, X_test)
 print(f"C-index: {round(df_metric(preds, y_test, calc_C_index), 3)}")
 ```
+
 
 ### Deep & Cross Network (DCN)
 
@@ -447,8 +344,7 @@ class DCNLayer(nn.Module):
         return cross + x  # residual
 
 class DCNUserItemRanker(nn.Module):
-    def __init__(self, user_dim, item_embed_dim=8,
-                 cross_layers=3, deep_dims=[128,64,32], n_items=6):
+    def __init__(self, user_dim=55, item_embed_dim=8, cross_layers=3, deep_dims=[128,64,32], n_items=6):
         super().__init__()
         self.n_items = n_items
         self.item_emb = nn.Parameter(torch.randn(n_items, item_embed_dim))
@@ -493,10 +389,9 @@ class DCNUserItemRanker(nn.Module):
 ```
 
 ```{python}
-dcn_model = DCNUserItemRanker(user_dim=X_train.shape[1])
-dcn_model = train_model(dcn_model, X_train, y_train)
+dcn_model = DCNUserItemRanker()
+dcn_model = train_model(dcn_model, lambda_rank_loss, X_train, y_train)
 
 preds = predict_scores(dcn_model, X_test)
 print(f"C-index: {round(df_metric(preds, y_test, calc_C_index), 3)}")
 ```
-
