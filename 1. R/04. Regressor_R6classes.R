@@ -12,9 +12,9 @@ library(randomForest)
 library(catboost)
 library(e1071)
 library(FNN)
-library(glmnet)    # Для многомерной регрессии
-library(MASS)      # Для stepwise регрессии
-library(pls)       # Для многомерных методов
+library(glmnet)                         # Для многомерной регрессии
+library(MASS, include.only = "stepAIC") # Для stepwise регрессии
+library(pls)                            # Для многомерных методов
 
 
 # 2. Функции                                                     ####

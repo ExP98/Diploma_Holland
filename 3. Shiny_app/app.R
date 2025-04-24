@@ -1,33 +1,29 @@
 #@ Diploma_Holland
 #@ Веб-стенд
-#@ Дата: 24.02.2025
+#@ Дата: февраль-апрель 2025
 #@ Разработчик: Глушков Егор
 
 
 # 1. Библиотеки                                        ####
 library(shiny)
 library(tidyverse)
+library(readxl)
 library(DT)
 
 
-# 2. Генерация пробного датасета с ограничениями       ####
-# Генерируем датафрейм с ограничениями для факторов
+# 2. Датасет с ограничениями       ####
 set.seed(123)
-constraints <- data.frame(
-  test = rep(1:3, times = c(5, 10, 4)),
-  factor = c(1:5, 1:10, 1:4),
-  min = sample(0:50, 19, replace = TRUE),
-  max = sample(51:100, 19, replace = TRUE)
-)
-
-# Корректируем максимумы чтобы max >= min
-constraints$max <- pmax(constraints$max, constraints$min + 1)
+constraints <- read.xlsx2(paste0(here(), "/3. Shiny_app/psytest_constraints.xlsx"),
+                          sheetName = "constraints") %>% 
+  as.data.table() %>% 
+  .[, names(.SD) := lapply(.SD, as.numeric), .SDcols = c("feature_num", "min", "max")]
 
 
 # 3. Вспомогательные функции                            ####
 
-create_test_ui <- function(test_num, factors_count, test_name) {
-  test_constraints <- constraints[constraints$test == test_num, ]
+create_test_ui <- function(test_num, test_name) {
+  test_constraints <- constraints %>% filter(test == test_num)
+  factors_count <- nrow(test_constraints)
   
   factors_per_row <- 6
   rows <- split(1:factors_count, ceiling(seq_along(1:factors_count) / factors_per_row))
@@ -44,13 +40,21 @@ create_test_ui <- function(test_num, factors_count, test_name) {
         condition = paste0("input.test", test_num),
         lapply(rows, function(row) {
           fluidRow(lapply(row, function(i) {
-            current <- test_constraints[test_constraints$factor == i, ]
+            current <- test_constraints[i, ]
             column(2,
                    div(
-                     style = "margin-bottom: 15px;",
+                     style = "margin-bottom: 10px;",
+                     tags$div(
+                       style = "min-height: 3em; display: flex; align-items: flex-end;",
+                       tags$label(
+                         `for` = current$feature_short_name,
+                         paste0(i, ". ", current$feature),
+                         style = "display: block; width: 100%; font-weight: bold;"
+                       )
+                     ),
                      numericInput(
-                       inputId = paste0("t", test_num, "_f", i),
-                       label = paste("Фактор", i),
+                       inputId = current$feature_short_name,
+                       label = NULL, # paste0(i, ". ", current$feature)
                        value = current$min,
                        min = current$min,
                        max = current$max,
@@ -58,8 +62,8 @@ create_test_ui <- function(test_num, factors_count, test_name) {
                        width = '100%'
                      ),
                      div(
-                       style = "font-size: 0.8em; color: #666;",
-                       paste0("Допустимо: ", current$min, "-", current$max)
+                       style = "font-size: 0.75em; color: #666; margin-top: 2px;",
+                       paste0("Допустимо: от ", current$min, " до ", current$max)
                      )
                    ))
           }))
@@ -75,9 +79,10 @@ ui <- fluidPage(
   titlePanel("Предсказание кода Голланда по результатам психометрических тестов"),
   fluidRow(
     column(12,
-           create_test_ui(1, 5, "Тест 1 (5 факторов)"),
-           create_test_ui(2, 10, "Тест 2 (10 факторов)"),
-           create_test_ui(3, 4, "Тест 3 (4 фактора)"),
+           lapply(unique(constraints$test), function(t) {
+             test_name <- paste0("Тест ", t, " (", nrow(constraints %>% filter(test == t)), " факторов)")
+             create_test_ui(t, test_name)
+           }),
            
            fluidRow(
              column(4, offset = 4,
@@ -107,47 +112,49 @@ ui <- fluidPage(
 
 # 5. Сервер                                        ####
 server <- function(input, output) {
+  # реактивное хранилище для результатов
+  rv <- reactiveValues(results_df = NULL)
+  
   observeEvent(input$calc, {
     errors <- list()
     
-    check_test <- function(test_num, factors_count) {
-      if (input[[paste0("test", test_num)]]) {
-        test_constraints <- constraints[constraints$test == test_num, ]
-        
-        for (i in 1:factors_count) {
-          val <- input[[paste0("t", test_num, "_f", i)]]
-          current <- test_constraints[test_constraints$factor == i, ]
-          if (is.na(val) || val < current$min || val > current$max) {
-            errors <<- c(
-              errors,
-              str_glue("Тест {test_num}, фактор {i}: значение должно быть в интервале от {current$min} до {current$max}")
-            )
+    tests <- unique(constraints$test)
+    for (t in tests) {
+      factors <- constraints %>% filter(test == t)
+      if (input[[paste0("test", t)]]) {
+        for (i in 1:nrow(factors)) {
+          feature_short_name <- factors$feature_short_name[i]
+          val <- input[[feature_short_name]]
+          minv <- factors$min[i]
+          maxv <- factors$max[i]
+          if (is.na(val) || val < minv || val > maxv) {
+            errors <- c(errors, str_glue("Тест {t}, фактор {factors$feature[i]}: значение должно быть в интервале от {minv} до {maxv}"))
           }
         }
       }
     }
-    
-    check_test(1, 5)
-    check_test(2, 10)
-    check_test(3, 4)
     
     if (length(errors) > 0) {
       showNotification(paste(errors, collapse = "\n"), type = "error")
       return(NULL)
     }
     
-    generate_result <- function() {
-      repeat {
-        res <- sample(0:14, 6, replace = TRUE)
-        if (sum(res) == 42)
-          return(res)
+    calculate_sum <- function() {
+      results <- list()
+      for (t in unique(constraints$test)) {
+        if (input[[paste0("test", t)]]) {
+          factors <- constraints %>% filter(test == t)
+          vals <- sapply(factors$feature_short_name, function(id) input[[id]])
+          results[[as.character(t)]] <- data.frame(test = t, sum = sum(vals, na.rm = TRUE))
+        }
       }
+      do.call(rbind, results)
     }
     
+    rv$results_df <- calculate_sum()
+    
     output$res <- renderPrint({
-      res <- generate_result()
-      cat("Предсказанные значения:\n")
-      cat(paste0("Фактор ", 1:6, ": ", res, collapse = "\n"))
+      print(rv$results_df)
     })
   })
   
