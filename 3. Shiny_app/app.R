@@ -8,6 +8,7 @@
 library(shiny)
 library(readxl)
 library(DT)
+library(data.table)
 library(shinyBS)
 
 
@@ -16,7 +17,7 @@ library(shinyBS)
 constraints <- read.xlsx2(paste0(here(), "/3. Shiny_app/psytest_constraints.xlsx"),
                           sheetName = "constraints") %>% 
   as.data.table() %>% 
-  .[, names(.SD) := lapply(.SD, as.numeric), .SDcols = c("feature_num", "min", "max")] %>% 
+  .[, names(.SD) := lapply(.SD, as.numeric), .SDcols = c("feature_num", "min", "max", "median")] %>% 
   .[test != "Тест Голланда"]
 
 mean_scale <- readRDS(here("3. Shiny_app/model/mean_scale.rds"))
@@ -29,6 +30,20 @@ glm_predict <- function(model, newdata) {
     smart_integer_round()
   return(glm_pred)
 }
+
+riasec_codes <- c("R", "I", "A", "S", "E", "C")
+
+code_desc <- data.table(
+  riasec_codes = riasec_codes,
+  desc = c(
+    "R (Реалистичный).\nПредпочитает практические задачи, работу руками и с техникой. Часто выбирает профессии, связанные с физическим трудом или природой. Примеры: инженер 🛠️, механик, строитель, фермер.",
+    "I (Исследовательский).\nЛюбит анализировать данные, исследовать гипотезы и решать интеллектуальные задачи. Стремится к научным открытиям и пониманию сложных систем. Примеры: учёный 🔬, программист, биолог, химик.",
+    "A (Артистический).\nЦенит креативность, свободу самовыражения и нешаблонное мышление. Часто выбирает профессии, где важны эстетика и эмоциональная глубина. Примеры: дизайнер 🎨, музыкант, писатель, актер.",
+    "S (Социальный).\nНаходит удовлетворение в поддержке, обучении и взаимодействии с людьми. Важны эмпатия, коммуникация и желание улучшать общество. Примеры: учитель 📚, психолог, социальный работник, врач.",
+    "E (Предприимчивый).\nСтремится к лидерству, управлению и достижению амбициозных целей. Часто выбирает карьеру в бизнесе, политике или юриспруденции. Примеры: менеджер 💼, предприниматель, юрист, маркетолог.",
+    "C (Конвенциональный).\nПредпочитает чёткие инструкции, структуру и работу с цифрами/документами. Ценит аккуратность и системный подход. Примеры: бухгалтер 📊, архивариус, налоговый инспектор, логист."
+  )
+)
 
 
 # 3. Вспомогательные функции                            ####
@@ -63,9 +78,8 @@ create_test_ui <- function(test_name) {
                                   style = "width:100%; font-weight:bold;")
                      ),
                      numericInput(
-                       row$feature_short_name, NULL,
-                       row$min, min = row$min, max = row$max, step = 1,
-                       width = "100%"
+                       inputId = row$feature_short_name, label = NULL, value = row$median, 
+                       min = row$min, max = row$max, step = 1, width = "100%"
                      ),
                      div(paste0("Допустимо: от ", row$min, " до ", row$max),
                          style = "font-size:0.75em; color:#666; margin-top:2px;")
@@ -84,6 +98,41 @@ correct_word <- function(nn) {
     nn %% 10 == 1  & nn %% 100 != 11          ~ "фактор",
     TRUE                                      ~ "факторов"
   )
+}
+
+
+make_conclusion <- function(pred_vec) {
+  # GLOBAL: code_desc, riasec_codes
+  if (is.null(pred_vec) || length(pred_vec) == 0) {
+    return(list("", ""))
+  }
+  
+  res <- data.table(
+    riasec_codes = riasec_codes,
+    pred = pred_vec,
+    conf_deg = (mclust::softmax(pred_vec) * 100) %>% as.vector() %>% round(1)
+  ) %>% 
+    .[, text := paste0(riasec_codes, " (", conf_deg, "%)")] %>% 
+    merge(code_desc, by = "riasec_codes", all.x = TRUE) %>% 
+    .[order(-pred)]
+  
+  pred_df <- rbind(pred_vec) %>% as.data.table() %>% rename_all(~riasec_codes)
+  
+  left_text <- paste0(
+    pander::pandoc.table.return(pred_df, style = 'multiline'),
+    "Коды Голланда:\n",
+    " • Наиболее вероятные: ", res[1:3, text] %>% paste0(collapse = ", "), "\n",
+    " • Менее вероятные: \t",  res[4:6, text] %>% paste0(collapse = ", "), "\n\n",
+    "Обозначения:\n",
+    "X (Y%), где X - код Голланда, соответствующий типу личности,\n\t    Y - степень уверенности, что данный код Голланда входит в верхнюю триаду\n"
+  )
+  
+  right_text <- paste0(
+    "\nВаши типы личности:\n\n",
+    res[1:3, desc] %>% paste0(" • ", ., collapse = "\n\n"),
+    "\n"
+  )
+  return(list(left_text, right_text))
 }
 
 
@@ -131,7 +180,11 @@ ui <- fluidPage(
       )),
       hr(),
       h3("Результаты прогноза"),
-      verbatimTextOutput("res")
+      fluidRow(
+        column(6, htmlOutput("res_left")),
+        column(6, htmlOutput("res_right"))
+      ),
+      tags$div(style = "height: 50px;")
     )
   ),
   
@@ -152,12 +205,12 @@ server <- function(input, output) {
     all_tests <- constraints[, unique(test)]
     used_tests <- all_tests[sapply(all_tests, \(t) input[[paste0("test", t)]])]
   
-    filled_data <- constraints %>%
-      copy() %>% 
-      .[test %in% used_tests] %>% 
-      .[, val := input[[feature_short_name]], by = .I]
-    
     if (length(used_tests) > 0) {
+      filled_data <- constraints %>%
+        copy() %>% 
+        .[test %in% used_tests] %>% 
+        .[, val := input[[feature_short_name]], by = .I]
+      
       errors <- filled_data %>%
         .[is.na(val) | val < min | val > max] %>% 
         .[, err_msg(test, feature, min, max)]
@@ -168,9 +221,15 @@ server <- function(input, output) {
       }
       
       all_answers <- filled_data %>% 
+        bind_rows(anti_join(
+          constraints[, .(feature_short_name, val = median)],
+          filled_data,
+          by = join_by(feature_short_name)
+        )) %>%
+        as.data.table() %>%
         .[, .(feature_short_name, val, id = 1)] %>% 
         dcast(id ~ feature_short_name, value.var = "val") %>%
-        .[, paste0(setdiff(constraints[, unique(feature_short_name)], colnames(.))) := 1] %>% 
+        .[, paste0(setdiff(constraints[, unique(feature_short_name)], colnames(.))) := 10] %>% 
         .[, id := NULL] %>% 
         relocate(coln_order) %>% 
         as.matrix() %>% 
@@ -178,8 +237,15 @@ server <- function(input, output) {
       
       rv$results <- glm_predict(cv_glm, all_answers)
     }
-
-    output$res <- renderPrint(rv$results)
+    
+    text_res <- make_conclusion(rv$results)
+    
+    output$res_left  <- renderUI({
+      div(style = "white-space: pre-wrap; font-family: monospace;", HTML(text_res[[1]]))
+    })
+    output$res_right <- renderUI({
+      div(style = "white-space: pre-wrap; font-family: monospace;", HTML(text_res[[2]]))
+    })
   })
   
   observeEvent(input$info, {
