@@ -83,6 +83,10 @@ train_test_split <- function(features, targets, train_size = 0.8) {
   mean_train <- apply(X_train_unscaled, 2, mean, na.rm = TRUE)
   sd_train <- apply(X_train_unscaled, 2, sd, na.rm = TRUE)
   
+  saveRDS(mean_train, "3. Shiny_app/model/mean_scale.rds")
+  saveRDS(sd_train,   "3. Shiny_app/model/sd_scale.rds")
+  saveRDS(colnames(X_train_unscaled), "3. Shiny_app/model/coln_order.rds")
+  
   X_train <- scale(X_train_unscaled, center = mean_train, scale = sd_train)
   X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
   

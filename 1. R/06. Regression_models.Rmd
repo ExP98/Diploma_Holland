@@ -1295,3 +1295,17 @@ ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
   labs(title = "Частоты значений кодов предсказаний по убыванию") +
   theme_minimal()
 ```
+
+
+# 9. Сохранение модели
+
+```{r}
+cv_glm <- cv.glmnet(X_train, Y_train, family = "mgaussian", alpha = 1)
+# saveRDS(cv_glm, here("3. Shiny_app/model/MODEL_cv_glm.rds"))
+
+glm_pred <- predict(cv_glm, newx = X_test[1, , drop = F], s = "lambda.min")[,,1]
+
+glm_pred %>% 
+  smart_integer_round()
+```
+

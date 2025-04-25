@@ -11,13 +11,24 @@ library(DT)
 library(shinyBS)
 
 
-# 2. Датасет с ограничениями       ####
+# 2. Датасет с ограничениями, модель       ####
 # set.seed(123)
 constraints <- read.xlsx2(paste0(here(), "/3. Shiny_app/psytest_constraints.xlsx"),
                           sheetName = "constraints") %>% 
   as.data.table() %>% 
   .[, names(.SD) := lapply(.SD, as.numeric), .SDcols = c("feature_num", "min", "max")] %>% 
   .[test != "Тест Голланда"]
+
+mean_scale <- readRDS(here("3. Shiny_app/model/mean_scale.rds"))
+sd_scale   <- readRDS(here("3. Shiny_app/model/sd_scale.rds"))
+coln_order <- readRDS(here("3. Shiny_app/model/coln_order.rds"))
+cv_glm     <- readRDS(here("3. Shiny_app/model/MODEL_cv_glm.rds"))
+
+glm_predict <- function(model, newdata) {
+  glm_pred <- predict(model, newx = newdata, s = "lambda.min")[,,1] %>% 
+    smart_integer_round()
+  return(glm_pred)
+}
 
 
 # 3. Вспомогательные функции                            ####
@@ -131,7 +142,7 @@ ui <- fluidPage(
 # 5. Сервер                                        ####
 server <- function(input, output) {
   # реактивное хранилище для результатов
-  rv <- reactiveValues(results_df = NULL)
+  rv <- reactiveValues(results = NULL)
   
   observeEvent(input$calc, {
     err_msg <- \(test, feature, min_, max_) {
@@ -140,12 +151,14 @@ server <- function(input, output) {
     
     all_tests <- constraints[, unique(test)]
     used_tests <- all_tests[sapply(all_tests, \(t) input[[paste0("test", t)]])]
-    browser()
+  
+    filled_data <- constraints %>%
+      copy() %>% 
+      .[test %in% used_tests] %>% 
+      .[, val := input[[feature_short_name]], by = .I]
+    
     if (length(used_tests) > 0) {
-      errors <- constraints %>%
-        copy() %>% 
-        .[test %in% used_tests] %>% 
-        .[, val := input[[feature_short_name]], by = .I] %>%
+      errors <- filled_data %>%
         .[is.na(val) | val < min | val > max] %>% 
         .[, err_msg(test, feature, min, max)]
       
@@ -153,22 +166,20 @@ server <- function(input, output) {
         lapply(errors, \(e) showNotification(e, type = "error"))
         return(NULL)
       }
+      
+      all_answers <- filled_data %>% 
+        .[, .(feature_short_name, val, id = 1)] %>% 
+        dcast(id ~ feature_short_name, value.var = "val") %>%
+        .[, paste0(setdiff(constraints[, unique(feature_short_name)], colnames(.))) := 1] %>% 
+        .[, id := NULL] %>% 
+        relocate(coln_order) %>% 
+        as.matrix() %>% 
+        scale(center = mean_scale, scale = sd_scale)
+      
+      rv$results <- glm_predict(cv_glm, all_answers)
     }
-    
-    calculate_sum <- function() {
-      results <- list()
-      for (t in constraints[, unique(test)]) {
-        if (input[[paste0("test", t)]]) {
-          factors <- constraints[test == t]
-          vals <- sapply(factors$feature_short_name, function(id) input[[id]])
-          results[[as.character(t)]] <- data.frame(test = t, sum = sum(vals, na.rm = TRUE))
-        }
-      }
-      do.call(rbind, results)
-    }
-    
-    rv$results_df <- calculate_sum()
-    output$res <- renderPrint(rv$results_df)
+
+    output$res <- renderPrint(rv$results)
   })
   
   observeEvent(input$info, {
