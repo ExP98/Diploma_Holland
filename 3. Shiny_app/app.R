@@ -20,6 +20,8 @@ constraints <- read.xlsx2(paste0(here(), "/3. Shiny_app/psytest_constraints.xlsx
   .[, names(.SD) := lapply(.SD, as.numeric), .SDcols = c("feature_num", "min", "max", "median")] %>% 
   .[test != "Тест Голланда"]
 
+all_tests <- constraints[, unique(test)]
+
 mean_scale <- readRDS(here("3. Shiny_app/model/mean_scale.rds"))
 sd_scale   <- readRDS(here("3. Shiny_app/model/sd_scale.rds"))
 coln_order <- readRDS(here("3. Shiny_app/model/coln_order.rds"))
@@ -54,15 +56,24 @@ create_test_ui <- function(test_name) {
   full_name <- str_glue("Тест {test_name} ({nn} {correct_word(nn)})")
   
   bsCollapsePanel(
-    title = strong(full_name),
+    title = tags$div(
+      style = "display: flex; align-items: center; margin: 0; padding: 0; height: 32px; gap: 1px;",
+      tags$div(
+        onclick = "event.stopPropagation();",
+        style   = "margin: 0; padding: 0; display: inline-flex; align-items: center;",
+        checkboxInput(
+          inputId = paste0("test", test_name),
+          label   = NULL
+        )
+      ),
+      tags$strong(full_name, style = "margin: 0; padding: 0; line-height: 1;")
+    ),
     value = paste0("panel", test_name),
     
     if (test_name == "Ценностный опросник Шварца") {
       tags$p("НИ – нормативный идеал, ИП – индивидуальный приоритет",
              style = "font-style:italic; margin:5px 0 10px;")
     },
-    
-    checkboxInput(paste0("test", test_name), "Включить этот тест"),
     
     lapply(sort(unique(dt$col)), function(cn) {
       sub <- dt[col == cn]
@@ -92,6 +103,11 @@ create_test_ui <- function(test_name) {
 }
 
 
+result_output <- function(res) {
+  div(style = "white-space: pre-wrap; font-family: monospace;", HTML(res))
+}
+
+
 correct_word <- function(nn) {
   case_when(
     nn %% 10 %in% 2:4 & !nn %% 100 %in% 12:14 ~ "фактора",
@@ -101,7 +117,7 @@ correct_word <- function(nn) {
 }
 
 
-make_conclusion <- function(pred_vec) {
+make_conclusion <- function(pred_vec, used_tests) {
   # GLOBAL: code_desc, riasec_codes
   if (is.null(pred_vec) || length(pred_vec) == 0) {
     return(list("", ""))
@@ -119,7 +135,7 @@ make_conclusion <- function(pred_vec) {
   pred_df <- rbind(pred_vec) %>% as.data.table() %>% rename_all(~riasec_codes)
   
   left_text <- paste0(
-    pander::pandoc.table.return(pred_df, style = 'multiline'),
+    # pander::pandoc.table.return(pred_df, style = 'multiline'),
     "Коды Голланда:\n",
     " • Наиболее вероятные: ", res[1:3, text] %>% paste0(collapse = ", "), "\n",
     " • Менее вероятные: \t",  res[4:6, text] %>% paste0(collapse = ", "), "\n\n",
@@ -132,27 +148,41 @@ make_conclusion <- function(pred_vec) {
     res[1:3, desc] %>% paste0(" • ", ., collapse = "\n\n"),
     "\n"
   )
+  
+  if (length(used_tests) > 0) {
+    s <- paste0(
+      "\nПрогноз сделан на основе результатов следующих тестов:\n",
+      paste0(" • ", used_tests, "\n", collapse = ""), "\n"
+    )
+    left_text <- paste0(s, left_text)
+  }
+  
   return(list(left_text, right_text))
 }
 
 
-# 4. Фронт                                        ####
+# 4. Фронт (ui)                                       ####
 ui <- fluidPage(
   titlePanel("Предсказание кода Голланда по результатам психометрических тестов"),
   
   tags$head(
     tags$style(HTML("
-      #tests_panel .panel-default > .panel-heading,
-      #tests_panel .panel-default > .panel-body {
+      #tests_panel .panel-default > .panel-heading {
         background-color: #E9EFFC !important;
-        border-color: #ddd !important;
-        border-radius: 5px;
+        padding: 0 !important;
       }
-      #tests_panel .panel {
-        margin-bottom: 20px;
+      #tests_panel .panel-title a {
+        display: flex !important;
+        align-items: center !important;
+        padding: 0 8px !important;
+        margin: 0 !important;
       }
-      #tests_panel .panel-body {
-        padding: 10px;
+      #tests_panel .panel-title a .form-group {
+        margin: 0 !important;
+        padding: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        width: 30px !important;
       }
       .info-btn {
         position: fixed; top: 20px; right: 20px; width: 35px; height: 35px;
@@ -202,7 +232,6 @@ server <- function(input, output) {
       str_glue("Тест {test}, фактор {feature}: значение должно быть от {min_} до {max_}") %>% as.character()
     }
     
-    all_tests <- constraints[, unique(test)]
     used_tests <- all_tests[sapply(all_tests, \(t) input[[paste0("test", t)]])]
   
     if (length(used_tests) > 0) {
@@ -217,7 +246,7 @@ server <- function(input, output) {
       
       if (length(errors) > 0) {
         lapply(errors, \(e) showNotification(e, type = "error"))
-        return(NULL)
+        rv$results <- NULL
       }
       
       all_answers <- filled_data %>% 
@@ -229,23 +258,22 @@ server <- function(input, output) {
         as.data.table() %>%
         .[, .(feature_short_name, val, id = 1)] %>% 
         dcast(id ~ feature_short_name, value.var = "val") %>%
-        .[, paste0(setdiff(constraints[, unique(feature_short_name)], colnames(.))) := 10] %>% 
+        .[, paste0(setdiff(constraints[, unique(feature_short_name)], colnames(.))) := 1] %>% 
         .[, id := NULL] %>% 
         relocate(coln_order) %>% 
         as.matrix() %>% 
         scale(center = mean_scale, scale = sd_scale)
       
       rv$results <- glm_predict(cv_glm, all_answers)
+    } else {
+      rv$results <- NULL
     }
     
-    text_res <- make_conclusion(rv$results)
+    text_res <- make_conclusion(rv$results, used_tests)
+    output$res_left  <- renderUI(result_output(text_res[[1]]))
+    output$res_right <- renderUI(result_output(text_res[[2]]))
     
-    output$res_left  <- renderUI({
-      div(style = "white-space: pre-wrap; font-family: monospace;", HTML(text_res[[1]]))
-    })
-    output$res_right <- renderUI({
-      div(style = "white-space: pre-wrap; font-family: monospace;", HTML(text_res[[2]]))
-    })
+    if (!is.null(rv$results)) showNotification("Подсчет выполнен", type = "message", duration = 3)
   })
   
   observeEvent(input$info, {
