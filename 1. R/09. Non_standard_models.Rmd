@@ -61,22 +61,6 @@ find_K_nearest_neighbour <- function(input_vec, X_train_, Y_train_, k_nn = 43,
 }
 
 
-pca_data_preparation <- function(X_train_, X_test_, k_dim = NULL, limit_ssq = 0.9) {
-  pca_model <- prcomp(X_train_, center = TRUE, scale. = TRUE)
-  
-  if (is.null(k_dim)) {
-    k_dim <- data.table(k = 1:length(pca_model$sdev),
-                        ssq = pca_model$sdev^2) %>%
-      .[, cumsum := cumsum(ssq / sum(ssq))] %>%
-      .[, limit_b := cumsum >= limit_ssq] %>%
-      .[limit_b == TRUE, min(k)]
-  }
-  X_train_ <- pca_scaler(X_train_, pca_model, k = k_dim)
-  X_test_  <- pca_scaler(X_test_, pca_model, k = k_dim)
-  return(list(X_train_, X_test_))
-}
-  
-
 my_kNN <- function(X_train_, X_test_, Y_train_, k_nn = 43,
                    # аргументы далее лучше не трогать (выбраны лучшие согласно тестам)
                    dist_func = my_rmse, avg_func = median, 

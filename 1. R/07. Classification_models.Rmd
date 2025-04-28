@@ -25,6 +25,113 @@ targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
 
 # 3. Модели
 
+1. Линейные модели: Логистическая регрессия, glm, MLP 
+2. Деревья: RF, ExtraTree, Boosting (XGBoost, LightGBM, Catboost)
+3. Naive Bayes
+4. kNN
+5. SVM
+6. Нейронки
+
++ PCA!!! 
+
+Разница есть:
+- 6 классификаторов для предсказания каждой метки (1 метка - 1 классификатор "да" или "нет")
+- 1 классификатор для multiclass, где берем 3 максимальные вероятности
+- предсказание одного из 20 классов в label powerset
+
+
+Label Powerset
+    Рассматриваем каждую из возможных комбинаций ровно трёх факторов (комбинаций C^3_6=20) как отдельный класс.
+    Затем решаем задачу «многоклассовой» классификации на 20 классах.
+    Подходит, если вам важен учёт корреляций «именно трёх» сразу, но количество классов быстро растёт при увеличении исходного числа меток.
+    Реализовано в библиотеке scikit-multilearn через LabelPowerset
+
+## 3.0 Пример решения одной моделью и как multiclass (с выбором 3),  и как multilabel
+
+На примере SVM (пакет e1071)
+
+
+Multiclass:
+1) или берем топ1
+2) или для топ3 размножаем датасет на 3
+
+Берем размноженный на 3 датасет:
+X[i, ] --> top1_lbl,
+X[i, ] --> top2_lbl,
+X[i, ] --> top3_lbl, ... (это k = 3)
+
+k = 1 значит, что для каждой строки берем лишь один наиболее значимый лейбл, а не 3
+
+```{r}
+make_multiclass_df <- function(X_train_, Y_train_, k = 3) {
+  class_label <- Y_train_ %>% 
+    as.data.table() %>% 
+    .[, id := 1:.N] %>% 
+    melt(id.vars = "id") %>% 
+    .[order(id, -value), head(.SD, k), by = "id"] %>% 
+    .[, variable]
+  
+  df <- data.frame(X_train_[rep(1:nrow(X_train_), each = k),], Class = class_label)
+  return(df)
+}
+
+pred_by_SVM <- function(X_train_, Y_train_, X_test_, Y_test_, kernel = "sigmoid", k = 3) {
+  svm_model <- svm(
+    Class ~ .,
+    data       = make_multiclass_df(X_train_, Y_train_, k = k),
+    kernel     = kernel, # linear, polynomial, radial, sigmoid
+    probability = TRUE
+  )
+  
+  pred <- predict(svm_model, X_test_, probability = TRUE) %>% 
+    attr("probabilities") %>% 
+    .[, paste0("HL_", 1:6)]
+  
+  df_metric(pred, Y_test_, func = calc_C_index) %>% print()
+  return(invisible(pred))
+}
+```
+
+```{r}
+print("k = 3")
+x3 <- sapply(c("linear", "polynomial", "radial", "sigmoid"),
+            \(krnl) pred_by_SVM(X_train, Y_train, X_test, Y_test, krnl, k = 3))
+
+print("k = 1")
+x1 <- sapply(c("linear", "polynomial", "radial", "sigmoid"),
+             \(krnl) pred_by_SVM(X_train, Y_train, X_test, Y_test, krnl, k = 1))
+```
+k = 3 стабильно лучше, притом наилучшее ядро sigmoid.
+
+Уменьшение размерности:
+```{r}
+.[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = 0.8)
+
+x3 <- sapply(c("linear", "sigmoid"),
+             \(krnl) pred_by_SVM(X_train_pca, Y_train, X_test_pca, Y_test, krnl, k = 3))
+```
+
+Насколько уменьшаем размерность:
+```{r}
+x3 <- sapply(seq(0.3, 1, 0.1), \(s) {
+  cat("ssq: ", s, "\t")
+  .[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = s)
+  pred_by_SVM(X_train_pca, Y_train, X_test_pca, Y_test, "sigmoid", k = 3)
+})
+```
+Лучшее при ssq = 0.8 (k = 19)
+
+Итого лучшее:
+```{r}
+pred_by_SVM(X_train, Y_train, X_test, Y_test, "sigmoid", k = 3)
+
+.[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = 0.8)
+pred_by_SVM(X_train_pca, Y_train, X_test_pca, Y_test, "sigmoid", k = 3)
+```
+Возможно, стоит усреднять значение метрики (запускать много раз)
+
+
+
 ## 3.1 RandomForest
 ```{r}
 ind_pred <- vector("list", 6)
