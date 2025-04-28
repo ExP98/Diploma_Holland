@@ -96,61 +96,79 @@ pred_by_SVM <- function(X_test_, X_train_ = NULL, Y_train_ = NULL, multiclass_df
 }
 
 
-check_SVM <- function(X_train_, Y_train_, X_test_, Y_test_, kernel = "sigmoid", k = 3, n_retry = 10) {
-  multiclass_df <- make_multiclass_df(X_train_, Y_train_, k = k)
-  
-  median_metric_value <- sapply(1:n_retry, \(i) {
-    ind_pred <- pred_by_SVM(X_test_, multiclass_df = multiclass_df, kernel = kernel)
-    classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
-    cindex = df_metric(classif_ind_pred, Y_test_, func = calc_C_index)
-    
-    Y_pred <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
-    classif_metrics <- calc_classification_metrics(Y_pred, Y_b_test, i)
-    return(list(cindex = cindex, classif_metrics = classif_metrics))
-  })
-  return(median_metric_value)
+# Обертка для того, чтобы можно было использовать classification_test_framework
+multiclass_clsf <- function(X_train = NULL, Y_b_train = NULL, X_test, ...) {
+  return(pred_by_SVM(X_test_ = X_test, ...))
 }
 ```
 
 ```{r}
+multiclass_df1 <- make_multiclass_df(X_train, Y_train, k = 1)
+multiclass_df3 <- make_multiclass_df(X_train, Y_train, k = 3)
+
 print("k = 3")
-sapply(c("linear", "polynomial", "radial", "sigmoid"),
-       \(krnl) check_SVM(X_train, Y_train, X_test, Y_test, krnl, k = 3))
+lapply(c("linear", "polynomial", "radial", "sigmoid"),
+       \(krnl) classification_test_framework(
+         X_train, Y_b_train, X_test, Y_test, Y_b_test, ind_clsf_func = multiclass_clsf,
+         n_retry = 5, label = krnl, multiclass_df = multiclass_df3, k = 3, kernel = krnl
+       )
+) %>% bind_rows()
 
 print("k = 1")
-sapply(c("linear", "polynomial", "radial", "sigmoid"),
-       \(krnl) check_SVM(X_train, Y_train, X_test, Y_test, krnl, k = 1))
+lapply(c("linear", "polynomial", "radial", "sigmoid"),
+       \(krnl) classification_test_framework(
+         X_train, Y_b_train, X_test, Y_test, Y_b_test, ind_clsf_func = multiclass_clsf,
+         n_retry = 5, label = krnl, multiclass_df = multiclass_df1, k = 1, kernel = krnl
+       )
+) %>% bind_rows()
 ```
 k = 3 стабильно лучше, притом наилучшее ядро sigmoid.
 
-Уменьшение размерности:
-```{r}
-.[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = 0.8)
-
-sapply(c("linear", "sigmoid"),
-       \(krnl) check_SVM(X_train_pca, Y_train, X_test_pca, Y_test, krnl, k = 3))
-```
-
+Уменьшение размерности.
 Насколько уменьшаем размерность:
 ```{r}
-sapply(seq(0.3, 1, 0.1), \(s) {
+lapply(seq(0.3, 1, 0.1), \(s) {
   cat("ssq: ", s, "\t")
   .[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = s)
-  check_SVM(X_train_pca, Y_train, X_test_pca, Y_test, "sigmoid", k = 3) %>% print()
-})
+  
+  multiclass_df <- make_multiclass_df(X_train_pca, Y_train, k = 3)
+  classification_test_framework(
+     X_train_pca, Y_b_train, X_test_pca, Y_test, Y_b_test, ind_clsf_func = multiclass_clsf,
+     n_retry = 5, label = s, multiclass_df = multiclass_df, kernel = "sigmoid"
+   )
+}) %>% bind_rows()
 ```
 Лучшее при ssq = 0.8 (k = 19)
 
 Итого лучшее:
 ```{r}
-check_SVM(X_train, Y_train, X_test, Y_test, "sigmoid", k = 3)
+# a)
+multiclass_df <- make_multiclass_df(X_train, Y_train, k = 3)
+r1 <- classification_test_framework(
+  X_train, Y_b_train, X_test, Y_test, Y_b_test, ind_clsf_func = multiclass_clsf,
+  n_retry = 5, label = "simple SVM", multiclass_df = multiclass_df, kernel = "sigmoid"
+)
 
+# b)
 .[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = 0.8)
-check_SVM(X_train_pca, Y_train, X_test_pca, Y_test, "sigmoid", k = 3)
+multiclass_df <- make_multiclass_df(X_train_pca, Y_train, k = 3)
+
+r2 <- classification_test_framework(
+  X_train_pca, Y_b_train, X_test_pca, Y_test, Y_b_test, ind_clsf_func = multiclass_clsf,
+  n_retry = 5, label = "SVM with PCA", multiclass_df = multiclass_df, kernel = "sigmoid"
+)
+
+bind_rows(r1, r2)
 ```
 
 
 ### 3.0.2 Multilabel
+
+Модифицировать под разные модели (R6class)
+```{r}
+classification_test_framework(X_train, Y_b_train, X_test, Y_test, Y_b_test, n_retry = 10,
+                              ind_clsf_func = ind_clsf, label = "multioutput")
+```
 
 
 ### 3.0.3 Label Powerset

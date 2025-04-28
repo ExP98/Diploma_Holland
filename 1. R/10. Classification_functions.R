@@ -34,6 +34,19 @@ pca_data_preparation <- function(X_train_, X_test_, k_dim = NULL, limit_ssq = 0.
 }
 
 
+make_multiclass_df <- function(X_train_, Y_train_, k = 3) {
+  class_label <- Y_train_ %>% 
+    as.data.table() %>% 
+    .[, id := 1:.N] %>% 
+    melt(id.vars = "id") %>% 
+    .[order(id, -value), head(.SD, k), by = "id"] %>% 
+    .[, variable]
+  
+  df <- data.frame(X_train_[rep(1:nrow(X_train_), each = k),], Class = class_label)
+  return(df)
+}
+
+
 # 2.2 Метрики                                                    ####
 
 # доля неправильных ответов. От 0 до 1
@@ -113,7 +126,7 @@ jaccard_score <- function(y_true, y_pred) {
 calc_classification_metrics <- function(Y_pred_, Y_b_test_, label = "") {
   res <- list(
     label = label,
-    hamming = hamming_loss(Y_b_test_, Y_pred_),
+    hamming_loss = hamming_loss(Y_b_test_, Y_pred_),
     top1_acc = mean(rowSums(Y_pred_ * Y_b_test_) >= 1), # top-k accuracy -- хотя бы k меток верные
     top2_acc = mean(rowSums(Y_pred_ * Y_b_test_) >= 2),
     top3_acc = mean(rowSums(Y_pred_ * Y_b_test_) >= 3),
@@ -123,4 +136,71 @@ calc_classification_metrics <- function(Y_pred_, Y_b_test_, label = "") {
     purrr::list_flatten() %>% 
     as.data.table()
   return(res)
+}
+
+
+# 3. Модели                                                     ####
+
+ind_clsf <- function(X_train, Y_b_train, X_test) {
+  ind_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    model <- svm(x = X_train, y = as.factor(Y_b_train[, col_i]), kernel = "sigmoid", probability = TRUE)
+    ind_pred[[col_i]] <- predict(model, X_test, probability = TRUE) %>% 
+      attr("probabilities") %>% 
+      .[, "TRUE"]
+  }
+  return(as.data.table(ind_pred))
+}
+
+
+# X_train_ + Y_train_ OR multiclass_df
+pred_by_SVM <- function(X_test_, X_train_ = NULL, Y_train_ = NULL, multiclass_df = NULL,
+                        kernel = "sigmoid", k = 3) {
+  if (is.null(multiclass_df)) multiclass_df <- make_multiclass_df(X_train_, Y_train_, k = k)
+  svm_model <- svm(
+    Class ~ .,
+    data        = multiclass_df,
+    kernel      = kernel, # linear, polynomial, radial, sigmoid
+    probability = TRUE
+  )
+  
+  pred <- predict(svm_model, X_test_, probability = TRUE) %>% 
+    attr("probabilities") %>% 
+    .[, paste0("HL_", 1:6)] %>% 
+    as.data.table()
+  return(pred)
+}
+
+
+# Обертка для того, чтобы можно было использовать classification_test_framework
+multiclass_clsf <- function(X_train = NULL, Y_b_train = NULL, X_test, ...) {
+  return(pred_by_SVM(X_test_ = X_test, ...))
+}
+
+
+classification_test_framework <- function(X_train, Y_b_train, 
+                                          X_test, Y_test, Y_b_test,
+                                          ind_clsf_func = ind_clsf,
+                                          n_retry = 1, label = "", ...) {
+  metric_values <- lapply(1:n_retry, \(i) {
+    ind_pred <- ind_clsf_func(X_train, Y_b_train, X_test, ...)
+    
+    classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
+    cindex = df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+    
+    Y_pred <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
+    classif_metrics <- calc_classification_metrics(Y_pred, Y_b_test, label)
+    return(list(cindex = cindex, classif_metrics = classif_metrics))
+  })
+  
+  cindex_med <- sapply(metric_values, \(item) item[["cindex"]]) %>% median()
+  clsf_df <- lapply(metric_values, \(item) item[["classif_metrics"]]) %>% bind_rows() 
+  
+  clsf_df <- clsf_df %>% copy() %>% 
+    .[, lapply(.SD, \(col) mean(col, na.rm = TRUE)), .SDcols = is.numeric] %>%
+    .[, label := clsf_df[1, label]] %>% 
+    .[, cindex := cindex_med] %>% 
+    relocate(label, cindex)
+  
+  return(clsf_df)
 }
