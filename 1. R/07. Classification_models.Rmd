@@ -35,9 +35,9 @@ targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
 + PCA!!! 
 
 Разница есть:
-- 6 классификаторов для предсказания каждой метки (1 метка - 1 классификатор "да" или "нет")
-- 1 классификатор для multiclass, где берем 3 максимальные вероятности
-- предсказание одного из 20 классов в label powerset
+ - 1 классификатор для multiclass, где берем 3 максимальные вероятности
+ - 6 классификаторов для предсказания каждой метки (1 метка - 1 классификатор "да" или "нет")
+ - предсказание одного из 20 классов в label powerset
 
 
 Label Powerset
@@ -46,11 +46,12 @@ Label Powerset
     Подходит, если вам важен учёт корреляций «именно трёх» сразу, но количество классов быстро растёт при увеличении исходного числа меток.
     Реализовано в библиотеке scikit-multilearn через LabelPowerset
 
-## 3.0 Пример решения одной моделью и как multiclass (с выбором 3),  и как multilabel
+
+## 3.0 Пример решения одной моделью и как multiclass (с выбором 3), как multilabel
 
 На примере SVM (пакет e1071)
 
-
+### 3.0.1 Multiclass
 Multiclass:
 1) или берем топ1
 2) или для топ3 размножаем датасет на 3
@@ -75,31 +76,50 @@ make_multiclass_df <- function(X_train_, Y_train_, k = 3) {
   return(df)
 }
 
-pred_by_SVM <- function(X_train_, Y_train_, X_test_, Y_test_, kernel = "sigmoid", k = 3) {
+
+# X_train_ + Y_train_ OR multiclass_df
+pred_by_SVM <- function(X_test_, X_train_ = NULL, Y_train_ = NULL, multiclass_df = NULL,
+                        kernel = "sigmoid", k = 3) {
+  if (is.null(multiclass_df)) multiclass_df <- make_multiclass_df(X_train_, Y_train_, k = k)
   svm_model <- svm(
     Class ~ .,
-    data       = make_multiclass_df(X_train_, Y_train_, k = k),
-    kernel     = kernel, # linear, polynomial, radial, sigmoid
+    data        = multiclass_df,
+    kernel      = kernel, # linear, polynomial, radial, sigmoid
     probability = TRUE
   )
   
   pred <- predict(svm_model, X_test_, probability = TRUE) %>% 
     attr("probabilities") %>% 
-    .[, paste0("HL_", 1:6)]
+    .[, paste0("HL_", 1:6)] %>% 
+    as.data.table()
+  return(pred)
+}
+
+
+check_SVM <- function(X_train_, Y_train_, X_test_, Y_test_, kernel = "sigmoid", k = 3, n_retry = 10) {
+  multiclass_df <- make_multiclass_df(X_train_, Y_train_, k = k)
   
-  df_metric(pred, Y_test_, func = calc_C_index) %>% print()
-  return(invisible(pred))
+  median_metric_value <- sapply(1:n_retry, \(i) {
+    ind_pred <- pred_by_SVM(X_test_, multiclass_df = multiclass_df, kernel = kernel)
+    classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
+    cindex = df_metric(classif_ind_pred, Y_test_, func = calc_C_index)
+    
+    Y_pred <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
+    classif_metrics <- calc_classification_metrics(Y_pred, Y_b_test, i)
+    return(list(cindex = cindex, classif_metrics = classif_metrics))
+  })
+  return(median_metric_value)
 }
 ```
 
 ```{r}
 print("k = 3")
-x3 <- sapply(c("linear", "polynomial", "radial", "sigmoid"),
-            \(krnl) pred_by_SVM(X_train, Y_train, X_test, Y_test, krnl, k = 3))
+sapply(c("linear", "polynomial", "radial", "sigmoid"),
+       \(krnl) check_SVM(X_train, Y_train, X_test, Y_test, krnl, k = 3))
 
 print("k = 1")
-x1 <- sapply(c("linear", "polynomial", "radial", "sigmoid"),
-             \(krnl) pred_by_SVM(X_train, Y_train, X_test, Y_test, krnl, k = 1))
+sapply(c("linear", "polynomial", "radial", "sigmoid"),
+       \(krnl) check_SVM(X_train, Y_train, X_test, Y_test, krnl, k = 1))
 ```
 k = 3 стабильно лучше, притом наилучшее ядро sigmoid.
 
@@ -107,28 +127,37 @@ k = 3 стабильно лучше, притом наилучшее ядро si
 ```{r}
 .[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = 0.8)
 
-x3 <- sapply(c("linear", "sigmoid"),
-             \(krnl) pred_by_SVM(X_train_pca, Y_train, X_test_pca, Y_test, krnl, k = 3))
+sapply(c("linear", "sigmoid"),
+       \(krnl) check_SVM(X_train_pca, Y_train, X_test_pca, Y_test, krnl, k = 3))
 ```
 
 Насколько уменьшаем размерность:
 ```{r}
-x3 <- sapply(seq(0.3, 1, 0.1), \(s) {
+sapply(seq(0.3, 1, 0.1), \(s) {
   cat("ssq: ", s, "\t")
   .[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = s)
-  pred_by_SVM(X_train_pca, Y_train, X_test_pca, Y_test, "sigmoid", k = 3)
+  check_SVM(X_train_pca, Y_train, X_test_pca, Y_test, "sigmoid", k = 3) %>% print()
 })
 ```
 Лучшее при ssq = 0.8 (k = 19)
 
 Итого лучшее:
 ```{r}
-pred_by_SVM(X_train, Y_train, X_test, Y_test, "sigmoid", k = 3)
+check_SVM(X_train, Y_train, X_test, Y_test, "sigmoid", k = 3)
 
 .[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = 0.8)
-pred_by_SVM(X_train_pca, Y_train, X_test_pca, Y_test, "sigmoid", k = 3)
+check_SVM(X_train_pca, Y_train, X_test_pca, Y_test, "sigmoid", k = 3)
 ```
-Возможно, стоит усреднять значение метрики (запускать много раз)
+
+
+### 3.0.2 Multilabel
+
+
+### 3.0.3 Label Powerset
+
+```{r}
+
+```
 
 
 
@@ -183,69 +212,10 @@ df_metric(classif_ind_pred, Y_test, func = calc_C_index)
 
 # 4. Метрики классификации
 
-## 4.1. Hamming Loss 
-Доля неправильно предсказанных меток
-```{r}
-hamming_loss(Y_b_test, Y_pred_rf) # 0.377451
-hamming_loss(Y_b_test, Y_pred_cb) # 0.377451
-hamming_loss(Y_b_test, Y_rand) # 0.5392157
-# hamming_loss(Y_b_test, Y_b_test)
-# hamming_loss(Y_b_test, !Y_b_test)
-```
-
-## 4.2. Top-k Accuracy
-
-RF
-```{r}
-# Расчет точности
-mean(rowSums(Y_pred_rf * Y_b_test) >= 1)  # Хотя бы одна верная - 0.9852941
-mean(rowSums(Y_pred_rf * Y_b_test) >= 2)  # Хотя бы 2 верные    - 0.7352941
-mean(rowSums(Y_pred_rf * Y_b_test) >= 3)  # Все 3 верные        - 0.1470588
-
-subset_accuracy(Y_b_test, Y_pred_rf) # 0.1470588
-```
-
-Catboost
-```{r}
-# Расчет точности
-mean(rowSums(Y_pred_cb * Y_b_test) >= 1) # 0.9852941
-mean(rowSums(Y_pred_cb * Y_b_test) >= 2) # 0.7205882
-mean(rowSums(Y_pred_cb * Y_b_test) >= 3) # 0.1617647
-
-subset_accuracy(Y_b_test, Y_pred_cb)
-```
-
-Rand
-```{r}
-# Расчет точности
-mean(rowSums(Y_rand * Y_b_test) >= 1)  # Хотя бы одна верная - 0.8970588
-mean(rowSums(Y_rand * Y_b_test) >= 2)  # Хотя бы 2 верные    - 0.4264706
-mean(rowSums(Y_rand * Y_b_test) >= 3)  # Все 3 верные        - 0.05882353
-
-subset_accuracy(Y_b_test, Y_rand)
-```
-
-
-## 4.3. Precision, Recall, F1-Score
 ```{r}
 bind_rows(
-  RF = calc_multiclass_metrics(Y_b_test, Y_pred_rf),
-  CB = calc_multiclass_metrics(Y_b_test, Y_pred_cb),
-  rand = calc_multiclass_metrics(Y_b_test, Y_rand)
-) %>% mutate(Y = c("RF", "CB", "rand"), .before = 1)
-```
-
-
-## 4.4. Jaccard Similarity Score
-Сходство между метками:
-```{r}
-jaccard_score <- function(y_true, y_pred) {
-  intersection <- rowSums(y_true * y_pred)
-  union <- rowSums((y_true + y_pred) > 0)
-  mean(intersection / union)
-}
-
-jaccard_score(Y_b_test, Y_pred_rf) # 0.4867647
-jaccard_score(Y_b_test, Y_pred_cb) # 0.4941176
-jaccard_score(Y_b_test, Y_rand) # 0.3632353
+  calc_classification_metrics(Y_pred_cb, Y_b_test, "Catboost"),
+  calc_classification_metrics(Y_pred_rf, Y_b_test, "Random Forest"),
+  calc_classification_metrics(Y_rand,    Y_b_test, "Random (baseline)")
+)
 ```

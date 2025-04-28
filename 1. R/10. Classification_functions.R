@@ -101,3 +101,26 @@ calc_multiclass_metrics <- function(Y_true, Y_pred) {
     macro_F1_score  = macro_metric(total_confus_dt, F1_score_)
   ))
 }
+
+jaccard_score <- function(y_true, y_pred) {
+  intersection <- rowSums(y_true * y_pred)
+  union <- rowSums((y_true + y_pred) > 0)
+  return(mean(intersection / union))
+}
+
+
+# Мета-функция
+calc_classification_metrics <- function(Y_pred_, Y_b_test_, label = "") {
+  res <- list(
+    label = label,
+    hamming = hamming_loss(Y_b_test_, Y_pred_),
+    top1_acc = mean(rowSums(Y_pred_ * Y_b_test_) >= 1), # top-k accuracy -- хотя бы k меток верные
+    top2_acc = mean(rowSums(Y_pred_ * Y_b_test_) >= 2),
+    top3_acc = mean(rowSums(Y_pred_ * Y_b_test_) >= 3),
+    calc_multiclass_metrics(Y_b_test_, Y_pred_),
+    jaccard = jaccard_score(Y_b_test_, Y_pred_)
+  ) %>% 
+    purrr::list_flatten() %>% 
+    as.data.table()
+  return(res)
+}
