@@ -5,7 +5,11 @@
 #@ Изменения: -
 
 
-# 1. Библиотеки                                                  ####
+# 1. Библиотеки и константы                                      ####
+riasec_codes <- c("R", "I", "A", "S", "E", "C")
+
+all_combos <- combn(riasec_codes, 3, simplify = FALSE) %>% 
+  sapply(\(item) item %>% sort() %>% paste0(collapse = ""))
 
 
 # 2. Функции                                                     ####
@@ -42,8 +46,27 @@ make_multiclass_df <- function(X_train_, Y_train_, k = 3) {
     .[order(id, -value), head(.SD, k), by = "id"] %>% 
     .[, variable]
   
-  df <- data.frame(X_train_[rep(1:nrow(X_train_), each = k),], Class = class_label)
-  return(df)
+  return(list(X = X_train_[rep(1:nrow(X_train_), each = k),], y = class_label))
+}
+
+
+# для Label Powerset
+get_three_letter_code <- function(Y_b) {
+  Y_3label <- Y_b %>% 
+    apply(1, \(x) riasec_codes[x]) %>% t() %>% 
+    apply(1, \(x) x %>% sort() %>% paste0(collapse = "")) %>% 
+    factor(levels = all_combos)
+  return(Y_3label)
+}
+
+
+three_letters_to_bool_matrix <- function(three_lttr_vec) {
+  bool_mtrx <- three_lttr_vec %>% 
+    as.character() %>%  
+    str_split("", n = 3) %>% 
+    sapply(\(pr) 1:6 %in% match(pr, riasec_codes)) %>% 
+    t()
+  return(bool_mtrx)
 }
 
 
@@ -141,52 +164,15 @@ calc_classification_metrics <- function(Y_pred_, Y_b_test_, label = "") {
 
 # 3. Модели                                                     ####
 
-multilabel_ind_clsf <- function(X_train, Y_b_train, X_test) {
-  ind_pred <- vector("list", 6)
-  for (col_i in 1:6) {
-    model <- svm(x = X_train, y = as.factor(Y_b_train[, col_i]), kernel = "sigmoid", probability = TRUE)
-    ind_pred[[col_i]] <- predict(model, X_test, probability = TRUE) %>% 
-      attr("probabilities") %>% 
-      .[, "TRUE"]
-  }
-  return(as.data.table(ind_pred))
-}
-
-
-# X_train_ + Y_train_ OR multiclass_df
-pred_by_SVM <- function(X_test_, X_train_ = NULL, Y_train_ = NULL, multiclass_df = NULL,
-                        kernel = "sigmoid", k = 3) {
-  if (is.null(multiclass_df)) multiclass_df <- make_multiclass_df(X_train_, Y_train_, k = k)
-  svm_model <- svm(
-    Class ~ .,
-    data        = multiclass_df,
-    kernel      = kernel, # linear, polynomial, radial, sigmoid
-    probability = TRUE
-  )
-  
-  pred <- predict(svm_model, X_test_, probability = TRUE) %>% 
-    attr("probabilities") %>% 
-    .[, paste0("HL_", 1:6)] %>% 
-    as.data.table()
-  return(pred)
-}
-
-
-# Обертка для того, чтобы можно было использовать classification_test_framework
-multiclass_clsf <- function(X_train = NULL, Y_b_train = NULL, X_test, ...) {
-  return(pred_by_SVM(X_test_ = X_test, ...))
-}
-
-
-classification_test_framework <- function(X_train, Y_b_train, 
-                                          X_test, Y_test, Y_b_test,
-                                          ind_clsf_func = multilabel_ind_clsf,
+classification_test_framework <- function(Y_test, Y_b_test,
+                                          ind_clsf_func = multilabel_svm_clsf,
                                           n_retry = 1, label = "", ...) {
   metric_values <- lapply(1:n_retry, \(i) {
-    ind_pred <- ind_clsf_func(X_train, Y_b_train, X_test, ...)
+    # ind_pred <- ind_clsf_func(X_train, Y_b_train, X_test, ...)
+    ind_pred <- ind_clsf_func(...)
     
     classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
-    cindex = df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+    cindex <- df_metric(classif_ind_pred, Y_test, func = calc_C_index)
     
     Y_pred <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
     classif_metrics <- calc_classification_metrics(Y_pred, Y_b_test, label)
@@ -203,4 +189,84 @@ classification_test_framework <- function(X_train, Y_b_train,
     relocate(label, cindex)
   
   return(clsf_df)
+}
+
+
+## 3.1 Multiclass                   ####
+
+multiclass_pred_by_SVM <- function(X_train_, Y_train_, X_test_, kernel = "sigmoid", k = 3) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
+  
+  # kernel: linear, polynomial, radial, sigmoid
+  svm_model <- svm(X, y, kernel = kernel, probability = TRUE)
+  
+  pred <- predict(svm_model, X_test_, probability = TRUE) %>% 
+    attr("probabilities") %>% 
+    .[, paste0("HL_", 1:6)] %>% 
+    as.data.table()
+  return(pred)
+}
+
+
+multiclass_pred_by_RF <- function(X_train_, Y_train_, X_test_, ntree = 1000, k = 3) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
+  
+  rf_model <- randomForest(X, y, ntree = ntree) 
+  mlt_cls_pred <- predict(rf_model, X_test_, type = "prob") %>% as.data.table()
+  return(mlt_cls_pred)
+}
+
+
+multiclass_pred_by_Catboost <- function(X_train_, Y_train_, X_test_, k = 3) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
+  
+  train_pool <- catboost.load_pool(data = X, label = as.integer(y))
+  test_pool  <- catboost.load_pool(data = X_test_ %>% as.data.frame())
+  
+  model <- catboost.train(
+    learn_pool = train_pool,
+    params = list(loss_function = 'MultiClass', iterations = 500, logging_level = "Silent") 
+  )
+  
+  mlt_cls_pred <- catboost.predict(model, test_pool, prediction_type = "Probability") %>% as.data.table()
+  return(mlt_cls_pred)
+}
+
+
+## 3.2 Multilabel                   ####
+multilabel_svm_clsf <- function(X_train, Y_b_train, X_test) {
+  ind_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    model <- svm(x = X_train, y = as.factor(Y_b_train[, col_i]), kernel = "sigmoid", probability = TRUE)
+    ind_pred[[col_i]] <- predict(model, X_test, probability = TRUE) %>% 
+      attr("probabilities") %>% 
+      .[, "TRUE"]
+  }
+  return(as.data.table(ind_pred))
+}
+
+
+multilabel_rf_clsf <- function(X_train, Y_b_train, X_test, ntree = 1000) {
+  mltlabel_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    model <- randomForest(x = X_train, y = as.factor(Y_b_train[, col_i]), ntree = ntree) 
+    mltlabel_pred[[col_i]] <- predict(model, X_test, type = "prob") %>% .[, "TRUE"]
+  }
+  return(as.data.table(mltlabel_pred))
+}
+
+
+multilabel_catboost_clsf <- function(X_train, Y_b_train, X_test) {
+  mltlabel_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    train_pool <- catboost.load_pool(data = X_train, label = as.integer(Y_b_train[, col_i]))
+    test_pool  <- catboost.load_pool(data = X_test %>% as.data.frame())
+    
+    model <- catboost.train(
+      learn_pool = train_pool,
+      params = list(loss_function = 'CrossEntropy', iterations = 500, logging_level = "Silent") 
+    )
+    mltlabel_pred[[col_i]] <- catboost.predict(model, test_pool, prediction_type = "Probability")
+  }
+  return(as.data.table(mltlabel_pred))
 }

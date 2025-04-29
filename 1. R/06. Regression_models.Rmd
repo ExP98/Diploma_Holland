@@ -293,8 +293,10 @@ for (k in c(2, 5, 7, 10, 12)) {
 
 ## 3.9 Stacking 
 
+Настоящий стекинг
 ```{r}
-library(stacking)
+# library(stacking)
+# library(snow)
 
 Method <- list(glmnet = data.frame(alpha = c(0.5, 0.8), lambda = c(0.1, 1)),
                pls = data.frame(ncomp = 5))
@@ -321,16 +323,13 @@ st_pred <- lapply(1:6, \(i) stacking_predict(newX = X_test, stacking_train_resul
 st_pred %>% 
   as.data.table() %>% 
   as.matrix() %>% 
-  show_custom_metrics(case_name = "Stacking", need_to_correct = TRUE)
+  show_custom_metrics(case_name = "Stacking")
 ```
 
 
 ```{r}
 library(MASS)
-library(caret)
-library(rpart)
 
-set.seed(123)
 final_pred <- NULL
 
 for (hol_i in 1:6) {
