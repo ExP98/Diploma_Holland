@@ -141,7 +141,7 @@ calc_classification_metrics <- function(Y_pred_, Y_b_test_, label = "") {
 
 # 3. Модели                                                     ####
 
-ind_clsf <- function(X_train, Y_b_train, X_test) {
+multilabel_ind_clsf <- function(X_train, Y_b_train, X_test) {
   ind_pred <- vector("list", 6)
   for (col_i in 1:6) {
     model <- svm(x = X_train, y = as.factor(Y_b_train[, col_i]), kernel = "sigmoid", probability = TRUE)
@@ -180,7 +180,7 @@ multiclass_clsf <- function(X_train = NULL, Y_b_train = NULL, X_test, ...) {
 
 classification_test_framework <- function(X_train, Y_b_train, 
                                           X_test, Y_test, Y_b_test,
-                                          ind_clsf_func = ind_clsf,
+                                          ind_clsf_func = multilabel_ind_clsf,
                                           n_retry = 1, label = "", ...) {
   metric_values <- lapply(1:n_retry, \(i) {
     ind_pred <- ind_clsf_func(X_train, Y_b_train, X_test, ...)

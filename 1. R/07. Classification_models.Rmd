@@ -23,7 +23,7 @@ targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
 ```
 
 
-# 3. Модели
+# 3. Решение
 
 1. Линейные модели: Логистическая регрессия, glm, MLP 
 2. Деревья: RF, ExtraTree, Boosting (XGBoost, LightGBM, Catboost)
@@ -47,11 +47,11 @@ Label Powerset
     Реализовано в библиотеке scikit-multilearn через LabelPowerset
 
 
-## 3.0 Пример решения одной моделью и как multiclass (с выбором 3), как multilabel
+## 3.1 Пример решения одной моделью и как multiclass (с выбором 3), как multilabel
 
 На примере SVM (пакет e1071)
 
-### 3.0.1 Multiclass
+### 3.1.1 Multiclass
 Multiclass:
 1) или берем топ1
 2) или для топ3 размножаем датасет на 3
@@ -62,45 +62,6 @@ X[i, ] --> top2_lbl,
 X[i, ] --> top3_lbl, ... (это k = 3)
 
 k = 1 значит, что для каждой строки берем лишь один наиболее значимый лейбл, а не 3
-
-```{r}
-make_multiclass_df <- function(X_train_, Y_train_, k = 3) {
-  class_label <- Y_train_ %>% 
-    as.data.table() %>% 
-    .[, id := 1:.N] %>% 
-    melt(id.vars = "id") %>% 
-    .[order(id, -value), head(.SD, k), by = "id"] %>% 
-    .[, variable]
-  
-  df <- data.frame(X_train_[rep(1:nrow(X_train_), each = k),], Class = class_label)
-  return(df)
-}
-
-
-# X_train_ + Y_train_ OR multiclass_df
-pred_by_SVM <- function(X_test_, X_train_ = NULL, Y_train_ = NULL, multiclass_df = NULL,
-                        kernel = "sigmoid", k = 3) {
-  if (is.null(multiclass_df)) multiclass_df <- make_multiclass_df(X_train_, Y_train_, k = k)
-  svm_model <- svm(
-    Class ~ .,
-    data        = multiclass_df,
-    kernel      = kernel, # linear, polynomial, radial, sigmoid
-    probability = TRUE
-  )
-  
-  pred <- predict(svm_model, X_test_, probability = TRUE) %>% 
-    attr("probabilities") %>% 
-    .[, paste0("HL_", 1:6)] %>% 
-    as.data.table()
-  return(pred)
-}
-
-
-# Обертка для того, чтобы можно было использовать classification_test_framework
-multiclass_clsf <- function(X_train = NULL, Y_b_train = NULL, X_test, ...) {
-  return(pred_by_SVM(X_test_ = X_test, ...))
-}
-```
 
 ```{r}
 multiclass_df1 <- make_multiclass_df(X_train, Y_train, k = 1)
@@ -162,24 +123,53 @@ bind_rows(r1, r2)
 ```
 
 
-### 3.0.2 Multilabel
+### 3.1.2 Multilabel
+
+multilabel_ind_clsf -- multilabel (multioutput)
 
 Модифицировать под разные модели (R6class)
 ```{r}
 classification_test_framework(X_train, Y_b_train, X_test, Y_test, Y_b_test, n_retry = 10,
-                              ind_clsf_func = ind_clsf, label = "multioutput")
+                              ind_clsf_func = multilabel_ind_clsf, label = "multioutput")
 ```
 
 
-### 3.0.3 Label Powerset
+### 3.1.3 Label Powerset
 
 ```{r}
+get_Y_3label <- function(Y_b) {
+  riasec_codes <- c("R", "I", "A", "S", "E", "C")
+  Y_3label <- Y_b %>% 
+    apply(1, \(x) riasec_codes[x]) %>% t() %>% 
+    apply(1, \(x) x %>% sort() %>% paste0(collapse = ""))
+  return(Y_3label)
+}
+```
 
+```{r}
+riasec_codes <- c("R", "I", "A", "S", "E", "C")
+
+all_combos <- combn(riasec_codes, 3, simplify = FALSE) %>% 
+  sapply(\(item) item %>% sort() %>% paste0(collapse = ""))
+
+svm_model <- svm(
+  x = X_train,
+  y = factor(get_Y_3label(Y_b_train), levels = all_combos),
+  kernel = "sigmoid",
+  probability = TRUE
+)
+
+Y_svm_pred <- predict(svm_model, X_test, probability = TRUE) %>% 
+  as.character() %>%  
+  str_split("", n = 3) %>% 
+  sapply(\(pr) 1:6 %in% match(pr, riasec_codes)) %>% t()
+
+calc_classification_metrics(Y_svm_pred, Y_b_test, "Label Powerset")
 ```
 
 
-
-## 3.1 RandomForest
+## 3.2 Модели
+### 3.2.1 RandomForest
 ```{r}
 ind_pred <- vector("list", 6)
 
@@ -202,7 +192,7 @@ Y_rand <- replicate(n = nrow(Y_b_test), sample(c(rep(TRUE, 3), rep(FALSE, 3)), s
 C-index. Результат аналогичен RF regr (что логично и ожидаемо)
 
 
-## 3.2 Catboost
+### 3.2.2 Catboost
 ```{r}
 ind_pred <- vector("list", 6)
 
