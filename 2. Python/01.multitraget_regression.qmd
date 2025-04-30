@@ -63,6 +63,73 @@ def plot_nn_losses(hist):
 ```
 
 
+# Классификация
+
+```{python}
+import lightgbm as lgb
+
+# y_train — DataFrame или массив shape (n_samples, 6) с one-hot кодировкой
+y_labels = y_train.values.argmax(axis=1)
+lgb_params = {
+    'metric': 'multi_logloss',
+    'learning_rate': 0.05,
+    'seed': 42,
+    'verbose': -1
+}
+
+clf = lgb.LGBMClassifier(objective='multiclass', num_class=6, **lgb_params)
+clf.fit(X_train, y_labels)
+
+probs = clf.predict_proba(X_test)  # shape (n_samples, 6)
+df_probs = pd.DataFrame(probs, columns=[f'HL_{i}' for i in range(1,7)])
+
+df_metric(df_probs, y_test, func=calc_C_index)
+```
+
+Берем три наиболее важных метки, не одну (как выше)
+```{python}
+top3_idx = np.argsort(-y_train.values, axis=1)[:, :3]  # shape (n_samples, 3)
+y_expanded = top3_idx.reshape(-1)  # shape (n_samples*3,)
+
+if isinstance(X_train, pd.DataFrame):
+    X_expanded = pd.concat([X_train] * 3, ignore_index=True)
+else:
+    X_expanded = np.repeat(X_train, repeats=3, axis=0)
+
+clf = lgb.LGBMClassifier(objective='multiclass', num_class=6, **lgb_params)
+clf.fit(X_expanded, y_expanded)
+
+probs = clf.predict_proba(X_test)  # shape (n_samples, 6)
+df_probs = pd.DataFrame(probs, columns=[f'HL_{i}' for i in range(1,7)])
+
+df_metric(df_probs, y_test, func=calc_C_index)
+```
+
+```{python}
+from sklearn.multioutput import MultiOutputClassifier
+from sklearn.ensemble import RandomForestClassifier
+
+base_clf = RandomForestClassifier(n_estimators=100, random_state=42)
+moc = MultiOutputClassifier(base_clf).fit(X_train, y_train)
+
+proba_list = [estimator.predict_proba(X_test)[:, 1] for estimator in moc.estimators_]
+df_probs = pd.DataFrame(np.vstack(proba_list).T, columns=[f'HL_{i}' for i in range(1, 7)])
+
+df_metric(df_probs, y_test, func=calc_C_index)
+```
+
+Ошибка, ибо классов больше, чем TabPFNClassifier может скушать
+```{python}
+from tabpfn import TabPFNClassifier
+
+moc_tabpfn = MultiOutputClassifier(TabPFNClassifier()).fit(X_train, y_train)
+
+proba_list = [estimator.predict_proba(X_test)[:, 1] for estimator in moc_tabpfn.estimators_]
+df_probs = pd.DataFrame(np.vstack(proba_list).T, columns=[f'HL_{i}' for i in range(1, 7)])
+
+df_metric(df_probs, y_test, func=calc_C_index)
+```
+
 # Регрессионные модели
 ## Обычные регрессоры, поддерживающие MultiOutput по умолчанию
 
