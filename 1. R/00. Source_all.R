@@ -10,15 +10,17 @@
 libs <- c(
   "tidyverse", "data.table", "here", "dotty", "caret", "plotly", "arrow",
   "R6", "xgboost", "lightgbm", "randomForest", "catboost", "e1071", "FNN",
-  "glmnet", "pls", "stacking", "rpart"
+  "glmnet", "pls", "stacking", "rpart", "extraTrees"
   # , "Rcpp"
 )
 
 uninstall_pkgs <- libs[!(libs %in% installed.packages()[, "Package"])]
 if (length(uninstall_pkgs)) install.packages(uninstall_pkgs)
+# devtools::install_github("cran/extraTrees")
 
 suppressMessages(lapply(libs, require, character.only = TRUE))
 library(MASS, include.only = "stepAIC")
+
 
 
 # 2. Файлы                                             ####

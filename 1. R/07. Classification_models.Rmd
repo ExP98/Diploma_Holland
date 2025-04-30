@@ -25,11 +25,11 @@ targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
 
 # 3. Решение
 
-1. Линейные модели: Логистическая регрессия, glm, MLP 
-2. Деревья: V RF, ExtraTree, Boosting (XGBoost, LightGBM, Catboost)
-3. Naive Bayes
-4. kNN
-5. SVM
+1. Линейные модели: V Логистическая регрессия, MLP 
+2. Деревья: V RF, V ExtraTree, Boosting (V XGBoost, V LightGBM, V Catboost)
+3. V Naive Bayes
+4. V kNN
+5. V SVM
 6. Нейронки
 
 + PCA!!! 
@@ -157,7 +157,12 @@ calc_classification_metrics(Y_svm_pred, Y_b_test, "Label Powerset")
 
 ## 3.2 Модели
 
-### 3.2.1 RandomForest
+### 1 SVM
+
+См выше
+
+
+### 2 Random Forest
 
 Multiclass
 ```{r}
@@ -184,7 +189,7 @@ classification_test_framework(
 )
 ```
 
-Label superset
+Label powerset
 ```{r}
 model <- randomForest(x = X_train, y = get_three_letter_code(Y_b_train), ntree = 1000)
 
@@ -212,8 +217,9 @@ Y_pred_rf <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
 C-index. Результат аналогичен RF regr (что логично и ожидаемо)
 
 
-### 3.2.2 Catboost
+### 3 Catboost
 
+Multiclass
 ```{r}
 classification_test_framework(
   Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_Catboost, n_retry = 3, k = 1,
@@ -229,12 +235,12 @@ classification_test_framework(
 Multilabel
 ```{r}
 classification_test_framework(
-  Y_test, Y_b_test, ind_clsf_func = multilabel_catboost_clsf, n_retry = 1, 
+  Y_test, Y_b_test, ind_clsf_func = multilabel_catboost_clsf, n_retry = 3, 
   label = "Catboost multilabel", X_train = X_train, Y_b_train = Y_b_train, X_test = X_test
 )
 ```
 
-Label superset
+Label powerset
 ```{r}
 train_pool <- catboost.load_pool(data = X_train, 
                                  label = (get_three_letter_code(Y_b_train) %>% as.integer()) - 1)
@@ -276,6 +282,274 @@ Y_pred_cb <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
 ## Для C-index
 classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
 df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+```
+
+
+### 4 Логистическая регрессия
+
+Multiclass
+```{r}
+# a)
+r1 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_Logregr, n_retry = 5, 
+  label = "logit multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
+)
+
+# b)
+r2 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_Logregr, n_retry = 5, 
+  label = "logit multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
+)
+
+bind_rows(r1, r2)
+```
+
+
+Multilabel
+```{r}
+classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multilabel_logit_clsf, n_retry = 10, 
+  label = "Logistic regr multilabel", X_train = X_train, Y_b_train = Y_b_train, X_test = X_test
+)
+```
+
+Label powerset
+```{r}
+model <- suppressWarnings({
+  glmnet(
+    x = X_train,
+    y = get_three_letter_code(Y_b_train),
+    family = "multinomial",
+    alpha = 0  # ridge; можно alpha = 1 для lasso
+  )
+})
+
+Y_model_pred <- predict(model, newx = X_test, s = last(model$lambda), type = "class") %>% 
+  three_letters_to_bool_matrix()
+
+calc_classification_metrics(Y_model_pred, Y_b_test, "Logreg Label Powerset")
+```
+
+
+### 5 Naive Bayes
+
+Multiclass
+```{r}
+# a)
+r1 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_NB, n_retry = 5, 
+  label = "Naive Bayes multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
+)
+
+# b)
+r2 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_NB, n_retry = 5, 
+  label = "Naive Bayes multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
+)
+
+bind_rows(r1, r2)
+```
+
+
+Multilabel
+```{r}
+classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multilabel_nb_clsf, n_retry = 10, 
+  label = "Naive Bayes multilabel", X_train = X_train, Y_b_train = Y_b_train, X_test = X_test
+)
+```
+
+Label powerset
+```{r}
+model <- naiveBayes(x = X_train, y = get_three_letter_code(Y_b_train))
+
+Y_model_pred <- predict(model, X_test) %>% three_letters_to_bool_matrix()
+calc_classification_metrics(Y_model_pred, Y_b_test, "Naive Bayes Label Powerset")
+```
+
+### 6 kNN
+
+Multiclass
+```{r}
+# a)
+r1 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_kNN, n_retry = 5, k_neighb = 3,
+  label = "kNN multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
+)
+
+# b)
+r2 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_kNN, n_retry = 5, k_neighb = 3,
+  label = "kNN multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
+)
+
+bind_rows(r1, r2)
+```
+
+
+Multilabel
+```{r}
+lapply(seq(5, 55, by = 5), \(k_neighb) {
+  classification_test_framework(
+    Y_test, Y_b_test, ind_clsf_func = multilabel_knn_clsf, n_retry = 10, 
+    label = str_glue("kNN ({k_neighb}) multilabel"), X_train = X_train, Y_b_train = Y_b_train, 
+    X_test = X_test, k_neighb = k_neighb
+  )
+}) %>% bind_rows()
+```
+Оптимально: k_neighb = 25
+
+Label powerset
+```{r}
+model <- knn3(x = X_train, y = get_three_letter_code(Y_b_train), k = 25)
+
+Y_model_pred <- predict(model, X_test, type = "class") %>% three_letters_to_bool_matrix()
+calc_classification_metrics(Y_model_pred, Y_b_test, "kNN Label Powerset")
+```
+
+### 7 ExtraTree
+
+Multiclass
+```{r}
+# a)
+r1 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_ExtraTree, n_retry = 5,
+  label = "ExtraTree multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
+)
+
+# b)
+r2 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_ExtraTree, n_retry = 5, 
+  label = "ExtraTree multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
+)
+
+bind_rows(r1, r2)
+```
+
+Multilabel
+```{r}
+lapply(c(100, 500, 1000, 2000), \(nt) {
+  classification_test_framework(
+    Y_test, Y_b_test, ind_clsf_func = multilabel_extratree_clsf, n_retry = 5, ntree = nt,
+    label = str_glue("ExtraTree ({nt}) multilabel"), X_train = X_train, Y_b_train = Y_b_train, 
+    X_test = X_test
+  )
+}) %>% bind_rows()
+```
+ntree = 2000
+
+Label powerset
+```{r}
+model <- extraTrees(x = X_train, y = get_three_letter_code(Y_b_train), ntree = 1000)
+
+Y_model_pred <- predict(model, X_test) %>% three_letters_to_bool_matrix()
+calc_classification_metrics(Y_model_pred, Y_b_test, "ExtraTree Label Powerset")
+```
+
+
+### 8 XGBoost
+
+Multiclass
+```{r}
+# a)
+r1 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_XGBoost, n_retry = 3,
+  label = "XGBoost multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
+)
+
+# b)
+r2 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_XGBoost, n_retry = 3, 
+  label = "XGBoost multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
+)
+
+bind_rows(r1, r2)
+```
+
+Multilabel
+```{r}
+lapply(c(100, 200, 500), \(nr) {
+  classification_test_framework(
+    Y_test, Y_b_test, ind_clsf_func = multilabel_xgb_clsf, n_retry = 3, nrounds = nr,
+    label = str_glue("XGBoost ({nr}) multilabel"), X_train = X_train, Y_b_train = Y_b_train, 
+    X_test = X_test
+  )
+}) %>% bind_rows()
+```
+Хватит и nrounds = 500
+
+Label powerset
+```{r}
+labels <- get_three_letter_code(Y_b_train) %>% as.integer() - 1
+
+dtrain <- xgboost::xgb.DMatrix(data = X_train, label = labels)
+dtest  <- xgboost::xgb.DMatrix(data = X_test)
+
+model <- xgboost::xgb.train(
+  params = list(objective = "multi:softprob", num_class = length(all_combos), eval_metric = "mlogloss"),
+  data = dtrain,
+  nrounds = 500,
+  verbose = 0
+)
+
+Y_model_pred <- predict(model, dtest) %>%
+  matrix(ncol = length(all_combos), byrow = TRUE) %>% 
+  max.col() %>% 
+  all_combos[.] %>%
+  three_letters_to_bool_matrix()
+
+calc_classification_metrics(Y_model_pred, Y_b_test, "XGBoost Label Powerset")
+```
+
+### 9 LightGBM
+
+Multiclass
+```{r}
+# a)
+r1 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_LightGBM, n_retry = 3,
+  label = "LightGBM multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
+)
+
+# b)
+r2 <- classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_LightGBM, n_retry = 3, 
+  label = "LightGBM multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
+)
+
+bind_rows(r1, r2)
+```
+
+Multilabel
+```{r}
+lapply(c(100, 250, 500), \(nr) {
+  classification_test_framework(
+    Y_test, Y_b_test, ind_clsf_func = multilabel_lightgbm_clsf, n_retry = 3, nrounds = nr,
+    label = str_glue("LightGBM ({nr}) multilabel"), X_train = X_train, Y_b_train = Y_b_train, 
+    X_test = X_test
+  )
+}) %>% bind_rows()
+```
+
+Label Powerset
+```{r}
+labels <- get_three_letter_code(Y_b_train) %>% as.integer() - 1
+
+dtrain <- lightgbm::lgb.Dataset(data = X_train, label = labels)
+model <- lightgbm::lgb.train(
+  params = list(objective = "multiclass", num_class = length(all_combos),
+                metric = "multi_logloss", verbose = -1),
+  data = dtrain,
+  nrounds = 100
+)
+
+Y_model_pred <- predict(model, X_test) %>% 
+  matrix(ncol = length(all_combos), byrow = TRUE) %>% 
+  max.col() %>% 
+  all_combos[.] %>% 
+  three_letters_to_bool_matrix()
+
+calc_classification_metrics(Y_model_pred, Y_b_test, "LightGBM Label Powerset")
 ```
 
 

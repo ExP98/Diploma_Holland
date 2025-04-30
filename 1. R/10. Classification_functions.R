@@ -233,6 +233,71 @@ multiclass_pred_by_Catboost <- function(X_train_, Y_train_, X_test_, k = 3) {
 }
 
 
+multiclass_pred_by_Logregr <- function(X_train_, Y_train_, X_test_, k = 3) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
+  
+  model <- glmnet(X, y, family = "multinomial", alpha = 1)
+  mlt_cls_pred <- predict(model, X_test_, s = last(model$lambda), type = "response")[,,1]
+  return(as.data.table(mlt_cls_pred))
+}
+
+
+multiclass_pred_by_NB <- function(X_train_, Y_train_, X_test_, k = 3) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
+  nb_model <- naiveBayes(X, y)
+  pred <- predict(nb_model, X_test_, type = "raw") %>% as.data.table()
+  return(pred)
+}
+
+
+multiclass_pred_by_kNN <- function(X_train_, Y_train_, X_test_, k_neighb = 25) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = 3)
+  model <- knn3(X, y, k = k_neighb)
+  pred <- predict(model, X_test_) %>% as.data.table()
+  return(pred)
+}
+
+
+multiclass_pred_by_ExtraTree <- function(X_train_, Y_train_, X_test_, ntree = 2000) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = 3)
+  et_model <- extraTrees::extraTrees(X, y, ntree = ntree)
+  pred <- predict(et_model, X_test_, probability = TRUE) %>% as.data.table()
+  return(pred)
+}
+
+
+multiclass_pred_by_XGBoost <- function(X_train_, Y_train_, X_test_, nrounds = 500) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = 3)
+  dtrain <- xgboost::xgb.DMatrix(data = X, label = as.numeric(y) - 1)
+  model <- xgboost::xgb.train(
+    # softprob, если нужно получить вероятности (а не только финальный класс)
+    params = list(objective = "multi:softprob", num_class = 6),
+    data = dtrain,
+    nrounds = nrounds,
+    verbose = 0
+  )
+  pred <- predict(model, xgboost::xgb.DMatrix(X_test_)) %>% 
+    matrix(ncol = 6, byrow = TRUE) %>% 
+    as.data.table()
+  return(pred)
+}
+
+
+multiclass_pred_by_LightGBM <- function(X_train_, Y_train_, X_test_, nrounds = 100) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = 3)
+  dtrain <- lightgbm::lgb.Dataset(data = X, label = as.integer(y) - 1)
+  
+  model <- lightgbm::lgb.train(
+    params = list(objective = "multiclass", num_class = 6, metric = "multi_logloss", verbose = -1),
+    data = dtrain,
+    nrounds = nrounds
+  )
+  
+  prob_matrix <- predict(model, X_test_) %>% matrix(ncol = 6, byrow = TRUE)
+  return(as.data.table(prob_matrix))
+}
+
+
 ## 3.2 Multilabel                   ####
 multilabel_svm_clsf <- function(X_train, Y_b_train, X_test) {
   ind_pred <- vector("list", 6)
@@ -269,4 +334,76 @@ multilabel_catboost_clsf <- function(X_train, Y_b_train, X_test) {
     mltlabel_pred[[col_i]] <- catboost.predict(model, test_pool, prediction_type = "Probability")
   }
   return(as.data.table(mltlabel_pred))
+}
+
+
+# alpha - параметр регуляризации (1 = lasso, 0 = ridge)
+multilabel_logit_clsf <- function(X_train, Y_b_train, X_test, alpha = 1) {
+  mltlabel_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    model <- glmnet(X_train, as.numeric(Y_b_train[, col_i]), family = "binomial", alpha = 1)
+    mltlabel_pred[[col_i]] <- predict(model, newx = X_test, s = last(model$lambda), type = "response")
+  }
+  return(as.data.table(mltlabel_pred))
+}
+
+
+multilabel_nb_clsf <- function(X_train, Y_b_train, X_test) {
+  ind_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    model <- naiveBayes(x = X_train, y = as.factor(Y_b_train[, col_i]))
+    ind_pred[[col_i]] <- predict(model, X_test, type = "raw")[, "TRUE"]
+  }
+  return(as.data.table(ind_pred))
+}
+
+
+multilabel_knn_clsf <- function(X_train, Y_b_train, X_test, k_neighb = 5) {
+  ind_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    model <- knn3(X_train, as.factor(Y_b_train[, col_i]), k = k_neighb)
+    ind_pred[[col_i]] <- predict(model, X_test)[, "TRUE"]
+  }
+  return(as.data.table(ind_pred))
+}
+
+
+multilabel_extratree_clsf <- function(X_train, Y_b_train, X_test, ntree = 2000) {
+  ind_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    model <- extraTrees::extraTrees(X_train, as.factor(Y_b_train[, col_i]), ntree = ntree)
+    ind_pred[[col_i]] <- predict(model, X_test, probability = TRUE)[, "TRUE"]
+  }
+  return(as.data.table(ind_pred))
+}
+
+
+multilabel_xgb_clsf <- function(X_train, Y_b_train, X_test, nrounds = 500) {
+  ind_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    dtrain <- xgboost::xgb.DMatrix(data = X_train, label = as.numeric(Y_b_train[, col_i]))
+    model <- xgboost::xgb.train(
+      params = list(objective = "binary:logistic"),
+      data = dtrain,
+      nrounds = nrounds,
+      verbose = 0
+    )
+    ind_pred[[col_i]] <- predict(model, xgboost::xgb.DMatrix(X_test))
+  }
+  return(as.data.table(ind_pred))
+}
+
+
+multilabel_lightgbm_clsf <- function(X_train, Y_b_train, X_test, nrounds = 100) {
+  ind_pred <- vector("list", 6)
+  for (col_i in 1:6) {
+    dtrain <- lightgbm::lgb.Dataset(data = X_train, label = as.numeric(Y_b_train[, col_i]))
+    model <- lightgbm::lgb.train(
+      params = list(objective = "binary", metric = "binary_logloss", verbose = -1),
+      data = dtrain,
+      nrounds = nrounds
+    )
+    ind_pred[[col_i]] <- predict(model, X_test)
+  }
+  return(as.data.table(ind_pred))
 }
