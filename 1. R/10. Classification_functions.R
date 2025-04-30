@@ -6,6 +6,8 @@
 
 
 # 1. Библиотеки и константы                                      ####
+source_python(here("2. Python/MLP_classificator.py"))
+
 riasec_codes <- c("R", "I", "A", "S", "E", "C")
 
 all_combos <- combn(riasec_codes, 3, simplify = FALSE) %>% 
@@ -295,6 +297,13 @@ multiclass_pred_by_LightGBM <- function(X_train_, Y_train_, X_test_, nrounds = 1
   
   prob_matrix <- predict(model, X_test_) %>% matrix(ncol = 6, byrow = TRUE)
   return(as.data.table(prob_matrix))
+}
+
+
+# mlp_pred <- py_eval("multiclass_pred_by_MLP(r.X, r.y_num, r.X_test)")
+multiclass_pred_by_MLP <- function(X_train_, Y_train_, X_test_) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = 3)
+  return(PY_multiclass_pred_by_MLP(X, as.integer(y) - 1, X_test_))
 }
 
 

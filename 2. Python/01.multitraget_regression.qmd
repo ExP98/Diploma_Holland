@@ -62,32 +62,6 @@ def plot_nn_losses(hist):
     return(None)
 ```
 
-# Классификация
-
-```{python}
-from sklearn.multioutput import MultiOutputClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report
-
-model = MultiOutputClassifier(LogisticRegression(max_iter=1000))
-model.fit(X_train, y_b_train)
-
-# 5. Предсказание и оценка
-y_pred = model.predict(X_test)
-
-
-# Проверка, что ровно 3 шкалы выбраны (важно для задачи)
-print("Пример предсказания:", y_pred[0])  # Например, [1, 0, 1, 1, 0, 0]
-
-# Метрики
-print("Accuracy:", accuracy_score(y_b_test, y_pred))
-print(classification_report(y_b_test, y_pred, target_names=y_b_test.columns))
-```
-
-```{python}
-probs = model.predict_proba(X_test)
-probs[2]
-```
 
 # Регрессионные модели
 ## Обычные регрессоры, поддерживающие MultiOutput по умолчанию
@@ -548,3 +522,56 @@ print_model_res(y_test, y_tabpfn_pred, "TabPFN")
 ```
 
 Обучался 2 мин 43 сек -- rmse 1.909, C-index 10.529
+
+### MLP Classification
+
+```{python}
+def multiclass_pred_by_MLP(X_train, Y_train, X_test,
+                           hidden_sizes=(128, 64, 32),
+                           lr=1e-3, epochs=50, batch_size=32, device='cuda'):
+    X_train = torch.tensor(X_train, dtype=torch.float32, device=device)
+    y_train = torch.tensor(Y_train - 1, dtype=torch.long, device=device)
+    X_test  = torch.tensor(X_test,  dtype=torch.float32, device=device)
+
+    class MLP(nn.Module):
+        def __init__(self, input_dim, hidden_sizes, output_dim):
+            super().__init__()
+            layers = []
+            prev = input_dim
+            for h in hidden_sizes:
+                layers.append(nn.Linear(prev, h))
+                layers.append(nn.ReLU())
+                prev = h
+            layers.append(nn.Linear(prev, output_dim))
+            self.net = nn.Sequential(*layers)
+        def forward(self, x):
+            return self.net(x)
+
+    model = MLP(X_train.shape[1], hidden_sizes, 6).to(device)
+    opt   = optim.Adam(model.parameters(), lr=lr)
+    loss  = nn.CrossEntropyLoss()
+
+    dataset = torch.utils.data.TensorDataset(X_train, y_train)
+    loader  = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    model.train()
+    for _ in range(epochs):
+        for xb, yb in loader:
+            opt.zero_grad()
+            logits = model(xb)
+            l = loss(logits, yb)
+            l.backward()
+            opt.step()
+
+    model.eval()
+    with torch.no_grad():
+        probs = torch.softmax(model(X_test), dim=1).cpu().numpy()
+
+    df = pd.DataFrame(probs, columns=[f"HL_{i}" for i in range(1, 7)])
+    return df
+```
+
+
+```{r}
+pred = multiclass_pred_by_MLP(X_train, y_train, X_test)
+```

@@ -25,12 +25,11 @@ targets_bool <- apply(targets, 1, bool_mask_row) %>% t()
 
 # 3. Решение
 
-1. Линейные модели: V Логистическая регрессия, MLP 
+1. Линейные модели: V Логистическая регрессия, V MLP 
 2. Деревья: V RF, V ExtraTree, Boosting (V XGBoost, V LightGBM, V Catboost)
 3. V Naive Bayes
 4. V kNN
 5. V SVM
-6. Нейронки
 
 + PCA!!! 
 
@@ -550,6 +549,17 @@ Y_model_pred <- predict(model, X_test) %>%
   three_letters_to_bool_matrix()
 
 calc_classification_metrics(Y_model_pred, Y_b_test, "LightGBM Label Powerset")
+```
+
+### 10 MLP
+
+```{R}
+# pred <- multiclass_pred_by_MLP(X_train, Y_train, X_test)
+
+classification_test_framework(
+  Y_test, Y_b_test, ind_clsf_func = multiclass_pred_by_MLP, n_retry = 10,
+  label = "MLP multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
+)
 ```
 
 
