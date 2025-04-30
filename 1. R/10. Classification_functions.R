@@ -227,7 +227,7 @@ multiclass_pred_by_Catboost <- function(X_train_, Y_train_, X_test_, k = 3) {
   
   model <- catboost.train(
     learn_pool = train_pool,
-    params = list(loss_function = 'MultiClass', iterations = 500, logging_level = "Silent") 
+    params = list(loss_function = 'MultiClass', iterations = 500, logging_level = "Silent", allow_writing_files = FALSE) 
   )
   
   mlt_cls_pred <- catboost.predict(model, test_pool, prediction_type = "Probability") %>% as.data.table()
@@ -235,10 +235,10 @@ multiclass_pred_by_Catboost <- function(X_train_, Y_train_, X_test_, k = 3) {
 }
 
 
-multiclass_pred_by_Logregr <- function(X_train_, Y_train_, X_test_, k = 3) {
+multiclass_pred_by_Logregr <- function(X_train_, Y_train_, X_test_, k = 3, alpha = 1) {
   .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
   
-  model <- glmnet(X, y, family = "multinomial", alpha = 1)
+  model <- glmnet(X, y, family = "multinomial", alpha = alpha)
   mlt_cls_pred <- predict(model, X_test_, s = last(model$lambda), type = "response")[,,1]
   return(as.data.table(mlt_cls_pred))
 }
@@ -265,7 +265,6 @@ multiclass_pred_by_ExtraTree <- function(X_train_, Y_train_, X_test_, ntree = 10
   et_model <- ranger(formula = y ~ .,  data = data.frame(X, y = y), num.trees = ntree,
                      splitrule = "extratrees", probability = TRUE)
   pred <- predict(et_model, X_test_) %>% as.data.table()
-  return(pred)
   return(pred)
 }
 
@@ -332,7 +331,7 @@ multilabel_rf_clsf <- function(X_train, Y_b_train, X_test, ntree = 1000) {
 }
 
 
-multilabel_catboost_clsf <- function(X_train, Y_b_train, X_test) {
+multilabel_catboost_clsf <- function(X_train, Y_b_train, X_test, nrounds = 500) {
   mltlabel_pred <- vector("list", 6)
   for (col_i in 1:6) {
     train_pool <- catboost.load_pool(data = X_train, label = as.integer(Y_b_train[, col_i]))
@@ -340,7 +339,8 @@ multilabel_catboost_clsf <- function(X_train, Y_b_train, X_test) {
     
     model <- catboost.train(
       learn_pool = train_pool,
-      params = list(loss_function = 'CrossEntropy', iterations = 500, logging_level = "Silent") 
+      params = list(loss_function = 'CrossEntropy', iterations = nrounds, logging_level = "Silent",
+                    allow_writing_files = FALSE) 
     )
     mltlabel_pred[[col_i]] <- catboost.predict(model, test_pool, prediction_type = "Probability")
   }
@@ -352,7 +352,7 @@ multilabel_catboost_clsf <- function(X_train, Y_b_train, X_test) {
 multilabel_logit_clsf <- function(X_train, Y_b_train, X_test, alpha = 1) {
   mltlabel_pred <- vector("list", 6)
   for (col_i in 1:6) {
-    model <- glmnet(X_train, as.numeric(Y_b_train[, col_i]), family = "binomial", alpha = 1)
+    model <- glmnet(X_train, as.numeric(Y_b_train[, col_i]), family = "binomial", alpha = alpha)
     mltlabel_pred[[col_i]] <- predict(model, newx = X_test, s = last(model$lambda), type = "response")
   }
   return(as.data.table(mltlabel_pred))
@@ -418,4 +418,129 @@ multilabel_lightgbm_clsf <- function(X_train, Y_b_train, X_test, nrounds = 100) 
     ind_pred[[col_i]] <- predict(model, X_test)
   }
   return(as.data.table(ind_pred))
+}
+
+
+## 3.3 Label Powerset                           ####
+
+evaluate_label_powerset <- function(model_fn, X_train, Y_b_train, X_test, Y_b_test, label = "", ...) {
+  Y_pred <- model_fn(X_train, Y_b_train, X_test, ...) %>% three_letters_to_bool_matrix()
+  cl_metrics_df <- calc_classification_metrics(Y_b_test, Y_pred, label)
+  return(cl_metrics_df)
+}
+
+
+run_label_powerset_experiments <- function(experiments_df, X_train, Y_b_train, X_test, Y_b_test) {
+  # experiments_df (tibble): model_fn, label, params
+  evaluate_LP <- function(model_fn, label = "", ...) {
+    return(evaluate_label_powerset(model_fn, X_train, Y_b_train, X_test, Y_b_test, label, ...))
+  }
+  
+  res <- experiments_df %>%
+    as.data.table() %>% 
+    .[, metrics := pmap(list(model_fn, label, params), \(model_fn, label, extra_args) 
+                        do.call(evaluate_LP, c(list(model_fn = model_fn, label = label), extra_args)))] %>% 
+    .[, .(label, metrics, id = 1:.N)] %>% 
+    .[, metrics[[1]], by = id]
+  return(res)
+}
+
+
+lp_svm_letters <- function(X_train, Y_b_train, X_test, kernel = "sigmoid") {
+  model <- svm(x = X_train, y = get_three_letter_code(Y_b_train), kernel = kernel, probability = TRUE)
+  Y_pred <- predict(model, X_test, probability = TRUE)
+  return(Y_pred)
+}
+
+
+lp_rf_letters <- function(X_train, Y_b_train, X_test, ntree = 1000) {
+  model <- randomForest(x = X_train, y = get_three_letter_code(Y_b_train), ntree = ntree)
+  Y_pred <- predict(model, X_test)
+  return(Y_pred)
+}
+
+
+lp_logit_letters <- function(X_train, Y_b_train, X_test, alpha = 1) {
+  # alpha: 0 -- ridge, 1 -- lasso
+  model <- suppressWarnings({
+    glmnet(x = X_train, y = get_three_letter_code(Y_b_train), family = "multinomial", alpha = alpha)  
+  })
+  Y_pred <- predict(model, newx = X_test, s = last(model$lambda), type = "class")
+  return(Y_pred)
+}
+
+
+lp_nb_letters <- function(X_train, Y_b_train, X_test) {
+  model <- naiveBayes(x = X_train, y = get_three_letter_code(Y_b_train))
+  Y_pred <- predict(model, X_test)
+  return(Y_pred)
+}
+
+
+lp_knn_letters <- function(X_train, Y_b_train, X_test, k_neighb = 25) {
+  model <- knn3(x = X_train, y = get_three_letter_code(Y_b_train), k = k_neighb)
+  Y_pred <- predict(model, X_test, type = "class")
+  return(Y_pred)
+}
+
+
+lp_et_letters <- function(X_train, Y_b_train, X_test, ntree = 1000) {
+  model <- ranger(formula = y ~ .,  data = data.frame(X_train, y = get_three_letter_code(Y_b_train)),
+                  num.trees = ntree, splitrule = "extratrees")
+  Y_pred <- predict(model, X_test)$predictions
+  return(Y_pred)
+}
+
+
+lp_catboost_letters <- function(X_train, Y_b_train, X_test, nrounds = 500) {
+  labels <- (get_three_letter_code(Y_b_train) %>% as.integer()) - 1
+  train_pool <- catboost.load_pool(data = X_train, label = labels)
+  test_pool  <- catboost.load_pool(data = X_test)
+  
+  model <- catboost.train(
+    learn_pool = train_pool,
+    params = list(loss_function = 'MultiClass', iterations = nrounds, logging_level = "Silent",
+                  allow_writing_files = FALSE) 
+  )
+  
+  Y_pred <- catboost.predict(model, test_pool, prediction_type = "Class") %>% `+`(1) %>% all_combos[.]
+  return(Y_pred)
+}
+
+
+lp_xgboost_letters <- function(X_train, Y_b_train, X_test, nrounds = 200) {
+  labels <- get_three_letter_code(Y_b_train) %>% as.integer() - 1
+  dtrain <- xgboost::xgb.DMatrix(data = X_train, label = labels)
+  dtest  <- xgboost::xgb.DMatrix(data = X_test)
+  
+  model <- xgboost::xgb.train(
+    params = list(objective = "multi:softprob", num_class = length(all_combos), eval_metric = "mlogloss"),
+    data = dtrain,
+    nrounds = nrounds,
+    verbose = 0
+  )
+  
+  Y_pred <- predict(model, dtest) %>%
+    matrix(ncol = length(all_combos), byrow = TRUE) %>% 
+    max.col() %>% 
+    all_combos[.]
+  return(Y_pred)
+}
+
+
+lp_lightgbm_letters <- function(X_train, Y_b_train, X_test, nrounds = 500) {
+  labels <- get_three_letter_code(Y_b_train) %>% as.integer() - 1
+  dtrain <- lightgbm::lgb.Dataset(data = X_train, label = labels)
+  model  <- lightgbm::lgb.train(
+    params = list(objective = "multiclass", num_class = length(all_combos),
+                  metric = "multi_logloss", verbose = -1),
+    data = dtrain,
+    nrounds = nrounds
+  )
+  
+  Y_pred <- predict(model, X_test) %>% 
+    matrix(ncol = length(all_combos), byrow = TRUE) %>% 
+    max.col() %>% 
+    all_combos[.]
+  return(Y_pred)
 }

@@ -307,7 +307,7 @@ my_Catboost_model <- R6Class(
       self$model <- catboost.train(
         learn_pool = train_pool,
         test_pool = test_pool,
-        params = list(loss_function = 'RMSE', logging_level = "Silent")
+        params = list(loss_function = 'RMSE', logging_level = "Silent", allow_writing_files = FALSE)
       )
       return(invisible(self))
     },

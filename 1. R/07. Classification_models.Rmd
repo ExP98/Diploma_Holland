@@ -52,7 +52,7 @@ Label Powerset
 
 На примере SVM (пакет e1071)
 
-### 3.1.1 Multiclass
+### 3.1.1 Multiclass для SVM
 Multiclass:
 1) или берем топ1
 2) или для топ3 размножаем датасет на 3
@@ -108,7 +108,37 @@ lapply(seq(0.3, 1, 0.1), \(s) {
 Лучшее при ssq = 0.8 (k = 19)
 Возможно 0.8
 
-Итого лучшее:
+
+### 3.1.2 Label Powerset
+```{r}
+experiments <- tribble(
+  ~model_fn,              ~label,                          ~params,
+  lp_svm_letters,         "SVM",                           list(),
+  lp_rf_letters,          "Random Forest",                 list(),
+  lp_nb_letters,          "Naive Bayes",                   list(),
+  lp_logit_letters,       "Logistic regr Ridge",           list(alpha = 0),
+  lp_logit_letters,       "Logistic regr Lasso",           list(alpha = 1),
+  lp_knn_letters,         "kNN, k = 25",                   list(k_neighb = 25),
+  lp_knn_letters,         "kNN, k = 100",                  list(k_neighb = 100),
+  lp_et_letters,          "ExtraTrees (ntree = 1000)",     list(ntree = 1000),
+  lp_et_letters,          "ExtraTrees (ntree = 2000)",     list(ntree = 2000),
+  lp_catboost_letters,    "CatBoost (nrounds = 200)",      list(nrounds = 200),
+  lp_catboost_letters,    "CatBoost (nrounds = 500)",      list(nrounds = 500),
+  lp_xgboost_letters,     "XGBoost (nrounds = 200)",       list(nrounds = 200),
+  lp_lightgbm_letters,    "LightGBM (nrounds = 100)",      list(nrounds = 100),
+  lp_lightgbm_letters,    "LightGBM (nrounds = 500)",      list(nrounds = 500)
+)
+
+all_results <- run_label_powerset_experiments(experiments, X_train, Y_b_train, X_test, Y_b_test)
+print(all_results)
+```
+
+
+## 3.2 Модели
+
+### 1 SVM
+
+Multiclass
 ```{r}
 # a)
 r1 <- classification_test_framework(
@@ -125,12 +155,7 @@ r2 <- classification_test_framework(
 bind_rows(r1, r2)
 ```
 
-
-### 3.1.2 Multilabel
-
-multilabel_svm_clsf -- multilabel (Multilabel)
-
-Модифицировать под разные модели (R6class)
+Multilabel
 ```{r}
 classification_test_framework(
   Y_test, Y_b_test, ind_clsf_func = multilabel_svm_clsf, n_retry = 5, 
@@ -138,27 +163,10 @@ classification_test_framework(
 )
 ```
 
-
-### 3.1.3 Label Powerset
-
+Label powerset
 ```{r}
-svm_model <- svm(
-  x = X_train,
-  y = get_three_letter_code(Y_b_train),
-  kernel = "sigmoid",
-  probability = TRUE
-)
-
-Y_svm_pred <- predict(svm_model, X_test, probability = TRUE) %>% three_letters_to_bool_matrix()
-calc_classification_metrics(Y_svm_pred, Y_b_test, "Label Powerset")
+# lp_svm_letters
 ```
-
-
-## 3.2 Модели
-
-### 1 SVM
-
-См выше
 
 
 ### 2 Random Forest
@@ -190,30 +198,8 @@ classification_test_framework(
 
 Label powerset
 ```{r}
-model <- randomForest(x = X_train, y = get_three_letter_code(Y_b_train), ntree = 1000)
-
-Y_model_pred <- predict(model, X_test) %>% three_letters_to_bool_matrix()
-calc_classification_metrics(Y_model_pred, Y_b_test, "RF Label Powerset")
+# lp_rf_letters
 ```
-
-
-#### Старый код
-```{r}
-ind_pred <- vector("list", 6)
-
-for (col_i in 1:6) {
-  rf <- randomForest(x = X_train, y = as.factor(Y_b_train[, col_i]), ntree = 1000, importance = TRUE) 
-  ind_pred[[col_i]] <- predict(rf, X_test, type = "prob")[, "TRUE"]
-}
-
-## Для C-index
-classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
-df_metric(classif_ind_pred, Y_test, func = calc_C_index)
-
-## Для метрик классификации
-Y_pred_rf <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
-```
-C-index. Результат аналогичен RF regr (что логично и ожидаемо)
 
 
 ### 3 Catboost
@@ -241,46 +227,7 @@ classification_test_framework(
 
 Label powerset
 ```{r}
-train_pool <- catboost.load_pool(data = X_train, 
-                                 label = (get_three_letter_code(Y_b_train) %>% as.integer()) - 1)
-test_pool  <- catboost.load_pool(data = X_test %>% as.data.frame())
-
-model <- catboost.train(
-  learn_pool = train_pool,
-  params = list(loss_function = 'MultiClass', iterations = 500, logging_level = "Silent") 
-)
-
-Y_model_pred <- (catboost.predict(model, test_pool, prediction_type = "Class") + 1) %>% 
-  all_combos[.] %>% 
-  three_letters_to_bool_matrix()
-
-calc_classification_metrics(Y_model_pred, Y_b_test, "Catboost Label Powerset")
-```
-
-
-#### Старый код
-```{r}
-ind_pred <- vector("list", 6)
-
-for (col_i in 1:6) {
-  train_pool <- catboost.load_pool(data = X_train, label = Y_b_train[, col_i] %>% as.integer)
-  test_pool  <- catboost.load_pool(data = X_test,  label = Y_b_test[, col_i] %>% as.integer)
-  
-  model <- catboost.train(
-    learn_pool = train_pool,
-    test_pool = test_pool,
-    params = list(loss_function = 'CrossEntropy', logging_level = "Silent") # Logloss для бинарной, CrossEntropy для мультикласса
-  )
-  
-  # preds <- catboost.predict(model, test_pool, prediction_type = "Class")
-  ind_pred[[col_i]] <- catboost.predict(model, test_pool, prediction_type = "Probability")
-}
-
-Y_pred_cb <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
-
-## Для C-index
-classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
-df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+# lp_catboost_letters
 ```
 
 
@@ -308,25 +255,13 @@ Multilabel
 ```{r}
 classification_test_framework(
   Y_test, Y_b_test, ind_clsf_func = multilabel_logit_clsf, n_retry = 10, 
-  label = "Logistic regr multilabel", X_train = X_train, Y_b_train = Y_b_train, X_test = X_test
+  label = "Logit multilabel", X_train = X_train, Y_b_train = Y_b_train, X_test = X_test
 )
 ```
 
 Label powerset
 ```{r}
-model <- suppressWarnings({
-  glmnet(
-    x = X_train,
-    y = get_three_letter_code(Y_b_train),
-    family = "multinomial",
-    alpha = 0  # ridge; можно alpha = 1 для lasso
-  )
-})
-
-Y_model_pred <- predict(model, newx = X_test, s = last(model$lambda), type = "class") %>% 
-  three_letters_to_bool_matrix()
-
-calc_classification_metrics(Y_model_pred, Y_b_test, "Logreg Label Powerset")
+# lp_logit_letters
 ```
 
 
@@ -360,10 +295,7 @@ classification_test_framework(
 
 Label powerset
 ```{r}
-model <- naiveBayes(x = X_train, y = get_three_letter_code(Y_b_train))
-
-Y_model_pred <- predict(model, X_test) %>% three_letters_to_bool_matrix()
-calc_classification_metrics(Y_model_pred, Y_b_test, "Naive Bayes Label Powerset")
+# lp_nb_letters
 ```
 
 ### 6 kNN
@@ -400,14 +332,11 @@ lapply(seq(5, 55, by = 5), \(k_neighb) {
 
 Label powerset
 ```{r}
-model <- knn3(x = X_train, y = get_three_letter_code(Y_b_train), k = 25)
-
-Y_model_pred <- predict(model, X_test, type = "class") %>% three_letters_to_bool_matrix()
-calc_classification_metrics(Y_model_pred, Y_b_test, "kNN Label Powerset")
+# lp_knn_letters
 ```
 
-### 7 ExtraTree
 
+### 7 ExtraTree
 
 Multiclass
 ```{r}
@@ -427,7 +356,6 @@ bind_rows(r1, r2)
 ```
 
 Multilabel
-
 ```{r}
 lapply(c(100, 1000, 2000, 3500), \(nt) {
   classification_test_framework(
@@ -441,11 +369,7 @@ ntree = 1000
 
 Label powerset
 ```{r}
-model <- ranger(formula = y ~ .,  data = data.frame(X_train, y = get_three_letter_code(Y_b_train)),
-                num.trees = ntree, splitrule = "extratrees")
-
-Y_model_pred <- predict(model, X_test)$predictions %>% three_letters_to_bool_matrix()
-calc_classification_metrics(Y_model_pred, Y_b_test, "ExtraTree Label Powerset")
+# lp_et_letters
 ```
 
 
@@ -482,25 +406,7 @@ lapply(c(100, 200, 500), \(nr) {
 
 Label powerset
 ```{r}
-labels <- get_three_letter_code(Y_b_train) %>% as.integer() - 1
-
-dtrain <- xgboost::xgb.DMatrix(data = X_train, label = labels)
-dtest  <- xgboost::xgb.DMatrix(data = X_test)
-
-model <- xgboost::xgb.train(
-  params = list(objective = "multi:softprob", num_class = length(all_combos), eval_metric = "mlogloss"),
-  data = dtrain,
-  nrounds = 500,
-  verbose = 0
-)
-
-Y_model_pred <- predict(model, dtest) %>%
-  matrix(ncol = length(all_combos), byrow = TRUE) %>% 
-  max.col() %>% 
-  all_combos[.] %>%
-  three_letters_to_bool_matrix()
-
-calc_classification_metrics(Y_model_pred, Y_b_test, "XGBoost Label Powerset")
+# lp_xgboost_letters
 ```
 
 ### 9 LightGBM
@@ -535,23 +441,7 @@ lapply(c(100, 250, 500), \(nr) {
 
 Label Powerset
 ```{r}
-labels <- get_three_letter_code(Y_b_train) %>% as.integer() - 1
-
-dtrain <- lightgbm::lgb.Dataset(data = X_train, label = labels)
-model <- lightgbm::lgb.train(
-  params = list(objective = "multiclass", num_class = length(all_combos),
-                metric = "multi_logloss", verbose = -1),
-  data = dtrain,
-  nrounds = 100
-)
-
-Y_model_pred <- predict(model, X_test) %>% 
-  matrix(ncol = length(all_combos), byrow = TRUE) %>% 
-  max.col() %>% 
-  all_combos[.] %>% 
-  three_letters_to_bool_matrix()
-
-calc_classification_metrics(Y_model_pred, Y_b_test, "LightGBM Label Powerset")
+# lp_lightgbm_letters
 ```
 
 ### 10 MLP
@@ -578,3 +468,49 @@ bind_rows(
   calc_classification_metrics(Y_rand,    Y_b_test, "Random (baseline)")
 )
 ```
+
+
+#### Старый код
+
+catboost
+```{r}
+ind_pred <- vector("list", 6)
+
+for (col_i in 1:6) {
+  train_pool <- catboost.load_pool(data = X_train, label = Y_b_train[, col_i] %>% as.integer)
+  test_pool  <- catboost.load_pool(data = X_test,  label = Y_b_test[, col_i] %>% as.integer)
+  
+  model <- catboost.train(
+    learn_pool = train_pool,
+    test_pool = test_pool,
+    params = list(loss_function = 'CrossEntropy', logging_level = "Silent", allow_writing_files = FALSE) # Logloss для бинарной, CrossEntropy для мультикласса
+  )
+  
+  # preds <- catboost.predict(model, test_pool, prediction_type = "Class")
+  ind_pred[[col_i]] <- catboost.predict(model, test_pool, prediction_type = "Probability")
+}
+
+Y_pred_cb <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
+
+## Для C-index
+classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
+df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+```
+
+randomForest
+```{r}
+ind_pred <- vector("list", 6)
+
+for (col_i in 1:6) {
+  rf <- randomForest(x = X_train, y = as.factor(Y_b_train[, col_i]), ntree = 1000, importance = TRUE) 
+  ind_pred[[col_i]] <- predict(rf, X_test, type = "prob")[, "TRUE"]
+}
+
+## Для C-index
+classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
+df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+
+## Для метрик классификации
+Y_pred_rf <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
+```
+C-index. Результат аналогичен RF regr (что логично и ожидаемо)

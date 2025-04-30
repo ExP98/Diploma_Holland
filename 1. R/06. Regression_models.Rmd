@@ -366,7 +366,7 @@ for (hol_i in 1:6) {
     # CatBoost
     pool_train <- catboost.load_pool(data = X_fold_train, label = y_fold_train)
     pool_val <- catboost.load_pool(data = X_fold_val)
-    cat_model <- catboost.train(pool_train, NULL, params = list(loss_function = 'RMSE', logging_level = "Silent"))
+    cat_model <- catboost.train(pool_train, NULL, params = list(loss_function = 'RMSE', logging_level = "Silent", allow_writing_files = FALSE))
     base_preds[fold_idx, "catboost"] <- catboost.predict(cat_model, pool_val)
     
     # Random Forest
@@ -390,7 +390,8 @@ for (hol_i in 1:6) {
   # CatBoost final
   pool_full <- catboost.load_pool(X_train, label = y_train)
   cat_final <- catboost.train(pool_full, NULL, 
-                              params = list(loss_function = 'RMSE', logging_level = "Silent"))
+                              params = list(loss_function = 'RMSE', logging_level = "Silent",
+                                            allow_writing_files = FALSE))
   
   # Предсказания на тестовых данных
   test_preds <- data.table(
