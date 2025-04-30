@@ -167,11 +167,11 @@ calc_classification_metrics <- function(Y_pred_, Y_b_test_, label = "") {
 # 3. Модели                                                     ####
 
 classification_test_framework <- function(Y_test, Y_b_test,
-                                          ind_clsf_func = multilabel_svm_clsf,
+                                          multlbl_clsf_func = multilabel_svm_clsf,
                                           n_retry = 1, label = "", ...) {
   metric_values <- lapply(1:n_retry, \(i) {
-    # ind_pred <- ind_clsf_func(X_train, Y_b_train, X_test, ...)
-    ind_pred <- ind_clsf_func(...)
+    # ind_pred <- multlbl_clsf_func(X_train, Y_b_train, X_test, ...)
+    ind_pred <- multlbl_clsf_func(...)
     
     classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
     cindex <- df_metric(classif_ind_pred, Y_test, func = calc_C_index)
@@ -309,6 +309,35 @@ multiclass_pred_by_MLP <- function(X_train_, Y_train_, X_test_) {
 
 
 ## 3.2 Multilabel                   ####
+
+run_multilabel_experiments <- function(experiments_df, X_train, Y_b_train, X_test, Y_b_test) {
+  # experiments_df (tibble/data.table): multlbl_clsf_func, label, params, n_retry
+  evaluate_ML <- function(multlbl_clsf_func, label = "", n_retry = 1, ...) {
+    classification_test_framework(
+      Y_test      = Y_b_test, 
+      Y_b_test    = Y_b_test, 
+      multlbl_clsf_func = multlbl_clsf_func, 
+      n_retry     = n_retry, 
+      label       = label, 
+      X_train     = X_train, 
+      Y_b_train   = Y_b_train, 
+      X_test      = X_test,
+      ...
+    )
+  }
+  
+  res <- experiments_df %>%
+    as.data.table() %>%
+    .[, metrics := pmap(list(multlbl_clsf_func, label, params, n_retry), \(ind_fn, lbl, extra_args, nr) 
+                        do.call(evaluate_ML, c(list(multlbl_clsf_func = ind_fn, label = lbl, n_retry = nr), extra_args))
+    )] %>%
+    .[, .(label, metrics, id = 1:.N)] %>%
+    .[, metrics[[1]], by = id]
+  
+  return(res)
+}
+
+
 multilabel_svm_clsf <- function(X_train, Y_b_train, X_test) {
   ind_pred <- vector("list", 6)
   for (col_i in 1:6) {
