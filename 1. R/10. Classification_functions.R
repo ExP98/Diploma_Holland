@@ -167,11 +167,10 @@ calc_classification_metrics <- function(Y_pred_, Y_b_test_, label = "") {
 # 3. Модели                                                     ####
 
 classification_test_framework <- function(Y_test, Y_b_test,
-                                          multlbl_clsf_func = multilabel_svm_clsf,
+                                          clsf_func = multilabel_svm_clsf,
                                           n_retry = 1, label = "", ...) {
   metric_values <- lapply(1:n_retry, \(i) {
-    # ind_pred <- multlbl_clsf_func(X_train, Y_b_train, X_test, ...)
-    ind_pred <- multlbl_clsf_func(...)
+    ind_pred <- clsf_func(...)
     
     classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
     cindex <- df_metric(classif_ind_pred, Y_test, func = calc_C_index)
@@ -194,12 +193,46 @@ classification_test_framework <- function(Y_test, Y_b_test,
 }
 
 
+compare_clsf_results <- function(df_list, avg_func = mean, label = "") {
+  res <- lapply(df_list, \(df) df[, lapply(.SD, \(col) avg_func(col, na.rm = TRUE)), .SDcols = is.numeric]) %>% 
+    bind_rows() %>% 
+    mutate(label = label, .before = 1)
+  return(res)
+}
+
+
 ## 3.1 Multiclass                   ####
 
+run_multiclass_experiments <- function(experiments_df, X_train, Y_train, X_test, Y_test, Y_b_test) {
+  evaluate_MC <- function(multcls_clsf_func, label = "", n_retry = 1, ...) {
+    classification_test_framework(
+      Y_test        = Y_test,
+      Y_b_test      = Y_b_test,
+      clsf_func     = multcls_clsf_func,
+      n_retry       = n_retry,
+      label         = label,
+      X_train_      = X_train,
+      Y_train_      = Y_train,
+      X_test_       = X_test,
+      ...
+    )
+  }
+  
+  res <- experiments_df %>%
+    as.data.table() %>%
+    .[, metrics := pmap(list(multcls_clsf_func, label, params, n_retry), \(fn, lbl, extra_args, nr) 
+                        do.call(evaluate_MC, c(list(multcls_clsf_func = fn, label = lbl, n_retry = nr), extra_args))
+    )] %>%
+    .[, .(label, metrics, id = 1:.N)] %>%
+    .[, metrics[[1]], by = id]
+  
+  return(res)
+}
+
+
+# kernel: linear, polynomial, radial, sigmoid
 multiclass_pred_by_SVM <- function(X_train_, Y_train_, X_test_, kernel = "sigmoid", k = 3) {
   .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
-  
-  # kernel: linear, polynomial, radial, sigmoid
   svm_model <- svm(X, y, kernel = kernel, probability = TRUE)
   
   pred <- predict(svm_model, X_test_, probability = TRUE) %>% 
@@ -219,22 +252,7 @@ multiclass_pred_by_RF <- function(X_train_, Y_train_, X_test_, ntree = 1000, k =
 }
 
 
-multiclass_pred_by_Catboost <- function(X_train_, Y_train_, X_test_, k = 3) {
-  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
-  
-  train_pool <- catboost.load_pool(data = X, label = as.integer(y))
-  test_pool  <- catboost.load_pool(data = X_test_ %>% as.data.frame())
-  
-  model <- catboost.train(
-    learn_pool = train_pool,
-    params = list(loss_function = 'MultiClass', iterations = 500, logging_level = "Silent", allow_writing_files = FALSE) 
-  )
-  
-  mlt_cls_pred <- catboost.predict(model, test_pool, prediction_type = "Probability") %>% as.data.table()
-  return(mlt_cls_pred)
-}
-
-
+# alpha - параметр регуляризации (1 = lasso, 0 = ridge)
 multiclass_pred_by_Logregr <- function(X_train_, Y_train_, X_test_, k = 3, alpha = 1) {
   .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
   
@@ -301,6 +319,22 @@ multiclass_pred_by_LightGBM <- function(X_train_, Y_train_, X_test_, nrounds = 1
 }
 
 
+multiclass_pred_by_Catboost <- function(X_train_, Y_train_, X_test_, k = 3, nrounds = 500) {
+  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = k)
+  
+  train_pool <- catboost.load_pool(data = X, label = as.integer(y))
+  test_pool  <- catboost.load_pool(data = X_test_ %>% as.data.frame())
+  
+  model <- catboost.train(
+    learn_pool = train_pool,
+    params = list(loss_function = 'MultiClass', iterations = nrounds, logging_level = "Silent", allow_writing_files = FALSE) 
+  )
+  
+  mlt_cls_pred <- catboost.predict(model, test_pool, prediction_type = "Probability") %>% as.data.table()
+  return(mlt_cls_pred)
+}
+
+
 # mlp_pred <- py_eval("multiclass_pred_by_MLP(r.X, r.y_num, r.X_test)")
 multiclass_pred_by_MLP <- function(X_train_, Y_train_, X_test_) {
   .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = 3)
@@ -316,7 +350,7 @@ run_multilabel_experiments <- function(experiments_df, X_train, Y_b_train, X_tes
     classification_test_framework(
       Y_test      = Y_b_test, 
       Y_b_test    = Y_b_test, 
-      multlbl_clsf_func = multlbl_clsf_func, 
+      clsf_func   = multlbl_clsf_func, 
       n_retry     = n_retry, 
       label       = label, 
       X_train     = X_train, 

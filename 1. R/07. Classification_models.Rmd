@@ -48,11 +48,11 @@ Label Powerset
     Реализовано в библиотеке scikit-multilearn через LabelPowerset
 
 
-## 3.1 Пример решения одной моделью и как multiclass (с выбором 3), как multilabel
+## 3.1 Пример решения одной моделью и как multiclass (с выбором 3 или 1 кодов), как multilabel
 
+### 3.1.1 Multiclass на примере SVM
 На примере SVM (пакет e1071)
 
-### 3.1.1 Multiclass для SVM
 Multiclass:
 1) или берем топ1
 2) или для топ3 размножаем датасет на 3
@@ -109,7 +109,43 @@ lapply(seq(0.3, 1, 0.1), \(s) {
 Возможно 0.8
 
 
-### 3.1.2 Multilabel
+### 3.1.2 Multiclass
+
+```{r}
+multiclass_experiments <- tribble(
+  ~multcls_clsf_func,              ~label,                       ~params,                  ~n_retry,
+  multiclass_pred_by_SVM,          "SVM multiclass",             list(kernel = "sigmoid"), 5,
+  multiclass_pred_by_RF,           "Random Forest multiclass",   list(ntree = 1000),       5,
+  multiclass_pred_by_ExtraTree,    "ExtraTree multiclass",       list(ntree = 1000),       5,
+  multiclass_pred_by_Logregr,      "Logit (ridge) multiclass",   list(alpha = 0),          5,
+  multiclass_pred_by_Logregr,      "Logit (lasso) multiclass",   list(alpha = 1),          5,
+  multiclass_pred_by_NB,           "Naive Bayes multiclass",     list(),                   5,
+  multiclass_pred_by_kNN,          "kNN (3) multiclass",         list(k_neighb = 3),       5,
+  multiclass_pred_by_kNN,          "kNN (25) multiclass",        list(k_neighb = 25),      5,
+  multiclass_pred_by_kNN,          "kNN (50) multiclass",        list(k_neighb = 50),      5,
+  multiclass_pred_by_XGBoost,      "XGBoost multiclass",         list(),                   3,
+  multiclass_pred_by_LightGBM,     "LightGBM (100) multiclass",  list(nrounds = 100),      3,
+  multiclass_pred_by_LightGBM,     "LightGBM (500) multiclass",  list(nrounds = 500),      3,
+  multiclass_pred_by_LightGBM,     "LightGBM (1000) multiclass", list(nrounds = 1000),     3,
+  multiclass_pred_by_Catboost,     "Catboost multiclass",        list(),                   3
+)
+
+mc_res     <- run_multiclass_experiments(multiclass_experiments, X_train, Y_train, X_test, Y_test, Y_b_test)
+mc_res_pca <- run_multiclass_experiments(multiclass_experiments, X_train_pca, Y_train, X_test_pca, Y_test, Y_b_test)
+
+print(mc_res)
+print(mc_res_pca)
+```
+
+```{r}
+bind_rows(
+  compare_clsf_results(list(mc_res, mc_res_pca), mean, "mean"),
+  compare_clsf_results(list(mc_res, mc_res_pca), median, "median")
+)
+```
+
+
+### 3.1.3 Multilabel
 
 ```{r}
 multilabel_experiments <- tribble(
@@ -146,18 +182,13 @@ print(mltlbl_res_pca)
 С PCA или без результаты почти идентичны, хотя с PCA чуть лучше. 
 ```{r}
 bind_rows(
-  mltlbl_res[, lapply(.SD,     \(col) mean(col, na.rm = TRUE)), .SDcols = is.numeric],
-  mltlbl_res_pca[, lapply(.SD, \(col) mean(col, na.rm = TRUE)), .SDcols = is.numeric]
-)
-
-bind_rows(
-  mltlbl_res[,     lapply(.SD, \(col) median(col, na.rm = TRUE)), .SDcols = is.numeric],
-  mltlbl_res_pca[, lapply(.SD, \(col) median(col, na.rm = TRUE)), .SDcols = is.numeric]
+  compare_clsf_results(list(mltlbl_res, mltlbl_res_pca), mean, "mean"),
+  compare_clsf_results(list(mltlbl_res, mltlbl_res_pca), median, "median")
 )
 ```
 
 
-### 3.1.3 Label Powerset
+### 3.1.4 Label Powerset
 
 ```{r}
 lp_experiments <- tribble(
@@ -189,13 +220,8 @@ print(lp_res_pca)
 С PCA или без результаты почти идентичны
 ```{r}
 bind_rows(
-  lp_res[, lapply(.SD,     \(col) mean(col, na.rm = TRUE)), .SDcols = is.numeric],
-  lp_res_pca[, lapply(.SD, \(col) mean(col, na.rm = TRUE)), .SDcols = is.numeric]
-)
-
-bind_rows(
-  lp_res[,     lapply(.SD, \(col) median(col, na.rm = TRUE)), .SDcols = is.numeric],
-  lp_res_pca[, lapply(.SD, \(col) median(col, na.rm = TRUE)), .SDcols = is.numeric]
+  compare_clsf_results(list(lp_res, lp_res_pca), mean, "mean"),
+  compare_clsf_results(list(lp_res, lp_res_pca), median, "median")
 )
 ```
 
@@ -203,222 +229,24 @@ bind_rows(
 
 ```{r}
 map2(
-  list(mltlbl_res, mltlbl_res_pca, lp_res, lp_res_pca),
-  list("Multilabel", "Multilabel with PCA", "Label Powerset", "Label Powerset with PCA"),
+  list(mc_res, mc_res_pca, mltlbl_res, mltlbl_res_pca, lp_res, lp_res_pca),
+  list("Multiclass", "Multiclass with PCA", "Multilabel", "Multilabel with PCA",
+       "Label Powerset", "Label Powerset with PCA"),
   \(df, sheetname) xlsx::write.xlsx(df, here("0. Data/Output/Classif_results.xlsx"), sheetname, 
                                     row.names = FALSE, append = TRUE)
 )
 ```
-
-Сравнение Multilabel и Label Powerset:
-
-1. Сравнение листов в целом
-
-    1) Победитель по совокупности метрик – лист Multilabel with PCA, он имеет минимальный hamming_loss и максимальные значения всех остальных показателей.
-    
-    2) Общий эффект PCA заметен сильнее в схеме Multilabel: улучшены почти все метрики (–2.9 % hamming_loss, +1.4 % Jaccard, +1.1 % macro F1, +1.8 % micro F1, +0.6 % top1 acc).
-    
-    3) В схеме Label Powerset влияние PCA менее однозначно: небольшое снижение hamming_loss (–0.4 %), микро-метрик (+0.3 % micro F1), но лёгкое падение Jaccard и macro F1 (~–0.2 %).
-
-2. Попарное сравнение
-
-  a) Multilabel vs Multilabel with PCA
-  PCA здесь однозначно усиливает классификаторы в среднем.
-  
-      Hamming Loss: 0.3834 → 0.3723 (лучше)
-      
-      Jaccard: 0.4856 → 0.4995
-      
-      macro F1: 0.5838 → 0.5859
-      
-      micro F1: 0.6166 → 0.6277
-      
-      top1 acc: 0.9838 → 0.9892
-  
-
-  b) Label Powerset vs Label Powerset with PCA
-  PCA даёт чисто микро-улучшение, но ухудшает часть макро-метрик и top-accuracy.
-  
-    Hamming Loss: 0.4199 → 0.4183 (незначительно лучше)
-    
-    Jaccard: 0.4445 → 0.4435 (слегка хуже)
-    
-    macro F1: 0.5505 → 0.5478 (слегка хуже)
-    
-    micro F1: 0.5801 → 0.5817 (слегка лучше)
-    
-    top1 acc: 0.9846 → 0.9836 (слегка хуже)
-
-3. Лучшие модели внутри каждого листа
-
-| Лист                        | Лучший по hamming_loss     | по Jaccard                | по macro F1           | по micro F1           |
-|-----------------------------|----------------------------|---------------------------|-----------------------|-----------------------|
-| **Multilabel**              | Logit (0.3604)             | Random Forest (0.5105)    | Logit (0.6350)        | SVM (0.6162)          |
-| **Multilabel with PCA**     | LightGBM (0.3423)          | LightGBM (0.5392)         | LightGBM (0.6386)     | LightGBM (0.6577)     |
-| **Label Powerset**          | Naive Bayes (0.3829)       | Naive Bayes (0.4865)      | Naive Bayes (0.6071)  | Naive Bayes (0.6171)  |
-| **Label Powerset with PCA** | CatBoost (nrounds=200) (0.3739) | CatBoost (0.4878)  | Naive Bayes (0.6128)¹ | CatBoost (0.6261)     |
-
-    Multilabel: наиболее сбалансированный Logit (лучшее Hamming и macro F1) и Random Forest (лучший Jaccard).
-    
-    Multilabel with PCA: «доминирует» LightGBM по всем ключевым метрикам.
-    
-    Label Powerset: оптимально себя проявляет Naive Bayes (лучшее сразу по четырём из пяти основных).
-    
-    Label Powerset with PCA: CatBoost выигрывает по Hamming, Jaccard, micro F1 и top accuracy; NB чуть опережает его лишь по macro F1.
-
-4. Сравнение «лучших из лучших» между листами
-
-    Если взять по одному лучшему алгоритму из каждого подхода (Logit из ML, LightGBM из ML + PCA, Naive Bayes из LP, CatBoost из LP + PCA), получится следующая упорядоченность по hamming_loss, Jaccard и F1:
-    
-    LightGBM (Multilabel + PCA) – наилучшее сочетание всех метрик (hamming_loss 0.3423, Jaccard 0.5392, micro F1 0.6577).
-    
-    Logit (Multilabel) – второе место (hamming_loss 0.3604, micro F1 0.63496).
-    
-    Naive Bayes (Label Powerset) – средние показатели (0.3829 / 0.6171).
-    
-    CatBoost (Label Powerset + PCA) – похвально в LP + PCA, но уступает ML-методам (hamming_loss 0.3739, micro F1 0.6261).
+Текстовое сравнение смотреть в файле Classif_results_txt.txt
 
 
-5. Выводы и рекомендации
-
-    Подход Multilabel + PCA оказывается наиболее перспективным: здесь PCA усиливает как классические (Logit, SVM), так и бустинговые модели, причём LightGBM выходит в лидеры по всем ключевым метрикам.
-    
-    Вариант Label Powerset менее стабилен: PCA даёт лишь локальные микро-выигрыши, но ухудшает часть макро-метрик. Базовый Naive Bayes в LP-схеме выглядит оптимальным вариантом внутри этого класса.
-    
-    Для максимального качества рекомендую сконцентрироваться на LightGBM в режиме Multilabel с PCA. Если нужна более лёгкая (быстрая в обучении и интерпретации) модель, можно взять Logit без PCA, отдав предпочтение чуть более простому решению при умеренном снижении качества.
-
-
-6. Краткие выводы (при максимальном приоритете C-index):
-
-    Multilabel + PCA показывает более высокий средний C-index (10.40) по сравнению с базовым Multilabel (9.87), схемы Label Powerset C-index не считался.
-    
-    Лучшие модели по C-index:
-    
-    В Multilabel + PCA лидирует kNN (k = 25) с C-index ≈ 11.24.
-    
-    В базовом Multilabel лучшей была kNN (k = 5) с C-index ≈ 10.70.
-    
-    Рекомендация: для максимизации C-index используйте Multilabel с PCA и модель kNN (k = 25).
-    
-    Если же важны и остальные метрики (hamming_loss, Jaccard, F1 и пр.), имеет смысл рассмотреть LightGBM в Multilabel + PCA, у которого второй по величине C-index (≈ 10.70) и одновременно отличные значения остальных критериев.
-
-
-## 3.2 Модели
+## 3.3 Модели
 
 ### 1 SVM
-
-Multiclass
-```{r}
-# a)
-r1 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_SVM, n_retry = 5, 
-  label = "simple SVM", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-
-# b)
-r2 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_SVM, n_retry = 5, 
-  label = "SVM with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
-)
-
-bind_rows(r1, r2)
-```
-
-
 ### 2 Random Forest
-
-Multiclass
-```{r}
-# a)
-r1 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_RF, n_retry = 5, 
-  label = "RF multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-
-# b)
-r2 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_RF, n_retry = 5, 
-  label = "RF multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
-)
-
-bind_rows(r1, r2)
-```
-
-
 ### 3 Catboost
-
-Multiclass
-```{r}
-classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_Catboost, n_retry = 3, k = 1,
-  label = "Catboost multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-
-classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_Catboost, n_retry = 3, k = 3,
-  label = "Catboost multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-```
-
-
 ### 4 Логистическая регрессия
-
-Multiclass
-```{r}
-# a)
-r1 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_Logregr, n_retry = 5, 
-  label = "logit multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-
-# b)
-r2 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_Logregr, n_retry = 5, 
-  label = "logit multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
-)
-
-bind_rows(r1, r2)
-```
-
-
 ### 5 Naive Bayes
-
-Multiclass
-```{r}
-# a)
-r1 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_NB, n_retry = 5, 
-  label = "Naive Bayes multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-
-# b)
-r2 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_NB, n_retry = 5, 
-  label = "Naive Bayes multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
-)
-
-bind_rows(r1, r2)
-```
-
-
 ### 6 kNN
-
-Multiclass
-```{r}
-# a)
-r1 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_kNN, n_retry = 5, k_neighb = 3,
-  label = "kNN multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-
-# b)
-r2 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_kNN, n_retry = 5, k_neighb = 3,
-  label = "kNN multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
-)
-
-bind_rows(r1, r2)
-```
 
 Multilabel
 ```{r}
@@ -432,25 +260,7 @@ lapply(seq(5, 55, by = 5), \(k_neighb) {
 ```
 Оптимально: k_neighb = 25
 
-
 ### 7 ExtraTree
-
-Multiclass
-```{r}
-# a)
-r1 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_ExtraTree, n_retry = 5,
-  label = "ExtraTree multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-
-# b)
-r2 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_ExtraTree, n_retry = 5, 
-  label = "ExtraTree multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
-)
-
-bind_rows(r1, r2)
-```
 
 Multilabel
 ```{r}
@@ -464,25 +274,7 @@ lapply(c(100, 1000, 2000, 3500), \(nt) {
 ```
 ntree = 1000
 
-
 ### 8 XGBoost
-
-Multiclass
-```{r}
-# a)
-r1 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_XGBoost, n_retry = 3,
-  label = "XGBoost multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-
-# b)
-r2 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_XGBoost, n_retry = 3, 
-  label = "XGBoost multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
-)
-
-bind_rows(r1, r2)
-```
 
 Multilabel
 ```{r}
@@ -496,25 +288,7 @@ lapply(c(100, 200, 500), \(nr) {
 ```
 Хватит и nrounds = 500
 
-
 ### 9 LightGBM
-
-Multiclass
-```{r}
-# a)
-r1 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_LightGBM, n_retry = 3,
-  label = "LightGBM multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
-)
-
-# b)
-r2 <- classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_LightGBM, n_retry = 3, 
-  label = "LightGBM multiclass with PCA", X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
-)
-
-bind_rows(r1, r2)
-```
 
 Multilabel
 ```{r}
@@ -526,7 +300,6 @@ lapply(c(100, 250, 500), \(nr) {
   )
 }) %>% bind_rows()
 ```
-
 
 ### 10 MLP
 
@@ -552,49 +325,3 @@ bind_rows(
   calc_classification_metrics(Y_rand,    Y_b_test, "Random (baseline)")
 )
 ```
-
-
-#### Старый код
-
-catboost
-```{r}
-ind_pred <- vector("list", 6)
-
-for (col_i in 1:6) {
-  train_pool <- catboost.load_pool(data = X_train, label = Y_b_train[, col_i] %>% as.integer)
-  test_pool  <- catboost.load_pool(data = X_test,  label = Y_b_test[, col_i] %>% as.integer)
-  
-  model <- catboost.train(
-    learn_pool = train_pool,
-    test_pool = test_pool,
-    params = list(loss_function = 'CrossEntropy', logging_level = "Silent", allow_writing_files = FALSE) # Logloss для бинарной, CrossEntropy для мультикласса
-  )
-  
-  # preds <- catboost.predict(model, test_pool, prediction_type = "Class")
-  ind_pred[[col_i]] <- catboost.predict(model, test_pool, prediction_type = "Probability")
-}
-
-Y_pred_cb <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
-
-## Для C-index
-classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
-df_metric(classif_ind_pred, Y_test, func = calc_C_index)
-```
-
-randomForest
-```{r}
-ind_pred <- vector("list", 6)
-
-for (col_i in 1:6) {
-  rf <- randomForest(x = X_train, y = as.factor(Y_b_train[, col_i]), ntree = 1000, importance = TRUE) 
-  ind_pred[[col_i]] <- predict(rf, X_test, type = "prob")[, "TRUE"]
-}
-
-## Для C-index
-classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
-df_metric(classif_ind_pred, Y_test, func = calc_C_index)
-
-## Для метрик классификации
-Y_pred_rf <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
-```
-C-index. Результат аналогичен RF regr (что логично и ожидаемо)
