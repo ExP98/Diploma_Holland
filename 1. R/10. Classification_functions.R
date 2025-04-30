@@ -6,7 +6,7 @@
 
 
 # 1. Библиотеки и константы                                      ####
-source_python(here("2. Python/MLP_classificator.py"))
+# source_python(here("2. Python/MLP_classificator.py"))
 
 riasec_codes <- c("R", "I", "A", "S", "E", "C")
 
@@ -260,10 +260,12 @@ multiclass_pred_by_kNN <- function(X_train_, Y_train_, X_test_, k_neighb = 25) {
 }
 
 
-multiclass_pred_by_ExtraTree <- function(X_train_, Y_train_, X_test_, ntree = 2000) {
+multiclass_pred_by_ExtraTree <- function(X_train_, Y_train_, X_test_, ntree = 1000) {
   .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = 3)
-  et_model <- extraTrees::extraTrees(X, y, ntree = ntree)
-  pred <- predict(et_model, X_test_, probability = TRUE) %>% as.data.table()
+  et_model <- ranger(formula = y ~ .,  data = data.frame(X, y = y), num.trees = ntree,
+                     splitrule = "extratrees", probability = TRUE)
+  pred <- predict(et_model, X_test_) %>% as.data.table()
+  return(pred)
   return(pred)
 }
 
@@ -377,11 +379,12 @@ multilabel_knn_clsf <- function(X_train, Y_b_train, X_test, k_neighb = 5) {
 }
 
 
-multilabel_extratree_clsf <- function(X_train, Y_b_train, X_test, ntree = 2000) {
+multilabel_extratree_clsf <- function(X_train, Y_b_train, X_test, ntree = 1000) {
   ind_pred <- vector("list", 6)
   for (col_i in 1:6) {
-    model <- extraTrees::extraTrees(X_train, as.factor(Y_b_train[, col_i]), ntree = ntree)
-    ind_pred[[col_i]] <- predict(model, X_test, probability = TRUE)[, "TRUE"]
+    model <- ranger(formula = y ~ .,  data = data.frame(X_train, y = as.factor(Y_b_train[, col_i])), 
+                    num.trees = ntree, splitrule = "extratrees", probability = TRUE)
+    ind_pred[[col_i]] <- predict(model, X_test) %>% as.data.table() %>% .[, "TRUE."]
   }
   return(as.data.table(ind_pred))
 }
