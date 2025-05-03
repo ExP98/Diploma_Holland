@@ -170,13 +170,16 @@ classification_test_framework <- function(Y_test, Y_b_test,
                                           clsf_func = multilabel_svm_clsf,
                                           n_retry = 1, label = "", ...) {
   metric_values <- lapply(1:n_retry, \(i) {
-    ind_pred <- clsf_func(...)
+    pred_probs <- clsf_func(...)
     
-    classif_ind_pred <- ind_pred %>% as.data.table() %>% as.matrix()
-    cindex <- df_metric(classif_ind_pred, Y_test, func = calc_C_index)
+    cindex <- pred_probs %>% 
+      as.data.table() %>% as.matrix() %>% 
+      df_metric(., Y_test, func = calc_C_index)
     
-    Y_pred <- ind_pred %>% as.data.table() %>% apply(., 1, bool_mask_row) %>% t()
-    classif_metrics <- calc_classification_metrics(Y_pred, Y_b_test, label)
+    classif_metrics <- pred_probs %>% 
+      as.data.table() %>% 
+      apply(., 1, bool_mask_row) %>% t() %>% 
+      calc_classification_metrics(., Y_b_test, label)
     return(list(cindex = cindex, classif_metrics = classif_metrics))
   })
   
@@ -335,11 +338,11 @@ multiclass_pred_by_Catboost <- function(X_train_, Y_train_, X_test_, k = 3, nrou
 }
 
 
-# mlp_pred <- py_eval("multiclass_pred_by_MLP(r.X, r.y_num, r.X_test)")
-multiclass_pred_by_MLP <- function(X_train_, Y_train_, X_test_) {
-  .[X, y] <- make_multiclass_df(X_train_, Y_train_, k = 3)
-  return(PY_multiclass_pred_by_MLP(X, as.integer(y) - 1, X_test_))
-}
+## mlp_pred <- py_eval("PY_multiclass_pred_by_MLP(r.X, r.y_num, r.X_test)")
+# multiclass_pred_by_MLP <- function(X_train_, Y_train_, X_test_) {
+#   .[X, y] <- make_multiclass_df(X_train_ %>% copy(), Y_train_ %>% copy(), k = 3)
+#   return(PY_multiclass_pred_by_MLP(X %>% copy(), as.integer(y) - 1, X_test_ %>% copy()))
+# }
 
 
 ## 3.2 Multilabel                   ####

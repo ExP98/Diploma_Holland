@@ -50,7 +50,7 @@ Label Powerset
 
 ## 3.1 Пример решения одной моделью и как multiclass (с выбором 3 или 1 кодов), как multilabel
 
-### 3.1.1 Multiclass на примере SVM
+Multiclass на примере SVM
 На примере SVM (пакет e1071)
 
 Multiclass:
@@ -108,138 +108,7 @@ lapply(seq(0.3, 1, 0.1), \(s) {
 Лучшее при ssq = 0.8 (k = 19)
 Возможно 0.8
 
-
-### 3.1.2 Multiclass
-
-```{r}
-multiclass_experiments <- tribble(
-  ~multcls_clsf_func,              ~label,                       ~params,                  ~n_retry,
-  multiclass_pred_by_SVM,          "SVM multiclass",             list(kernel = "sigmoid"), 5,
-  multiclass_pred_by_RF,           "Random Forest multiclass",   list(ntree = 1000),       5,
-  multiclass_pred_by_ExtraTree,    "ExtraTree multiclass",       list(ntree = 1000),       5,
-  multiclass_pred_by_Logregr,      "Logit (ridge) multiclass",   list(alpha = 0),          5,
-  multiclass_pred_by_Logregr,      "Logit (lasso) multiclass",   list(alpha = 1),          5,
-  multiclass_pred_by_NB,           "Naive Bayes multiclass",     list(),                   5,
-  multiclass_pred_by_kNN,          "kNN (3) multiclass",         list(k_neighb = 3),       5,
-  multiclass_pred_by_kNN,          "kNN (25) multiclass",        list(k_neighb = 25),      5,
-  multiclass_pred_by_kNN,          "kNN (50) multiclass",        list(k_neighb = 50),      5,
-  multiclass_pred_by_XGBoost,      "XGBoost multiclass",         list(),                   3,
-  multiclass_pred_by_LightGBM,     "LightGBM (100) multiclass",  list(nrounds = 100),      3,
-  multiclass_pred_by_LightGBM,     "LightGBM (500) multiclass",  list(nrounds = 500),      3,
-  multiclass_pred_by_LightGBM,     "LightGBM (1000) multiclass", list(nrounds = 1000),     3,
-  multiclass_pred_by_Catboost,     "Catboost multiclass",        list(),                   3
-)
-
-mc_res     <- run_multiclass_experiments(multiclass_experiments, X_train, Y_train, X_test, Y_test, Y_b_test)
-mc_res_pca <- run_multiclass_experiments(multiclass_experiments, X_train_pca, Y_train, X_test_pca, Y_test, Y_b_test)
-
-print(mc_res)
-print(mc_res_pca)
-```
-
-```{r}
-bind_rows(
-  compare_clsf_results(list(mc_res, mc_res_pca), mean, "mean"),
-  compare_clsf_results(list(mc_res, mc_res_pca), median, "median")
-)
-```
-
-
-### 3.1.3 Multilabel
-
-```{r}
-multilabel_experiments <- tribble(
-  ~multlbl_clsf_func,             ~label,                        ~params,              ~n_retry,
-  multilabel_svm_clsf,            "SVM multilabel",              list(),               5,
-  multilabel_rf_clsf,             "Random Forest multilabel",    list(),               5,
-  multilabel_extratree_clsf,      "ExtraTree (1000) multilabel", list(ntree = 1000),   5,
-  multilabel_extratree_clsf,      "ExtraTree (2000) multilabel", list(ntree = 2000),   5,
-  multilabel_logit_clsf,          "Logit multilabel",            list(),               5,
-  multilabel_nb_clsf,             "Naive Bayes multilabel",      list(),               5,
-  multilabel_knn_clsf,            "kNN (k = 5) multilabel",      list(k_neighb = 5),   5,
-  multilabel_knn_clsf,            "kNN (k = 25) multilabel",     list(k_neighb = 25),  5,
-  multilabel_knn_clsf,            "kNN (k = 50) multilabel",     list(k_neighb = 50),  5,
-  multilabel_xgb_clsf,            "XGBoost multilabel",          list(nrounds = 500),  3,
-  multilabel_lightgbm_clsf,       "LightGBM multilabel",         list(nrounds = 500),  3,
-  multilabel_catboost_clsf,       "CatBoost multilabel",         list(nrounds = 500),  3,
-)
-
-mltlbl_res     <- run_multilabel_experiments(multilabel_experiments, X_train, Y_b_train, X_test, Y_b_test)
-mltlbl_res_pca <- run_multilabel_experiments(multilabel_experiments, X_train_pca, Y_b_train, X_test_pca, Y_b_test)
-print(mltlbl_res)
-print(mltlbl_res_pca)
-```
-Топ (PCA): 
- - kNN (k = 25) multilabel
- - ExtraTree (2000) multilabel
- - XGBoost multilabel
- 
-Топ (без PCA):
- - kNN (k = 25) multilabel (хотя и другие kNN норм)
- - другие примерно равны (в чем-то лучше, в чем-то хуже)
- 
-
-С PCA или без результаты почти идентичны, хотя с PCA чуть лучше. 
-```{r}
-bind_rows(
-  compare_clsf_results(list(mltlbl_res, mltlbl_res_pca), mean, "mean"),
-  compare_clsf_results(list(mltlbl_res, mltlbl_res_pca), median, "median")
-)
-```
-
-
-### 3.1.4 Label Powerset
-
-```{r}
-lp_experiments <- tribble(
-  ~model_fn,              ~label,                          ~params,
-  lp_svm_letters,         "SVM",                           list(),
-  lp_rf_letters,          "Random Forest",                 list(),
-  lp_nb_letters,          "Naive Bayes",                   list(),
-  lp_logit_letters,       "Logistic regr Ridge",           list(alpha = 0),
-  lp_logit_letters,       "Logistic regr Lasso",           list(alpha = 1),
-  lp_knn_letters,         "kNN, k = 25",                   list(k_neighb = 25),
-  lp_knn_letters,         "kNN, k = 100",                  list(k_neighb = 100),
-  lp_et_letters,          "ExtraTrees (ntree = 1000)",     list(ntree = 1000),
-  lp_et_letters,          "ExtraTrees (ntree = 2000)",     list(ntree = 2000),
-  lp_catboost_letters,    "CatBoost (nrounds = 200)",      list(nrounds = 200),
-  lp_catboost_letters,    "CatBoost (nrounds = 500)",      list(nrounds = 500),
-  lp_xgboost_letters,     "XGBoost (nrounds = 200)",       list(nrounds = 200),
-  lp_lightgbm_letters,    "LightGBM (nrounds = 100)",      list(nrounds = 100),
-  lp_lightgbm_letters,    "LightGBM (nrounds = 500)",      list(nrounds = 500)
-)
-
-lp_res     <- run_label_powerset_experiments(lp_experiments, X_train, Y_b_train, X_test, Y_b_test)
-lp_res_pca <- run_label_powerset_experiments(lp_experiments, X_train_pca, Y_b_train, X_test_pca, Y_b_test)
-print(lp_res)
-print(lp_res_pca)
-```
-Без PCA выделяются Naive Bayes, Random Forest, ExtraTrees (ntree = 2000)
-С PCA Catboost лучший по всему. Хороши Logistic regr Ridge, ExtraTrees (ntree = 1000)
-
-С PCA или без результаты почти идентичны
-```{r}
-bind_rows(
-  compare_clsf_results(list(lp_res, lp_res_pca), mean, "mean"),
-  compare_clsf_results(list(lp_res, lp_res_pca), median, "median")
-)
-```
-
-## 3.2 Сравнение результатов
-
-```{r}
-map2(
-  list(mc_res, mc_res_pca, mltlbl_res, mltlbl_res_pca, lp_res, lp_res_pca),
-  list("Multiclass", "Multiclass with PCA", "Multilabel", "Multilabel with PCA",
-       "Label Powerset", "Label Powerset with PCA"),
-  \(df, sheetname) xlsx::write.xlsx(df, here("0. Data/Output/Classif_results.xlsx"), sheetname, 
-                                    row.names = FALSE, append = TRUE)
-)
-```
-Текстовое сравнение смотреть в файле Classif_results_txt.txt
-
-
-## 3.3 Модели
+## 3.2 Модели
 
 ### 1 SVM
 ### 2 Random Forest
@@ -307,9 +176,235 @@ lapply(c(100, 250, 500), \(nr) {
 # pred <- multiclass_pred_by_MLP(X_train, Y_train, X_test)
 
 classification_test_framework(
-  Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_MLP, n_retry = 10,
+  Y_test, Y_b_test, clsf_func = multiclass_pred_by_MLP, n_retry = 10,
   label = "MLP multiclass", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test
 )
+```
+
+
+## 3.3 Обобщение результатов
+
+### 3.3.1 Multiclass
+
+```{r}
+multiclass_experiments <- tribble(
+  ~multcls_clsf_func,              ~label,                       ~params,                  ~n_retry,
+  multiclass_pred_by_SVM,          "SVM multiclass",             list(kernel = "sigmoid"), 5,
+  multiclass_pred_by_RF,           "Random Forest multiclass",   list(ntree = 1000),       5,
+  multiclass_pred_by_ExtraTree,    "ExtraTree multiclass",       list(ntree = 1000),       5,
+  multiclass_pred_by_Logregr,      "Logit (ridge) multiclass",   list(alpha = 0),          5,
+  multiclass_pred_by_Logregr,      "Logit (lasso) multiclass",   list(alpha = 1),          5,
+  multiclass_pred_by_NB,           "Naive Bayes multiclass",     list(),                   5,
+  multiclass_pred_by_kNN,          "kNN (3) multiclass",         list(k_neighb = 3),       5,
+  multiclass_pred_by_kNN,          "kNN (25) multiclass",        list(k_neighb = 25),      5,
+  multiclass_pred_by_kNN,          "kNN (50) multiclass",        list(k_neighb = 50),      5,
+  multiclass_pred_by_XGBoost,      "XGBoost multiclass",         list(),                   3,
+  multiclass_pred_by_LightGBM,     "LightGBM (100) multiclass",  list(nrounds = 100),      3,
+  multiclass_pred_by_LightGBM,     "LightGBM (500) multiclass",  list(nrounds = 500),      3,
+  multiclass_pred_by_LightGBM,     "LightGBM (1000) multiclass", list(nrounds = 1000),     3,
+  multiclass_pred_by_Catboost,     "Catboost multiclass",        list(),                   3
+)
+
+mc_res     <- run_multiclass_experiments(multiclass_experiments, X_train, Y_train, X_test, Y_test, Y_b_test)
+mc_res_pca <- run_multiclass_experiments(multiclass_experiments, X_train_pca, Y_train, X_test_pca, Y_test, Y_b_test)
+
+print(mc_res)
+print(mc_res_pca)
+```
+
+```{r}
+bind_rows(
+  compare_clsf_results(list(mc_res, mc_res_pca), mean, "mean"),
+  compare_clsf_results(list(mc_res, mc_res_pca), median, "median")
+)
+```
+
+
+### 3.3.2 Multilabel
+
+```{r}
+multilabel_experiments <- tribble(
+  ~multlbl_clsf_func,             ~label,                        ~params,              ~n_retry,
+  multilabel_svm_clsf,            "SVM multilabel",              list(),               5,
+  multilabel_rf_clsf,             "Random Forest multilabel",    list(),               5,
+  multilabel_extratree_clsf,      "ExtraTree (1000) multilabel", list(ntree = 1000),   5,
+  multilabel_extratree_clsf,      "ExtraTree (2000) multilabel", list(ntree = 2000),   5,
+  multilabel_logit_clsf,          "Logit multilabel",            list(),               5,
+  multilabel_nb_clsf,             "Naive Bayes multilabel",      list(),               5,
+  multilabel_knn_clsf,            "kNN (k = 5) multilabel",      list(k_neighb = 5),   5,
+  multilabel_knn_clsf,            "kNN (k = 25) multilabel",     list(k_neighb = 25),  5,
+  multilabel_knn_clsf,            "kNN (k = 50) multilabel",     list(k_neighb = 50),  5,
+  multilabel_xgb_clsf,            "XGBoost multilabel",          list(nrounds = 500),  3,
+  multilabel_lightgbm_clsf,       "LightGBM multilabel",         list(nrounds = 500),  3,
+  multilabel_catboost_clsf,       "CatBoost multilabel",         list(nrounds = 500),  3,
+)
+
+mltlbl_res     <- run_multilabel_experiments(multilabel_experiments, X_train, Y_b_train, X_test, Y_b_test)
+mltlbl_res_pca <- run_multilabel_experiments(multilabel_experiments, X_train_pca, Y_b_train, X_test_pca, Y_b_test)
+print(mltlbl_res)
+print(mltlbl_res_pca)
+```
+Топ (PCA): 
+ - kNN (k = 25) multilabel
+ - ExtraTree (2000) multilabel
+ - XGBoost multilabel
+ 
+Топ (без PCA):
+ - kNN (k = 25) multilabel (хотя и другие kNN норм)
+ - другие примерно равны (в чем-то лучше, в чем-то хуже)
+ 
+
+С PCA или без результаты почти идентичны, хотя с PCA чуть лучше. 
+```{r}
+bind_rows(
+  compare_clsf_results(list(mltlbl_res, mltlbl_res_pca), mean, "mean"),
+  compare_clsf_results(list(mltlbl_res, mltlbl_res_pca), median, "median")
+)
+```
+
+
+### 3.3.3 Label Powerset
+
+```{r}
+lp_experiments <- tribble(
+  ~model_fn,              ~label,                          ~params,
+  lp_svm_letters,         "SVM",                           list(),
+  lp_rf_letters,          "Random Forest",                 list(),
+  lp_nb_letters,          "Naive Bayes",                   list(),
+  lp_logit_letters,       "Logistic regr Ridge",           list(alpha = 0),
+  lp_logit_letters,       "Logistic regr Lasso",           list(alpha = 1),
+  lp_knn_letters,         "kNN, k = 25",                   list(k_neighb = 25),
+  lp_knn_letters,         "kNN, k = 100",                  list(k_neighb = 100),
+  lp_et_letters,          "ExtraTrees (ntree = 1000)",     list(ntree = 1000),
+  lp_et_letters,          "ExtraTrees (ntree = 2000)",     list(ntree = 2000),
+  lp_catboost_letters,    "CatBoost (nrounds = 200)",      list(nrounds = 200),
+  lp_catboost_letters,    "CatBoost (nrounds = 500)",      list(nrounds = 500),
+  lp_xgboost_letters,     "XGBoost (nrounds = 200)",       list(nrounds = 200),
+  lp_lightgbm_letters,    "LightGBM (nrounds = 100)",      list(nrounds = 100),
+  lp_lightgbm_letters,    "LightGBM (nrounds = 500)",      list(nrounds = 500)
+)
+
+lp_res     <- run_label_powerset_experiments(lp_experiments, X_train, Y_b_train, X_test, Y_b_test)
+lp_res_pca <- run_label_powerset_experiments(lp_experiments, X_train_pca, Y_b_train, X_test_pca, Y_b_test)
+print(lp_res)
+print(lp_res_pca)
+```
+Без PCA выделяются Naive Bayes, Random Forest, ExtraTrees (ntree = 2000)
+С PCA Catboost лучший по всему. Хороши Logistic regr Ridge, ExtraTrees (ntree = 1000)
+
+С PCA или без результаты почти идентичны
+```{r}
+bind_rows(
+  compare_clsf_results(list(lp_res, lp_res_pca), mean, "mean"),
+  compare_clsf_results(list(lp_res, lp_res_pca), median, "median")
+)
+```
+
+### 3.3.4 Сравнение результатов
+
+```{r}
+map2(
+  list(mc_res, mc_res_pca, mltlbl_res, mltlbl_res_pca, lp_res, lp_res_pca),
+  list("Multiclass", "Multiclass with PCA", "Multilabel", "Multilabel with PCA",
+       "Label Powerset", "Label Powerset with PCA"),
+  \(df, sheetname) xlsx::write.xlsx(df, here("0. Data/1. Output/Classif_results.xlsx"), sheetname, 
+                                    row.names = FALSE, append = TRUE)
+)
+```
+Текстовое сравнение смотреть в файле Classif_results_txt.txt
+
+
+## 3.4 Ансамблирование
+
+```{r}
+multiclass_experiments
+```
+
+```{r}
+multiclass_probs <- map2(
+  multiclass_experiments$multcls_clsf_func,
+  multiclass_experiments$params,
+  \(fn, args) exec(fn, X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test, !!!args) %>% as.matrix()
+)
+
+## 1. Равные веса
+w <- rep(1/length(multiclass_probs), length(multiclass_probs))
+
+## 2. Веса на основе вектора Шэпли
+# weights <- shapley_weights(multiclass_probs[1:10], Y_test, matr_cind)
+appr_w <- approx_shapley(multiclass_probs, Y_test, matr_cind)
+w <- appr_w
+
+## 3. Веса на основе метрик каждого
+w <- sapply(multiclass_probs, \(probs) df_metric(probs, Y_test, func = calc_C_index))
+w <- w / sum(w)
+
+## 3.2 Уберем худшие
+cut_w <- function(w, threshold = 9.5) {
+  w[w < threshold] <- 0
+  return(w / sum(w))
+}
+
+
+w <- sapply(multiclass_probs, \(probs) df_metric(probs, Y_test, func = calc_C_index))
+w <- cut_w(w, 9.5)
+
+lapply(seq(9.0, 10.0, 0.1), \(th) {
+  list(
+    th = th,
+    cind = scalar_matrix_production(cut_w(w, th), multiclass_probs) %>% 
+      df_metric(., Y_test, func = calc_C_index)
+  )
+}) %>% bind_rows()
+
+
+## 3.3 Softmax
+w <- sapply(multiclass_probs, \(probs) df_metric(probs, Y_test, func = calc_C_index))
+w <- mclust::softmax(w)
+
+## 3.4 Softmax with limit
+w <- sapply(multiclass_probs, \(probs) df_metric(probs, Y_test, func = calc_C_index))
+w <- cut_w(w, 9.5) %>% mclust::softmax()
+
+## Результат
+scalar_matrix_production(w, multiclass_probs) %>% 
+  df_metric(., Y_test, func = calc_C_index)
+```
+
+
+```{r}
+matr_cind <- function(prob_matrix, Y_true) {
+  cindex <- prob_matrix %>% 
+    as.data.table() %>% as.matrix() %>% 
+    df_metric(., Y_true, func = calc_C_index)
+  return(cindex)
+}
+
+
+approx_shapley <- function(prob_list, Y_true, metric_fn = matr_cind, R = 1000) {
+  M <- length(prob_list)
+  phi_mc <- numeric(M)
+  names(phi_mc) <- names(prob_list)
+  
+  for (r in seq_len(R)) {
+    perm <- sample(M)
+    # текущее усреднённое P
+    P_prev <- matrix(0, nrow = nrow(prob_list[[1]]), ncol = ncol(prob_list[[1]]))
+    for (k in seq_len(M)) {
+      i <- perm[k]
+      # добавляем модель i
+      P_curr <- (P_prev * (k - 1) + prob_list[[i]]) / k
+      v_prev <- if (k == 1) 0 else metric_fn(P_prev, Y_true)
+      v_curr <- metric_fn(P_curr, Y_true)
+      phi_mc[i] <- phi_mc[i] + (v_curr - v_prev)
+      P_prev <- P_curr
+    }
+  }
+  
+  # усредняем и нормируем
+  w <- phi_mc / R
+  return(w / sum(w))
+}
 ```
 
 
