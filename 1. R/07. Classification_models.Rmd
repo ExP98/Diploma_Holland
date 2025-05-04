@@ -323,145 +323,116 @@ multiclass_probs <- map2(
   \(fn, args) exec(fn, X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test, !!!args) %>% as.matrix()
 )
 
+names(multiclass_probs) <- multiclass_experiments[["label"]] %>%
+  str_replace_all(" multiclass| multilabel", "")
+
 multilabel_probs <- map2(
   multilabel_experiments$multlbl_clsf_func,
   multilabel_experiments$params,
   \(fn, args) exec(fn, X_train = X_train, Y_b_train = Y_b_train, X_test = X_test, !!!args) %>% as.matrix()
 )
+
+names(multilabel_probs) <- multilabel_experiments[["label"]] %>%
+  str_replace_all(" multiclass| multilabel", "")
 ```
 
 ```{r}
-# mat <- multiclass_probs
-mat <- multilabel_probs
+mat <- multiclass_probs
+# mat <- multilabel_probs
 
 ## 1. Равные веса
-w <- rep(1/length(mat), length(mat))
-weighted_cindex(w, mat, label = "equal w")
+w_eq <- rep(1/length(mat), length(mat))
+weighted_cindex(w_eq, mat, label = "equal w")
 
-## 2. Веса на основе вектора Шэпли
-# appr_w1 <- approx_shapley_cpp(mat, Y_test, matr_cind, R = 1000)
-# appr_w2 <- approx_shapley(mat, Y_test, matr_cind)
-# weighted_cindex(appr_w1, mat)
-# weighted_cindex(appr_w2, mat)
+## 2. Веса на основе метрик каждого
+w_diff <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
+cat("Metric proportion:\n")
+weighted_cindex(w_diff, mat, label = "w")
 
-
-## 3. Веса на основе метрик каждого
-w <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
-weighted_cindex(w, mat, label = "metric prop")
-
-
-## 3.2 Уберем худшие
-w <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
-# w <- cut_w(w, 9.5)
-
-lapply(seq(9.0, 10.0, 0.1),
-       \(th) list(th = th, cind = weighted_cindex(cut_w(w, th), mat))) %>%
-  bind_rows()
-
-
-## 3.3 Softmax
-w <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
-w <- mclust::softmax(w)
-# softmax бессмысленно занулять
-
-weighted_cindex(w, mat, label = "softmax")
-```
-
-Обрезать малые веса:
-```{r}
-w <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
-w_cut <- cut_w(w, qnt_prob = 0.67)
-
-w_b <- w - min(w)
+w_cut <- cut_w(w_diff, qnt_prob = 0.67)
+w_b <- w_diff - min(w_diff)
 w_b_cut <- cut_w(w_b, qnt_prob = 0.67)
 
-sapply(list(w, w_cut, w_b, w_b_cut), \(w_) weighted_cindex(w_, mat))
+weighted_cindex(w_cut,   mat, label = "w_cut")
+weighted_cindex(w_b,     mat, label = "w - min")
+weighted_cindex(w_b_cut, mat, label = "cut [w - min]")
+
+## 4. Softmax
+w_sftm <- mclust::softmax(w_diff)
+# softmax бессмысленно занулять
+weighted_cindex(w_sftm, mat, label = "softmax")
+
+## 4. Уберем худшие
+lapply(seq(0.1, 1, 0.05),
+       \(q) list(qnt_prob = q, cind = weighted_cindex(cut_w(w_diff, qnt_prob = q), mat))) %>%
+  bind_rows()
 ```
 
-```{r}
-w <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
-w_norm <- cut_w(w, qnt_prob = 0.67)
-sngnf_ind <- which(w_norm > 1e-3)
+1. Просто без всего - 0.46 sec
+2. Шэпли - 81.54 sec
+3. grid search - 53.66 sec
+4. stacking_qp_weights - 0.08 sec
+5. GA - 18.83 sec
+6. pso_optimize_weights - 26.97 sec
+7. bayes_optimize_weights - 3272.82 sec
+8. coordinate_optimize_weights - 26.8 sec
 
-filtered_w <- w[sngnf_ind]
-filtered_matr <- mat[sngnf_ind]
+
+### Обновление
+
+```{r}
+Y_one_hot <- apply(Y_b_test, 2, as.integer)
+
+w_config <- tribble(
+  ~method,                     ~label,           ~params,
+  simple_weights,              "Simple w",       list(list()),
+  filtered_weights,            "Filtered w",     list(list(qnt_prob = 0.67)),
+  approx_shapley,              "Approx Shap",    list(list(R = 500)),
+  grid_search_weights,         "Grid Search",    list(list(step = 1.0)),
+  stacking_qp_weights,         "QP",             list(list(Y_true_onehot = Y_one_hot)),
+  genetic_algorithm_weights,   "GA",             list(list(popSize = 50, maxiter = 150)),
+  particle_swarm_weights,      "PSO",            list(list(swarm_size = 50, maxit = 100)),
+  # bayes_optimize_weights,      "Bayes Opt",      list(list(init_points = 15, n_iter = 15)),
+  coordinate_optimize_weights, "Coord. Asc",     list(list(tol = 1e-4, max_iter = 20))
+) %>% 
+  as.data.table()
 ```
+Вывод: исключение "слабых" алгоритмов, лишь затем их комбо. Это улучшает результаты + серьезно сокращает вычисления
 
-Шэпли
 ```{r}
-library(tictoc)
-# mat <- mat
-mat <- filtered_matr
+# tmp_cfg <- config[!method %in% c(approx_shapley, bayes_optimize_weights)]
+filterd_mc_probs <- cut_matr(multiclass_probs)
+filterd_ml_probs <- cut_matr(multilabel_probs)
 
-tic()
-appr_w1 <- approx_shapley_cpp(mat, Y_test, matr_cind, R = 500)
-toc()
-
-tic()
-appr_w2 <- approx_shapley(mat, Y_test, matr_cind)
-toc()
-
-weighted_cindex(appr_w1, mat)
-weighted_cindex(appr_w2, mat)
+out_mc   <- run_weights_search_experiments(w_config, multiclass_probs, Y_test)
+out_mc_f <- run_weights_search_experiments(w_config, filterd_mc_probs, Y_test)
+out_ml   <- run_weights_search_experiments(w_config, multilabel_probs, Y_test)
+out_ml_f <- run_weights_search_experiments(w_config, filterd_ml_probs, Y_test)
 beepr::beep()
 ```
 
-Сразу уберем малые веса и применим остальные методы:
+Выполнение по времени:
+  3675.12 sec (mc), где всё, кроме bayes, выполняется за 3 мин в сумме
+  334.1 sec   (mc_f)
+  2359.67 sec (ml)
+  245.25 sec  (ml_f)
+
+Сохранение результатов (как R-объекты и как развернутые таблицы):
 ```{r}
-# 1. Просто без всего
-weighted_cindex(filtered_w, filtered_matr, label = "filtered w")
+saveRDS(out_mc,   here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_multiclass.rds"))
+saveRDS(out_mc_f, here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_multiclass_filtered.rds"))
+saveRDS(out_ml,   here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_multilabel.rds"))
+saveRDS(out_ml_f, here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_multilabel_filtered.rds"))
 
+write_w_search_to_xlsx(out_mc,   multiclass_probs, "Multiclass")
+write_w_search_to_xlsx(out_mc_f, filterd_mc_probs, "Multiclass filtered")
 
-# 2. Шэпли
-# shap_fltr_w <- approx_shapley_cpp(filtered_matr, Y_test, matr_cind, R = 1000)
-shap_w <- approx_shapley(filtered_matr, Y_test)
-weighted_cindex(shap_w, filtered_matr, label = "Approx Shap")
-
-
-# 3. grid search
-gs_w <- grid_search_weights(filtered_matr, Y_test)
-weighted_cindex(gs_w, filtered_matr, label = "Grid Search")
-
-
-# 4. stacking_qp_weights 
-# очень быстро
-Y_one_hot <- apply(Y_b_test, 2, as.integer)
-w_qp1 <- stacking_qp_weights(filtered_matr, Y_one_hot) %>% round(4)
-w_qp2 <- stacking_qp_weights(mat, Y_one_hot) %>% round(4)
-
-weighted_cindex(w_qp1, filtered_matr, label = "QP filtered")
-weighted_cindex(w_qp2, mat, label = "QP full")
-
-
-# 5. GA
-# быстро
-ga_w1 <- genetic_algorithm_weights(filtered_matr, Y_test)
-ga_w2 <- genetic_algorithm_weights(mat, Y_test)
-
-weighted_cindex(ga_w1, filtered_matr, label = "GA filtered")
-weighted_cindex(ga_w2, mat, label = "GA full")
-
-
-# 6. pso_optimize_weights
-# быстро
-pso_w1 <- particle_swarm_weights(filtered_matr, Y_test)
-pso_w2 <- particle_swarm_weights(mat, Y_test)
-
-weighted_cindex(pso_w1, filtered_matr, label = "PSO filtered")
-weighted_cindex(pso_w2, mat, label = "PSO full")
-
-
-# 7. bayes_optimize_weights
-# долго...
-bo_w <- bayes_optimize_weights(filtered_matr, Y_test)
-weighted_cindex(bo_w, filtered_matr, label = "Bayes Opt")
-
-
-# 8. coordinate_optimize_weights
-сo_w <- coordinate_optimize_weights(filtered_matr, Y_test)
-weighted_cindex(сo_w, filtered_matr, label = "Coordinate optimize")
+write_w_search_to_xlsx(out_ml,   multilabel_probs, "Multilabel")
+write_w_search_to_xlsx(out_ml_f, filterd_ml_probs, "Multilabel filtered")
 ```
-Вывод: исключение "слабых" алгоритмов, лишь затем их комбо. Это улучшает результаты + серьезно сокращает вычисления
+
+
+ГОЛОСОВАНИЕ
 
 
 # 4. Метрики классификации
