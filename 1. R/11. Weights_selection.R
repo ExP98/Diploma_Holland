@@ -155,7 +155,9 @@ grid_search_weights <- function(models_probs, Y_true, step = 1.0) {
 
 
 # Стэкинг моделей, решение с помощью квадратичного линейного программирования
-stacking_qp_weights <- function(models_probs, Y_true_onehot, ...) {
+stacking_qp_weights <- function(models_probs, Y_true, ...) {
+  Y_true_onehot <- Y_true %>% apply(1, bool_mask_row) %>% t() 
+  
   M <- length(models_probs)
   N <- nrow(Y_true_onehot); K <- ncol(Y_true_onehot)
   

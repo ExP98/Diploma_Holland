@@ -334,11 +334,26 @@ multilabel_probs <- map2(
 
 names(multilabel_probs) <- multilabel_experiments[["label"]] %>%
   str_replace_all(" multiclass| multilabel", "")
+
+
+# Для возможности вычисления C-индекса преобразуем "XYZ" в [T, F, T, ...] -> [1, 0, 1, ...] и далее работаем как обычно
+lp_probs <- map2(
+  lp_experiments$model_fn,
+  lp_experiments$params,
+  \(fn, args) exec(fn, X_train = X_train, Y_b_train = Y_b_train, X_test = X_test, !!!args) %>% as.matrix()
+) %>% 
+  lapply(\(mat) mat %>% three_letters_to_bool_matrix() %>% apply(2, as.integer))
+
+names(lp_probs) <- lp_experiments[["label"]]
 ```
+
+
+### Простые манипуляции с весами 
 
 ```{r}
 mat <- multiclass_probs
 # mat <- multilabel_probs
+# mat <- lp_probs
 
 ## 1. Равные веса
 w_eq <- rep(1/length(mat), length(mat))
@@ -378,18 +393,17 @@ lapply(seq(0.1, 1, 0.05),
 8. coordinate_optimize_weights - 26.8 sec
 
 
-### Обновление
+### Единый фреймворк для проверки
+
 
 ```{r}
-Y_one_hot <- apply(Y_b_test, 2, as.integer)
-
 w_config <- tribble(
   ~method,                     ~label,           ~params,
   simple_weights,              "Simple w",       list(list()),
   filtered_weights,            "Filtered w",     list(list(qnt_prob = 0.67)),
   approx_shapley,              "Approx Shap",    list(list(R = 500)),
   grid_search_weights,         "Grid Search",    list(list(step = 1.0)),
-  stacking_qp_weights,         "QP",             list(list(Y_true_onehot = Y_one_hot)),
+  stacking_qp_weights,         "QP",             list(list()),
   genetic_algorithm_weights,   "GA",             list(list(popSize = 50, maxiter = 150)),
   particle_swarm_weights,      "PSO",            list(list(swarm_size = 50, maxit = 100)),
   # bayes_optimize_weights,      "Bayes Opt",      list(list(init_points = 15, n_iter = 15)),
@@ -403,11 +417,16 @@ w_config <- tribble(
 # tmp_cfg <- config[!method %in% c(approx_shapley, bayes_optimize_weights)]
 filterd_mc_probs <- cut_matr(multiclass_probs)
 filterd_ml_probs <- cut_matr(multilabel_probs)
+filterd_lp_probs <- cut_matr(lp_probs)
 
 out_mc   <- run_weights_search_experiments(w_config, multiclass_probs, Y_test)
 out_mc_f <- run_weights_search_experiments(w_config, filterd_mc_probs, Y_test)
+
 out_ml   <- run_weights_search_experiments(w_config, multilabel_probs, Y_test)
 out_ml_f <- run_weights_search_experiments(w_config, filterd_ml_probs, Y_test)
+
+out_lp   <- run_weights_search_experiments(w_config, lp_probs, Y_test)
+out_lp_f <- run_weights_search_experiments(w_config, filterd_lp_probs, Y_test)
 beepr::beep()
 ```
 
@@ -421,18 +440,22 @@ beepr::beep()
 ```{r}
 saveRDS(out_mc,   here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_multiclass.rds"))
 saveRDS(out_mc_f, here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_multiclass_filtered.rds"))
+
 saveRDS(out_ml,   here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_multilabel.rds"))
 saveRDS(out_ml_f, here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_multilabel_filtered.rds"))
+
+saveRDS(out_lp,   here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_labelpowerset.rds"))
+saveRDS(out_lp_f, here("0. Data/1. Output/clsf_ensembles/clsf_ensemble_labelpowerset_filtered.rds"))
 
 write_w_search_to_xlsx(out_mc,   multiclass_probs, "Multiclass")
 write_w_search_to_xlsx(out_mc_f, filterd_mc_probs, "Multiclass filtered")
 
 write_w_search_to_xlsx(out_ml,   multilabel_probs, "Multilabel")
 write_w_search_to_xlsx(out_ml_f, filterd_ml_probs, "Multilabel filtered")
+
+write_w_search_to_xlsx(out_lp,   lp_probs, "Label Powerset")
+write_w_search_to_xlsx(out_lp_f, filterd_lp_probs, "Label Powerset filtered")
 ```
-
-
-ГОЛОСОВАНИЕ
 
 
 # 4. Метрики классификации
@@ -450,7 +473,11 @@ bind_rows(
 
 Распределение C-индекса
 ```{r}
-pso_w2 <- particle_swarm_weights(multilabel_probs, Y_test)
-prob <- scalar_matrix_production(pso_w2, multilabel_probs)
+# pl <- multiclass_probs %>% 
+#   scalar_matrix_production(particle_swarm_weights(., Y_test), .) %>% 
+#   distr_metric(., Y_test, func = calc_C_index)
+
+pso_w <- particle_swarm_weights(multiclass_probs, Y_test)
+prob <- scalar_matrix_production(pso_w, multiclass_probs)
 distr_metric(prob, Y_test, func = calc_C_index)
 ```
