@@ -31,15 +31,21 @@ matr_cind <- function(prob_matrix, Y_true) {
 }
 
 
-weighted_cindex <- function(w_, matr_list, Y_true = Y_test) {
+weighted_cindex <- function(w_, matr_list, Y_true = Y_test, label = NULL) {
   res <- scalar_matrix_production(w_, matr_list) %>%
     df_metric(., Y_true, func = calc_C_index)
-  return(res)
+  if (!is.null(label)) {
+    cat(label, ":\t", round(res, 3), "\n")
+    return(invisible(res))
+  } else {
+    return(res)
+  }
 }
 
 
 ## 2.2 Функции                                                     ####
 
+# Шэпли + Монте-Карло
 approx_shapley <- function(prob_list, Y_true, metric_fn = matr_cind, R = 500) {
   M <- length(prob_list)
   N <- nrow(prob_list[[1]])
@@ -71,6 +77,7 @@ approx_shapley <- function(prob_list, Y_true, metric_fn = matr_cind, R = 500) {
 }
 
 
+# Перебор по сетке, Random Search (при больших N, если быть точным)
 grid_search_weights <- function(models_probs, Y_true, step = 1.0) {
   M <- length(models_probs)
   ws_list <- lapply(seq_len(M), function(i) seq(0, 1, by = step))
@@ -86,16 +93,14 @@ grid_search_weights <- function(models_probs, Y_true, step = 1.0) {
   
   if (dt[, .N] > 1e4) dt <- dt[sample(.N, 1e4), ]
   
-  dt <- dt[, score := weighted_cindex(as.numeric(.SD), models_probs), by = .I, .SDcols = weight_cols]
-  
-  return(list(
-    best_weights = as.numeric(best[, weight_cols, with = FALSE]),
-    best_score   = dt[which.max(score)],
-    all_results  = dt
-  ))
+  dt <- dt %>% copy() %>% 
+    .[, score := weighted_cindex(as.numeric(.SD), models_probs), by = .I, .SDcols = weight_cols]
+  w <- as.numeric(best[, weight_cols, with = FALSE])
+  return(w / sum(w))
 }
 
 
+# Стэкинг моделей, решение с помощью квадратичного линейного программирования
 stacking_qp_weights <- function(models_probs, Y_true_onehot) {
   M <- length(models_probs)
   N <- nrow(Y_true_onehot); K <- ncol(Y_true_onehot)
@@ -117,7 +122,8 @@ stacking_qp_weights <- function(models_probs, Y_true_onehot) {
 }
 
 
-ga_optimize_weights <- function(models_probs, Y_true, popSize = 50, maxiter = 150, run = 50) {
+# Генетический алгоритм (мутации и скрещивания поколений в популяции)
+genetic_algorithm_weights <- function(models_probs, Y_true, popSize = 50, maxiter = 150, run = 50) {
   M <- length(models_probs)
   fitness <- function(x) weighted_cindex(x / sum(x), models_probs, Y_true)
   GAres <- GA::ga(
@@ -131,12 +137,12 @@ ga_optimize_weights <- function(models_probs, Y_true, popSize = 50, maxiter = 15
     monitor  = FALSE
   )
   w <- GAres@solution[1, ] 
-  w <- w / sum(w)
-  return(list(weights = w, score = GAres@fitnessValue))
+  return(w / sum(w))
 }
 
 
-pso_optimize_weights <- function(models_probs, Y_true, swarm_size = 50, maxit = 100) {
+# Метод роя частиц (Particle Swarm Opt)
+particle_swarm_weights <- function(models_probs, Y_true, swarm_size = 50, maxit = 100) {
   M <- length(models_probs)
   fn_pso <- function(x) {-weighted_cindex(x / sum(x), models_probs, Y_true)}
   PSOres <- pso::psoptim(
@@ -144,23 +150,23 @@ pso_optimize_weights <- function(models_probs, Y_true, swarm_size = 50, maxit = 
     fn        = fn_pso,
     lower     = rep(0, M),
     upper     = rep(1, M),
-    control   = list(swarm.size = swarm_size, maxit = maxit)
+    control   = list(s = swarm_size, maxit = maxit, trace = FALSE)
   )
   w <- PSOres$par
-  w <- w / sum(w)
-  return(list(weights = w, score = -PSOres$value))
+  return(w / sum(w))
 }
 
 
+# Байесовская оптимизация
 # it runs (init_points + n_iter) times
-bayes_optimize_weights <- function(models_probs, Y_true, init_points = 10, n_iter = 20) {
+bayes_optimize_weights <- function(models_probs, Y_true, init_points = 15, n_iter = 20) {
   M <- length(models_probs)
   # задаём границы x1…xM ∈ [0,1]
   bounds <- setNames(rep(list(c(0, 1)), M), paste0("x", seq_len(M)))
   
   FUN <- function(...) {
-    xs <- c(...)
-    list(Score = weighted_cindex(xs / sum(xs), models_probs, Y_true), Pred = 0)
+    w <- c(...)
+    list(Score = weighted_cindex(w / sum(w), models_probs, Y_true), Pred = 0)
   }
   
   BO_res <- rBayesianOptimization::BayesianOptimization(
@@ -170,10 +176,8 @@ bayes_optimize_weights <- function(models_probs, Y_true, init_points = 10, n_ite
     n_iter      = n_iter,
     verbose     = FALSE
   )
-  
-  xs_best <- unlist(BO_res$Best_Par)
-  w       <- xs_best / sum(xs_best)
-  return(list(weights = w, score = BO_res$Best_Value))
+  w <- unlist(BO_res$Best_Par)
+  return(w / sum(w))
 }
 
 
@@ -205,7 +209,5 @@ coordinate_optimize_weights <- function(models_probs, Y_true, tol = 1e-4, max_it
     # проверяем сходимость
     if (max(abs(w - w_old)) < tol) break
   }
-  
-  score <- weighted_cindex(w, models_probs, Y_true)
-  return(list(weights = w, score = score, iterations = iter))
+  return(w)
 }

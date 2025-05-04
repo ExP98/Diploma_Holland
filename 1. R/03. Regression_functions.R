@@ -89,6 +89,61 @@ show_custom_metrics <- function(my_pred, case_name, Y_test_ = Y_test, need_to_co
 }
 
 
+# Распределение значений метрики (аналогично df_metric, но в без усреднения)
+distr_metric <- function(pred_df, Y_test_, func = calc_C_index) {
+  values <- sapply(1:nrow(Y_test_), \(i) func(pred_df[i, ], Y_test_[i, ]))
+  p <- plot_cindex_hist(values)
+  return(p)
+}
+
+
+plot_cindex_hist <- function(values) {
+  values <- as.numeric(na.omit(values))
+  mean_val   <- mean(values)
+  median_val <- median(values)
+  
+  dens <- density(values, from = 0, to = 18)
+  dens_counts <- dens$y * 100
+  
+  p <- plot_ly() %>%
+    add_histogram(x = values, xbins = list(start = 0, end = 18, size = 1), histnorm = "percent",
+                  marker = list(color = "lightsteelblue", line  = list(color = "white", width = 1)),
+                  showlegend = FALSE) %>%
+    add_lines(x = dens$x, y = dens_counts, mode = "lines", line = list(color = "slategray", width = 2), 
+              showlegend = FALSE) %>%
+    layout(title = "Распределение C-индекса", 
+          xaxis = list(title = "Значения C-индекса", range = c(0, 18), 
+                       zeroline = TRUE, showline = TRUE, linecolor = "black",
+                       zerolinecolor = "black", zerolinewidth = 1),
+          yaxis = list(title = "Доля ответов, %", ticksuffix = "", rangemode = "tozero", 
+                       zeroline = TRUE, showline = TRUE, linecolor = "black", 
+                       zerolinecolor = "black", zerolinewidth = 1),
+          bargap = 0.1,
+          shapes = list(
+            list(type = "line", x0 = mean_val,   x1 = mean_val,   y0 = 0, y1 = 1, yref = "paper", 
+                 line = list(color = "red", dash = "dash")),
+            list(type = "line", x0 = median_val, x1 = median_val, y0 = 0, y1 = 1, yref = "paper",
+                 line = list(color = "blue", dash = "dash"))
+          ),
+          annotations = list(
+            list(
+              x         = median_val, y = 0.95, xref = "x", yref = "paper",
+              text      = paste0("Медиана = ", round(median_val, 2)),
+              xanchor   = "left", showarrow = FALSE,
+              font      = list(family = "Times New Roman, serif", size = 12, color = "blue")
+            ),
+            list(
+              x         = mean_val, y = 0.95, xref = "x", yref = "paper",
+              text      = paste0("Среднее = ", round(mean_val, 2)),
+              xanchor   = "right", showarrow = FALSE,
+              font      = list(family = "Times New Roman, serif", size = 12, color = "red")
+            )
+          )
+        )
+  return(p)
+}
+
+
 # 2.2 Преобразования данных                               ####
 
 pca_scaler <- function(X_df, pca_model_, k = 32) {

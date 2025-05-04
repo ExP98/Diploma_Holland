@@ -331,12 +331,12 @@ multilabel_probs <- map2(
 ```
 
 ```{r}
-mat <- multiclass_probs
-# mat <- multilabel_probs
+# mat <- multiclass_probs
+mat <- multilabel_probs
 
 ## 1. Равные веса
 w <- rep(1/length(mat), length(mat))
-weighted_cindex(w, mat)
+weighted_cindex(w, mat, label = "equal w")
 
 ## 2. Веса на основе вектора Шэпли
 # appr_w1 <- approx_shapley_cpp(mat, Y_test, matr_cind, R = 1000)
@@ -347,7 +347,7 @@ weighted_cindex(w, mat)
 
 ## 3. Веса на основе метрик каждого
 w <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
-weighted_cindex(w, mat)
+weighted_cindex(w, mat, label = "metric prop")
 
 
 ## 3.2 Уберем худшие
@@ -364,36 +364,7 @@ w <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
 w <- mclust::softmax(w)
 # softmax бессмысленно занулять
 
-weighted_cindex(w, mat)
-```
-
-```{r}
-w <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
-w_norm <- cut_w(w, qnt_prob = 0.67)
-sngnf_ind <- which(w_norm > 1e-3)
-
-filtered_w <- w[sngnf_ind]
-filtered_matr <- mat[sngnf_ind]
-```
-
-
-Шэпли
-```{r}
-library(tictoc)
-# mat <- mat
-mat <- filtered_matr
-
-tic()
-appr_w1 <- approx_shapley_cpp(mat, Y_test, matr_cind, R = 1000)
-toc()
-
-tic()
-appr_w2 <- approx_shapley(mat, Y_test, matr_cind)
-toc()
-
-weighted_cindex(appr_w1, mat)
-weighted_cindex(appr_w2, mat)
-beepr::beep()
+weighted_cindex(w, mat, label = "softmax")
 ```
 
 Обрезать малые веса:
@@ -407,21 +378,49 @@ w_b_cut <- cut_w(w_b, qnt_prob = 0.67)
 sapply(list(w, w_cut, w_b, w_b_cut), \(w_) weighted_cindex(w_, mat))
 ```
 
+```{r}
+w <- sapply(mat, \(probs) df_metric(probs, Y_test, func = calc_C_index))
+w_norm <- cut_w(w, qnt_prob = 0.67)
+sngnf_ind <- which(w_norm > 1e-3)
+
+filtered_w <- w[sngnf_ind]
+filtered_matr <- mat[sngnf_ind]
+```
+
+Шэпли
+```{r}
+library(tictoc)
+# mat <- mat
+mat <- filtered_matr
+
+tic()
+appr_w1 <- approx_shapley_cpp(mat, Y_test, matr_cind, R = 500)
+toc()
+
+tic()
+appr_w2 <- approx_shapley(mat, Y_test, matr_cind)
+toc()
+
+weighted_cindex(appr_w1, mat)
+weighted_cindex(appr_w2, mat)
+beepr::beep()
+```
+
 Сразу уберем малые веса и применим остальные методы:
 ```{r}
 # 1. Просто без всего
-weighted_cindex(filtered_w, filtered_matr)
+weighted_cindex(filtered_w, filtered_matr, label = "filtered w")
 
 
 # 2. Шэпли
 # shap_fltr_w <- approx_shapley_cpp(filtered_matr, Y_test, matr_cind, R = 1000)
-shap_fltr_w <- approx_shapley(filtered_matr, Y_test)
-weighted_cindex(shap_fltr_w, filtered_matr)
+shap_w <- approx_shapley(filtered_matr, Y_test)
+weighted_cindex(shap_w, filtered_matr, label = "Approx Shap")
 
 
 # 3. grid search
-gs_fltr_res <- grid_search_weights(filtered_matr, Y_test)
-weighted_cindex(gs_fltr_res$best_weights, filtered_matr)
+gs_w <- grid_search_weights(filtered_matr, Y_test)
+weighted_cindex(gs_w, filtered_matr, label = "Grid Search")
 
 
 # 4. stacking_qp_weights 
@@ -430,37 +429,37 @@ Y_one_hot <- apply(Y_b_test, 2, as.integer)
 w_qp1 <- stacking_qp_weights(filtered_matr, Y_one_hot) %>% round(4)
 w_qp2 <- stacking_qp_weights(mat, Y_one_hot) %>% round(4)
 
-weighted_cindex(w_qp1, filtered_matr)
-weighted_cindex(w_qp2, mat)
+weighted_cindex(w_qp1, filtered_matr, label = "QP filtered")
+weighted_cindex(w_qp2, mat, label = "QP full")
 
 
 # 5. GA
 # быстро
-ga_res1 <- ga_optimize_weights(filtered_matr, Y_test)
-ga_res2 <- ga_optimize_weights(mat, Y_test)
+ga_w1 <- genetic_algorithm_weights(filtered_matr, Y_test)
+ga_w2 <- genetic_algorithm_weights(mat, Y_test)
 
-weighted_cindex(ga_res1$weights, filtered_matr)
-weighted_cindex(ga_res2$weights, mat)
+weighted_cindex(ga_w1, filtered_matr, label = "GA filtered")
+weighted_cindex(ga_w2, mat, label = "GA full")
 
 
 # 6. pso_optimize_weights
 # быстро
-pso_res1 <- pso_optimize_weights(filtered_matr, Y_test)
-pso_res2 <- pso_optimize_weights(mat, Y_test)
+pso_w1 <- particle_swarm_weights(filtered_matr, Y_test)
+pso_w2 <- particle_swarm_weights(mat, Y_test)
 
-weighted_cindex(pso_res1$weights, filtered_matr)
-weighted_cindex(pso_res2$weights, mat)
+weighted_cindex(pso_w1, filtered_matr, label = "PSO filtered")
+weighted_cindex(pso_w2, mat, label = "PSO full")
 
 
 # 7. bayes_optimize_weights
 # долго...
-bo_res <- bayes_optimize_weights(filtered_matr, Y_test)
-weighted_cindex(bo_res$weights, filtered_matr)
+bo_w <- bayes_optimize_weights(filtered_matr, Y_test)
+weighted_cindex(bo_w, filtered_matr, label = "Bayes Opt")
 
 
 # 8. coordinate_optimize_weights
-сo_res <- coordinate_optimize_weights(filtered_matr, Y_test)
-weighted_cindex(сo_res$weights, filtered_matr)
+сo_w <- coordinate_optimize_weights(filtered_matr, Y_test)
+weighted_cindex(сo_w, filtered_matr, label = "Coordinate optimize")
 ```
 Вывод: исключение "слабых" алгоритмов, лишь затем их комбо. Это улучшает результаты + серьезно сокращает вычисления
 
@@ -476,4 +475,11 @@ bind_rows(
   calc_classification_metrics(Y_pred_rf, Y_b_test, "Random Forest"),
   calc_classification_metrics(Y_rand,    Y_b_test, "Random (baseline)")
 )
+```
+
+Распределение C-индекса
+```{r}
+pso_w2 <- particle_swarm_weights(multilabel_probs, Y_test)
+prob <- scalar_matrix_production(pso_w2, multilabel_probs)
+distr_metric(prob, Y_test, func = calc_C_index)
 ```
