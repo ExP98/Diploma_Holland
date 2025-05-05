@@ -181,7 +181,7 @@ lapply(xgb_ind_pred, \(x) x$calc_importance())
 ```{r}
 LightGBM_models <- vector("list", 6)
 for (col_i in 1:6) {
-  LightGBM_models[[col_i]] <- my_LightGBM_model$new(X_train, Y_train[, col_i], X_test, Y_test_[, col_i])
+  LightGBM_models[[col_i]] <- my_LightGBM_model$new(X_train, Y_train[, col_i], X_test, Y_test[, col_i])
 }
 
 res <- lapply(1:6, \(i) lgb.importance(LightGBM_models[[i]]$model, percentage = TRUE)[, .(col = i, Feature, Gain)]) %>% 
@@ -198,7 +198,7 @@ importance_df <- data.table(
   .[cumsum_imp <= 0.55] %>% 
   .[, names(.SD) := round(.SD, 3), .SDcols = c("avg_imp", "cumsum_imp")]
 
-xlsx::write.xlsx(importance_df, "temporal.xlsx")
+xlsx::write.xlsx(importance_df, here("0. Data/1. Output/feature_importance.xlsx"))
 ```
 
 
@@ -235,10 +235,10 @@ show_custom_metrics(lm_ind_pred, "lm")
 ```
 
 ```{r}
-.[lm_ind_pred, lm_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_lm_model, X_train, Y_train, X_test, Y_test, T, F
-)
+# .[lm_ind_pred, lm_chain_pred] <- map(
+#   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+#   my_lm_model, X_train, Y_train, X_test, Y_test, T, F
+# )
 ```
 
 
@@ -421,14 +421,23 @@ final_pred %>%
 ## 3.9 Результирущий датасет с предсказаниями
           
 ```{r}
-models_df <- data.table(
-  model = c(NA, my_lm_model, NA, NA, my_XGBoost_model, my_LightGBM_model, my_Catboost_model,
-            my_RandomForest_model, my_knn_model, my_SVR_model),
-  name = c("const", "lm", "Lasso L1", "Ridge L2", "XGBoost", "LightGBM", "CatBoost", 
-           "Random Forest", "kNN", "SVR"),
-  need_MO = c(F, T, F, F, rep(T, 6))
-)
+models_df <- tribble(
+  ~model,                 ~name,          ~need_MO,
+  NA,                     "const",        FALSE,
+  my_lm_model,            "lm",           TRUE,
+  NA,                     "Lasso L1",     FALSE,
+  NA,                     "Ridge L2",     FALSE,
+  my_XGBoost_model,       "XGBoost",      TRUE,
+  my_LightGBM_model,      "LightGBM",     TRUE,
+  my_Catboost_model,      "CatBoost",     TRUE,
+  my_RandomForest_model,  "Random Forest",TRUE,
+  my_knn_model,           "kNN",          TRUE,
+  my_SVR_model,           "SVR",          TRUE
+) %>% as.data.table()
+```
 
+
+```{r}
 MO_res <- models_df %>% 
   copy() %>% 
   .[need_MO == TRUE, pred := map(model, \(mdl) perform_MO_regression(mdl, "stack"))] %>% 
