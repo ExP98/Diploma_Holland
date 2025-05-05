@@ -323,8 +323,7 @@ multiclass_probs <- map2(
   \(fn, args) exec(fn, X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test, !!!args) %>% as.matrix()
 )
 
-names(multiclass_probs) <- multiclass_experiments[["label"]] %>%
-  str_replace_all(" multiclass| multilabel", "")
+names(multiclass_probs) <- multiclass_experiments[["label"]] %>% str_remove(" multi(class|label)")
 
 multilabel_probs <- map2(
   multilabel_experiments$multlbl_clsf_func,
@@ -332,8 +331,7 @@ multilabel_probs <- map2(
   \(fn, args) exec(fn, X_train = X_train, Y_b_train = Y_b_train, X_test = X_test, !!!args) %>% as.matrix()
 )
 
-names(multilabel_probs) <- multilabel_experiments[["label"]] %>%
-  str_replace_all(" multiclass| multilabel", "")
+names(multilabel_probs) <- multilabel_experiments[["label"]] %>% str_remove(" multi(class|label)")
 
 
 # Для возможности вычисления C-индекса преобразуем "XYZ" в [T, F, T, ...] -> [1, 0, 1, ...] и далее работаем как обычно
@@ -415,9 +413,9 @@ w_config <- tribble(
 
 ```{r}
 # tmp_cfg <- config[!method %in% c(approx_shapley, bayes_optimize_weights)]
-filterd_mc_probs <- cut_matr(multiclass_probs)
-filterd_ml_probs <- cut_matr(multilabel_probs)
-filterd_lp_probs <- cut_matr(lp_probs)
+filterd_mc_probs <- cut_matr(multiclass_probs, Y_true = Y_test)
+filterd_ml_probs <- cut_matr(multilabel_probs, Y_true = Y_test)
+filterd_lp_probs <- cut_matr(lp_probs, Y_true = Y_test)
 
 out_mc   <- run_weights_search_experiments(w_config, multiclass_probs, Y_test)
 out_mc_f <- run_weights_search_experiments(w_config, filterd_mc_probs, Y_test)
@@ -455,6 +453,39 @@ write_w_search_to_xlsx(out_ml_f, filterd_ml_probs, "Multilabel filtered")
 
 write_w_search_to_xlsx(out_lp,   lp_probs, "Label Powerset")
 write_w_search_to_xlsx(out_lp_f, filterd_lp_probs, "Label Powerset filtered")
+```
+
+
+### Проверка на валидационной выборке
+
+На примере multiclass filtered. Предсказываем весь тест. Затем половину теста используем как валидационную, на ней настраиваем веса (гиперпараметры). На оставшейся половине теста (истинный тест) применяем веса и вычисляем метрику.
+```{r}
+mc_predicted_probs <- map2(
+  multiclass_experiments$multcls_clsf_func,
+  multiclass_experiments$params,
+  \(fn, args) exec(fn, X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test, !!!args) %>% as.matrix()
+)
+
+names(mc_predicted_probs) <- multiclass_experiments[["label"]] %>% str_remove(" multi(class|label)")
+
+nn <- round(nrow(X_test)/2)
+valid_probs <- lapply(mc_predicted_probs, \(mat) mat[1:nn, ])
+test_probs  <- lapply(mc_predicted_probs, \(mat) mat[(nn+1):nrow(mat), ])
+
+.[mc_Y_valid, mc_Y_test] <- list(Y_test[1:nn, ], Y_test[(nn+1):nrow(Y_test), ])
+```
+
+```{r}
+flt_valid_probs <- cut_matr(valid_probs, Y_true = mc_Y_valid)
+# w <- particle_swarm_weights(flt_valid_probs, mc_Y_valid)
+
+res <- run_weights_search_experiments(w_config, flt_valid_probs, mc_Y_valid)
+
+cind_valid <- sapply(res$w, \(w_) weighted_cindex_value(w_, flt_valid_probs, Y_true = mc_Y_valid))
+cind_test <- sapply(res$w, \(w_) weighted_cindex_value(w_, test_probs[names(flt_valid_probs)], Y_true = mc_Y_test))
+
+res[, ':='(cind_valid = cind_valid, cind_test = cind_test)]
+res
 ```
 
 

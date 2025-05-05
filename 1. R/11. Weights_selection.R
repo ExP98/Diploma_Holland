@@ -22,8 +22,8 @@ cut_w <- function(w, threshold = 9.5, qnt_prob = NULL) {
 }
 
 
-cut_matr <- function(matr, qnt_prob = 0.67) {
-  w <- sapply(matr, \(probs) df_metric(probs, Y_test, func = calc_C_index))
+cut_matr <- function(matr, qnt_prob = 0.67, Y_true = Y_test) {
+  w <- sapply(matr, \(probs) df_metric(probs, Y_true, func = calc_C_index))
   w <- cut_w(w, qnt_prob = qnt_prob)
   sngnf_ind <- which(w > 1e-3)
   filtered_matr <- matr[sngnf_ind]

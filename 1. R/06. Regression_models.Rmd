@@ -33,7 +33,7 @@ X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
 
 nn <- round(nrow(X_test)/2)
 .[X_test, X_valid] <- list(X_test[1:nn, ], X_test[(nn+1):nrow(X_test), ])
-.[Y_test, Y_valid] <- list(Y_test[1:nn, ], Y_test[(nn+1):nrow(X_test), ])
+.[Y_test, Y_valid] <- list(Y_test[1:nn, ], Y_test[(nn+1):nrow(Y_test), ])
 ```
 
 
