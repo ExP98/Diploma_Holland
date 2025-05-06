@@ -71,49 +71,6 @@ show_custom_metrics(rf_predictions, "RF", Y_test_ = Y_test)
 ```
 
 
-Проба
-```{r}
-models_df <- data.table(
-  model = c(my_LightGBM_model, my_XGBoost_model, my_RandomForest_model),
-  name = c("LightGBM", "XGBoost", "Random Forest")
-)
-
-MO_res <- models_df %>% 
-  copy() %>% 
-  .[, stack_pred := map(model, \(mdl) perform_MO_regression(mdl, "stack"))] %>% 
-  .[, chain_pred := map(model, \(mdl) perform_MO_regression(mdl, "chain"))] %>% 
-  .[, (c("stack_rmse", "chain_rmse")) := map(.SD, \(col) map_dbl(col, \(pred) df_metric(pred, Y_test, my_rmse))),
-    .SDcols = c("stack_pred", "chain_pred")] %>%
-  .[, (c("stack_cos", "chain_cos")) := map(.SD, \(col) map_dbl(col, \(pred) df_metric(pred, Y_test, cosine_dist))),
-    .SDcols = c("stack_pred", "chain_pred")] %>% 
-  .[, (c("stack_Cind", "chain_Cind")) := map(.SD, \(col) map_dbl(col, \(pred) df_metric(pred, Y_test, calc_C_index))),
-    .SDcols = c("stack_pred", "chain_pred")]
-```
-
-
-Попытка сделать настоящий стэкинг:
-```{r}
-x <- MO_res %>% 
-  copy() %>% 
-  .[, .(name, stack_pred, id = 1)] %>% 
-  dcast(id ~ name, value.var = "stack_pred") %>% 
-  .[, id := NULL]
-
-
-code_res_1 <- x %>% 
-  copy() %>% 
-  .[, names(.SD) := lapply(.SD, \(col) col[[1]][, 1])] %>% 
-  unnest(cols = c(LightGBM, `Random Forest`, XGBoost)) %>% 
-  as.data.table() %>% 
-  .[, paste0(names(.SD), "_resid") := lapply(.SD, \(col) col - Y_test[, 1])]
-
-RF_resid_pred <- my_RandomForest_model$new(code_res_1, Y_test[, 1])
-RF_resid_pred$pred_train
-my_rmse(RF_resid_pred$pred_train, Y_test[, 1])
-```
-Возможно, стоит просто собрать все фичи + ответы всех алгоримтов по первому (2му, 3му, 4му...) коду, обучить на этом очередной алгоритм.
-
-
 ## 3.1 Константный предсказатель
 ```{r}
 # const_pred <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
@@ -217,7 +174,12 @@ xlsx::write.xlsx(importance_df, here("0. Data/1. Output/feature_importance.xlsx"
 ```{r}
 .[rf_ind_pred, rf_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, X_train, Y_train, X_test, Y_test, T, F
+  my_RandomForest_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 500
+)
+
+.[rf_ind_pred, rf_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_RandomForest_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 2000
 )
 ```
 
@@ -291,7 +253,29 @@ for (k in c(2, 5, 7, 10, 12)) {
 ```
 
 
-## 3.9 Stacking 
+## 3.9 ExtraTree
+```{r}
+.[et_ind_pred, et_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_ET_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 500
+)
+```
+
+
+```{r}
+.[et_ind_pred, et_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_ET_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 1000
+)
+
+.[et_ind_pred, et_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_ET_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 2000
+)
+```
+
+
+## 3.10 Stacking 
 
 Настоящий стекинг
 ```{r}
@@ -418,42 +402,97 @@ final_pred %>%
 Стэкинг из lm, rpart, randomForest: Stacking. aRMSE: 1.98; aCindex: 9.926
 
 
-## 3.9 Результирущий датасет с предсказаниями
-          
+## 3.11 Результирущий датасет с предсказаниями
+
 ```{r}
-models_df <- tribble(
-  ~model,                 ~name,          ~need_MO,
-  NA,                     "const",        FALSE,
-  my_lm_model,            "lm",           TRUE,
-  NA,                     "Lasso L1",     FALSE,
-  NA,                     "Ridge L2",     FALSE,
-  my_XGBoost_model,       "XGBoost",      TRUE,
-  my_LightGBM_model,      "LightGBM",     TRUE,
-  my_Catboost_model,      "CatBoost",     TRUE,
-  my_RandomForest_model,  "Random Forest",TRUE,
-  my_knn_model,           "kNN",          TRUE,
-  my_SVR_model,           "SVR",          TRUE
-) %>% as.data.table()
+calc_regression_models <- function(regr_models_df, X_train_, Y_train_, X_test_, Y_test_) {
+  const_model <- matrix(rep(colMeans(Y_train_), each = nrow(Y_test_)), nrow = nrow(Y_test_))
+  
+  simple_lm <- function() {
+    lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., data = data.frame(X_train_, Y_train_))
+    pred <- predict(lm_model, newdata = X_test_ %>% as.data.frame())
+    return(pred)
+  }
+    
+  regulariz_lm <- function(alpha = 0) {
+    get_L1_L2_glmnet_preds(X_train_, Y_train_, X_test_, Y_test_, alpha = alpha, print_metric = FALSE)
+  }
+  
+  MO_res <- regr_models_df %>% 
+    copy() %>% 
+    .[need_MO == TRUE, pred := pmap(list(model, params), \(mdl, par) do.call(perform_stack_MO_regression,
+        c(list(mdl, X_train_, Y_train_, X_test_, Y_test_, print_model_name = FALSE), par)))] %>%
+    .[name == "const",    pred := map(model, \(mdl) const_model)] %>%
+    .[name == "lm",       pred := map(model, \(mdl) simple_lm())] %>%
+    .[name == "Lasso L1", pred := map(model, \(mdl) regulariz_lm(alpha = 1))] %>%
+    .[name == "Ridge L2", pred := map(model, \(mdl) regulariz_lm(alpha = 0))] %>%
+    .[, rmse := map_dbl(pred, \(x) df_metric(x, Y_test_, my_rmse) %>% round(3))] %>% 
+    .[map_lgl(pred, \(item) !is.null(item)), 
+      C_index := map_dbl(pred, \(x) df_metric(x, Y_test_, calc_C_index) %>% round(3))] %>% 
+    .[, .(name, pred, rmse, C_index)]
+  
+  return(MO_res)
+}
+```
+
+```{r}
+regr_experiments <- tribble(
+  ~model,                   ~name,                  ~need_MO, ~params,
+  NA,                       "const",                FALSE,    list(),
+  NA,                       "Lasso L1",             FALSE,    list(),
+  NA,                       "Ridge L2",             FALSE,    list(),
+  NA,                       "lm",                   FALSE,    list(),
+  my_stepwise_lm_model,     "stepwise lm",          TRUE,     list(),
+  my_XGBoost_model,         "XGBoost",              TRUE,     list(),
+  my_LightGBM_model,        "LightGBM",             TRUE,     list(),
+  my_Catboost_model,        "CatBoost",             TRUE,     list(),
+  my_RandomForest_model,    "Random Forest (500)",  TRUE,     list(ntree = 500),
+  my_RandomForest_model,    "Random Forest (1000)", TRUE,     list(ntree = 1000),
+  my_knn_model,             "kNN (k = 5)",          TRUE,     list(k = 5),
+  my_knn_model,             "kNN (k = 25)",         TRUE,     list(k = 25),
+  my_knn_model,             "kNN (k = 50)",         TRUE,     list(k = 50),
+  my_SVR_model,             "SVR",                  TRUE,     list(kernel = "sigmoid"),
+  my_ET_model,              "ExtraTree (500)",      TRUE,     list(ntree = 500),
+  my_ET_model,              "ExtraTree (2000)",     TRUE,     list(ntree = 2000)
+) %>%
+  as.data.table()
+```
+
+```{r}
+perform_MO_regression(my_knn_model, "chain")
+
+knn.reg(X_train, test = X_test_, y = as.data.frame(y_train), k = 5)
+
+X_train_ = X_train %>% copy()
+Y_train_ = Y_train %>% copy()
+X_test_  = X_test %>% copy()
+Y_test_  = Y_test %>% copy()
+
+y_train_ <- Y_train_[, 1]
+knn.reg(X_train_, test = X_test_, y = as.data.frame(y_train_), k = k)
 ```
 
 
 ```{r}
-MO_res <- models_df %>% 
-  copy() %>% 
-  .[need_MO == TRUE, pred := map(model, \(mdl) perform_MO_regression(mdl, "stack"))] %>% 
-  .[name == "const", pred := map(model, \(mdl) matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test)))] %>% 
-  .[name == "Lasso L1", pred := map(model, \(mdl) get_L1_L2_glmnet_preds(alpha = 1))] %>% 
-  .[name == "Ridge L2", pred := map(model, \(mdl) get_L1_L2_glmnet_preds(alpha = 0))] %>% 
-  .[, rmse := map_dbl(pred, \(x) df_metric(x, Y_test, my_rmse) %>% round(3))] %>% 
-  .[, cos := map_dbl(pred, \(x) df_metric(x, Y_test, cosine_dist) %>% round(3))] %>% 
-  .[map_lgl(pred, \(item) !is.null(item)), C_index := map_dbl(pred, \(x) df_metric(x, Y_test, calc_C_index) %>% round(3))]
+regr_res <- calc_regression_models(regr_experiments, X_train, Y_train, X_test, Y_test)
 
-MO_res[, -c("model", "need_MO", "pred", "cos")]
-MO_res[order(-C_index), -c("model", "need_MO", "pred", "cos")]
-
-xlsx::write.xlsx(MO_res[, -c("model", "need_MO", "pred", "cos")], "temporal.xlsx")
+xlsx::write.xlsx(regr_res[order(-C_index)], 
+                 here("0. Data/1. Output/regression_results.xlsx"), 
+                 "stack", row.names = FALSE, append = TRUE)
 ```
 
+
+```{r}
+regr_pred_matrices <- regr_res[, pred] %>% `names<-`(MO_res[, name])
+
+w_eq <- rep(1/length(regr_pred_matrices), length(regr_pred_matrices))
+weighted_cindex(w_eq, regr_pred_matrices, Y_test, label = "equal w")
+
+regr_w <- run_weights_search_experiments(w_config, regr_pred_matrices, Y_test)
+```
+
+Прогнать это же на PCA
+Добавить chain
 
 # 4. PCA
 

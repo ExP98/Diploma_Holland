@@ -182,9 +182,9 @@ my_RandomForest_model <- R6Class(
   ),
   
   private = list(
-    fit = function(X_train_, y_train_) {
+    fit = function(X_train_, y_train_, ntree = 1000) {
       # na.action = na.omit,
-      self$model <- randomForest(x = X_train_, y = y_train_, ntree = 1000, importance = TRUE) 
+      self$model <- randomForest(x = X_train_, y = y_train_, ntree = ntree, importance = TRUE) 
       return(invisible(self))
     }
   )
@@ -327,10 +327,7 @@ my_knn_model <- R6Class(
   inherit = my_template_model,
   
   public = list(
-    initialize = function(X_train_, y_train_, X_test_, y_test_ = NULL, ...) {
-      k <- list(...) %>% pluck("k")
-      if (is.null(k)) k <- 10
-      
+    initialize = function(X_train_, y_train_, X_test_, y_test_ = NULL, k = 10, ...) {
       private$fit(X_train_, y_train_, X_test_, k = k)
       self$pred_test <- private$predict(X_test_, is_test = TRUE)
       if (!is.null(y_test_) && !is.null(self$pred_test)) private$calc_rmse(y_test_, self$pred_test)
@@ -340,7 +337,7 @@ my_knn_model <- R6Class(
   
   private = list(
     fit = function(X_train_, y_train_, X_test_, k) {
-      self$model <- knn.reg(X_train_, test = X_test_, y = y_train_, k = k)
+      self$model <- knn.reg(as.data.frame(X_train_), test = as.data.frame(X_test_), y = as.data.frame(y_train_), k = k)
       return(invisible(self))
     },
     
@@ -359,9 +356,31 @@ my_SVR_model <- R6Class(
   inherit = my_template_model,
   
   private = list(
-    fit = function(X_train_, y_train_, ...) {
-      self$model <- svm(x = X_train_, y = y_train_, ...)
+    fit = function(X_train_, y_train_, kernel =  "sigmoid", ...) {
+      self$model <- svm(x = X_train_, y = y_train_, kernel = kernel, ...)
       return(invisible(self))
+    }
+  )
+)
+
+
+# 3.10 my_ET_model                                          ####
+my_ET_model <- R6Class(
+  classname = "my_ET_model",
+  inherit = my_template_model,
+  
+  private = list(
+    fit = function(X_train_, y_train_, ntree = 1000, ...) {
+      self$model <- ranger(formula = y ~ .,  data = data.frame(X_train_, y = y_train_), 
+                           num.trees = ntree, splitrule = "extratrees", ...)
+      
+      return(invisible(self))
+    },
+    
+    predict = function(X_, is_test = FALSE) {
+      preds <- predict(self$model, X_)$predictions
+      if (is_test) self$pred_test <- preds
+      return(preds)
     }
   )
 )

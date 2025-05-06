@@ -233,13 +233,11 @@ get_k_PCA_model_table <- function(model, by = 5, X_train_ = X_train, X_test_ = X
 
 
 # 2.3 MO -- multioutput        ####
-perform_MO_regression <- function(model_class, type = c("stack", "chain"), ...) {
+perform_MO_regression <- function(model_class, type = c("stack", "chain"), X_train_ = X_train, 
+                                  Y_train_ = Y_train, X_test_ = X_test, Y_test_ = Y_test, ...) {
   type <- match.arg(type)
-  pred <- if (type == "stack") {
-    perform_stack_MO_regression(model_class, X_train, Y_train, X_test, Y_test, print_metric = FALSE, ...)
-  } else {
-    perform_chain_MO_regression(model_class, X_train, Y_train, X_test, Y_test, print_metric = FALSE, ...)
-  }
+  method_f <- if (type == "stack") perform_stack_MO_regression else perform_chain_MO_regression
+  pred <- method_f(model_class, X_train_, Y_train_, X_test_, Y_test_, print_metric = FALSE, ...)
   return(pred)
 }
 

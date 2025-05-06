@@ -65,7 +65,7 @@ X[i, ] --> top3_lbl, ... (это k = 3)
 k = 1 значит, что для каждой строки берем лишь один наиболее значимый лейбл, а не 3
 
 ```{r}
-classification_test_framework(Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_SVM, n_retry = 1,
+classification_test_framework(Y_test, Y_b_test, clsf_func = multiclass_pred_by_SVM, n_retry = 1,
                               label = "", X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test,
                               kernel = "sigmoid", k = 3)
 ```
@@ -75,7 +75,7 @@ classification_test_framework(Y_test, Y_b_test, multlbl_clsf_func = multiclass_p
 print("k = 3")
 lapply(c("linear", "polynomial", "radial", "sigmoid"),
        \(krnl) classification_test_framework(
-         Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_SVM, n_retry = 5, 
+         Y_test, Y_b_test, clsf_func = multiclass_pred_by_SVM, n_retry = 5, 
          label = krnl, X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test,
          kernel = krnl, k = 3
         )
@@ -84,7 +84,7 @@ lapply(c("linear", "polynomial", "radial", "sigmoid"),
 print("k = 1")
 lapply(c("linear", "polynomial", "radial", "sigmoid"),
        \(krnl) classification_test_framework(
-         Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_SVM, n_retry = 5, 
+         Y_test, Y_b_test, clsf_func = multiclass_pred_by_SVM, n_retry = 5, 
          label = krnl, X_train_ = X_train, Y_train_ = Y_train, X_test_ = X_test,
          kernel = krnl, k = 1
         )
@@ -100,7 +100,7 @@ lapply(seq(0.3, 1, 0.1), \(s) {
   .[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = s)
   
   classification_test_framework(
-    Y_test, Y_b_test, multlbl_clsf_func = multiclass_pred_by_SVM, n_retry = 5, 
+    Y_test, Y_b_test, clsf_func = multiclass_pred_by_SVM, n_retry = 5, 
     label = s, X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca
   )
 }) %>% bind_rows()
@@ -121,7 +121,7 @@ Multilabel
 ```{r}
 lapply(seq(5, 55, by = 5), \(k_neighb) {
   classification_test_framework(
-    Y_test, Y_b_test, multlbl_clsf_func = multilabel_knn_clsf, n_retry = 10, 
+    Y_test, Y_b_test, clsf_func = multilabel_knn_clsf, n_retry = 10, 
     label = str_glue("kNN ({k_neighb}) multilabel"), X_train = X_train, Y_b_train = Y_b_train, 
     X_test = X_test, k_neighb = k_neighb
   )
