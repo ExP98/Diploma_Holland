@@ -393,22 +393,6 @@ lapply(seq(0.1, 1, 0.05),
 
 ### Единый фреймворк для проверки
 
-
-```{r}
-w_config <- tribble(
-  ~method,                     ~label,           ~params,
-  simple_weights,              "Simple w",       list(list()),
-  filtered_weights,            "Filtered w",     list(list(qnt_prob = 0.67)),
-  approx_shapley,              "Approx Shap",    list(list(R = 500)),
-  grid_search_weights,         "Grid Search",    list(list(step = 1.0)),
-  stacking_qp_weights,         "QP",             list(list()),
-  genetic_algorithm_weights,   "GA",             list(list(popSize = 50, maxiter = 150)),
-  particle_swarm_weights,      "PSO",            list(list(swarm_size = 50, maxit = 100)),
-  # bayes_optimize_weights,      "Bayes Opt",      list(list(init_points = 15, n_iter = 15)),
-  coordinate_optimize_weights, "Coord. Asc",     list(list(tol = 1e-4, max_iter = 20))
-) %>% 
-  as.data.table()
-```
 Вывод: исключение "слабых" алгоритмов, лишь затем их комбо. Это улучшает результаты + серьезно сокращает вычисления
 
 ```{r}

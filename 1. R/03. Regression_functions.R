@@ -284,3 +284,25 @@ perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_
   if (print_metric) print(show_custom_metrics(chain_pred, paste0(model_class$classname, " Chained"), Y_test_ = Y_test_))
   return(invisible(chain_pred))
 }
+
+
+calc_regression_models <- function(regr_models_df, MO_strategy = c("stack", "chain"),
+                                   X_train_, Y_train_, X_test_, Y_test_) {
+  MO_strategy <- match.arg(MO_strategy)
+  
+  MO_res <- regr_models_df %>% 
+    copy() %>% 
+    .[need_MO == T, pred := pmap(list(model, params), \(mdl, par) do.call(perform_MO_regression, 
+        c(list(mdl, MO_strategy, X_train_, Y_train_, X_test_, Y_test_, print_model_name = F), par)))] %>%
+    .[need_MO == F, pred := pmap(list(model, params), \(mdl, par) 
+        do.call(mdl, c(list(X_train_, Y_train_, X_test_, Y_test_), par)))] %>% 
+    .[, rmse := map_dbl(pred, \(x) df_metric(x, Y_test_, my_rmse) %>% round(3))] %>% 
+    .[map_lgl(pred, \(item) !is.null(item)), 
+      C_index := map_dbl(pred, \(x) df_metric(x, Y_test_, calc_C_index) %>% round(3))] %>% 
+    .[, .(name, pred, rmse, C_index)]
+  
+  return(MO_res)
+}
+
+
+extract_matrices <- function(pred_res_df) return(pred_res_df[, pred] %>% `names<-`(pred_res_df[, name]))

@@ -13,11 +13,27 @@
 # library(e1071)
 # library(FNN)
 # library(glmnet)                         # Для многомерной регрессии
-library(MASS, include.only = "stepAIC") # Для stepwise регрессии
+# library(MASS, include.only = "stepAIC") # Для stepwise регрессии
 # library(pls)                            # Для многомерных методов
 
 
 # 2. Функции                                                     ####
+const_model <- function(X_train_ = NULL, Y_train_, X_test_ = NULL, Y_test_) {
+  pred <- matrix(rep(colMeans(Y_train_), each = nrow(Y_test_)), nrow = nrow(Y_test_))
+  return(pred)
+}
+
+
+simple_lm <- function(X_train_, Y_train_, X_test_, Y_test_ = NULL) {
+  lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., data = data.frame(X_train_, Y_train_))
+  pred <- predict(lm_model, newdata = X_test_ %>% as.data.frame())
+  return(pred)
+}
+
+regularized_lm <- function(X_train_, Y_train_, X_test_, Y_test_, alpha = 0) {
+  pred <- get_L1_L2_glmnet_preds(X_train_, Y_train_, X_test_, Y_test_, alpha = alpha, print_metric = F)
+  return(pred)
+}
 
 
 # 3. R6-Классы моделей                                           ####
@@ -327,21 +343,28 @@ my_knn_model <- R6Class(
   inherit = my_template_model,
   
   public = list(
+    xtrain = NULL,
+    ytrain = NULL,
+    k_neigb = NA_integer_,
+    
     initialize = function(X_train_, y_train_, X_test_, y_test_ = NULL, k = 10, ...) {
-      private$fit(X_train_, y_train_, X_test_, k = k)
-      self$pred_test <- private$predict(X_test_, is_test = TRUE)
+      self$xtrain <- copy(X_train_) %>% as.data.frame()
+      self$ytrain <- copy(y_train_) %>% as.data.frame()
+      self$k_neigb <- k
+      
+      self$pred_train <- private$predict(X_train_)
+      self$pred_test  <- private$predict(X_test_, is_test = TRUE)
+      
       if (!is.null(y_test_) && !is.null(self$pred_test)) private$calc_rmse(y_test_, self$pred_test)
       return(invisible(self))
     }
   ),
   
   private = list(
-    fit = function(X_train_, y_train_, X_test_, k) {
-      self$model <- knn.reg(as.data.frame(X_train_), test = as.data.frame(X_test_), y = as.data.frame(y_train_), k = k)
-      return(invisible(self))
-    },
-    
     predict = function(X_, is_test = FALSE) {
+      # У этого объекта нет метода predict, поэтому надо каждый раз передавать как трейн для обучения, так и тест для предсказания
+      # В атрибуте pred всегда содержатся предсказания на тесте
+      self$model <- knn.reg(self$xtrain, test = X_, y = self$ytrain, k = self$k_neigb)
       preds <- self$model$pred
       if (is_test) self$pred_test <- preds
       return(preds)

@@ -9,7 +9,22 @@
 libs <- c("Rcpp", "RcppArmadillo", "quadprog", "GA", "pso", "rBayesianOptimization")
 install_pkgs(libs)
 
-sourceCpp(paste0(here::here(), "/1. R/05._Rcpp_functions.cpp")) # rcpp_rmse, approx_shapley_cpp
+# sourceCpp(paste0(here::here(), "/1. R/05._Rcpp_functions.cpp")) # rcpp_rmse, approx_shapley_cpp
+
+w_config <- tribble(
+  ~method,                     ~label,           ~params,
+  equal_weights,               "Equal w",        list(list()),
+  simple_weights,              "Simple w",       list(list()),
+  filtered_weights,            "Filtered w",     list(list(qnt_prob = 0.67)),
+  approx_shapley,              "Approx Shap",    list(list(R = 500)),
+  grid_search_weights,         "Grid Search",    list(list(step = 1.0)),
+  stacking_qp_weights,         "QP",             list(list()),
+  genetic_algorithm_weights,   "GA",             list(list(popSize = 50, maxiter = 150)),
+  particle_swarm_weights,      "PSO",            list(list(swarm_size = 50, maxit = 100)),
+  # bayes_optimize_weights,      "Bayes Opt",      list(list(init_points = 15, n_iter = 15)),
+  coordinate_optimize_weights, "Coord. Asc",     list(list(tol = 1e-4, max_iter = 20))
+) %>% 
+  as.data.table()
 
 
 # 2. Функции                                                     ####
@@ -59,6 +74,13 @@ weighted_cindex_value <- function(w, matr_list, Y_true) {
 }
 
 
+weighted_rmse_value <- function(w, matr_list, Y_true) {
+  v <- scalar_matrix_production(w, matr_list) %>% 
+    df_metric(., Y_true, func = my_rmse)
+  return(v)
+}
+
+
 run_weights_search_experiments <- function(experiments_df, models_probs, Y_true) {
   evaluate_weights <- function(method_fun, models_probs, Y_true, ...) {
     w <- do.call(method_fun, c(list(models_probs = models_probs, Y_true = Y_true), ...))
@@ -77,7 +99,15 @@ run_weights_search_experiments <- function(experiments_df, models_probs, Y_true)
 }
 
 
-write_w_search_to_xlsx <- function(w_srch_res, matr, sheetname) {
+get_regr_w <- function(weight_config, matrices, Y_true) {
+  regr_w <- run_weights_search_experiments(weight_config, matrices, Y_true) %>% 
+    .[, rmse := sapply(w, \(w_vec) weighted_rmse_value(w_vec, matrices, Y_true))]
+  return(regr_w)
+}
+
+
+write_w_search_to_xlsx <- function(w_srch_res, matr, sheetname, 
+                                   filename = here("0. Data/1. Output/clsf_ensembles/clsf_ensembles_weights.xlsx")) {
   lbls <- names(matr)
   res <- w_srch_res %>% 
     copy() %>% 
@@ -89,8 +119,7 @@ write_w_search_to_xlsx <- function(w_srch_res, matr, sheetname) {
     setnames(old = as.character(1:length(lbls)), new = lbls) %>% 
     relocate(I, label, cindex)
   
-  xlsx::write.xlsx(res, here("0. Data/1. Output/clsf_ensembles/clsf_ensembles_weights.xlsx"), 
-                   sheetname, row.names = FALSE, append = TRUE)
+  xlsx::write.xlsx(res, filename, sheetname, row.names = FALSE, append = TRUE)
   return(invisible(res))
 }
 
@@ -267,6 +296,12 @@ coordinate_optimize_weights <- function(models_probs, Y_true, tol = 1e-4, max_it
     if (max(abs(w - w_old)) < tol) break
   }
   return(w)
+}
+
+
+equal_weights <- function(models_probs, Y_true = NULL) {
+  w <- rep(1/length(models_probs), length(models_probs))
+  return(w / sum(w))
 }
 
 

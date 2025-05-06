@@ -39,7 +39,7 @@ nn <- round(nrow(X_test)/2)
 
 # 3. Модель
 
-## Выбор предикторов
+## 3.1 Выбор предикторов
 Stepwise (back, forward), L2-regression
 
 ```{r}
@@ -57,7 +57,7 @@ features_stepw <- sapply(1:6, \(i) stepwise_results[[i]]$model %>% colnames() %>
 ```
 
 ```{r}
-### Метод 4: Многомерный случайный лес
+### Метод 2: Многомерный случайный лес
 rf_predictions <- matrix(0, nrow = nrow(X_test), ncol = ncol(Y_test))
 colnames(rf_predictions) <- colnames(Y_test)
 
@@ -71,50 +71,7 @@ show_custom_metrics(rf_predictions, "RF", Y_test_ = Y_test)
 ```
 
 
-## 3.1 Константный предсказатель
-```{r}
-# const_pred <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
-const_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test))
-
-show_custom_metrics(const_pred, "Константное")
-show_custom_metrics(const_pred %>% prediction_correction(), "Константное")
-```
-
-
-## 3.2 XGBoost
-
-### Число раундов
-Как выглядит модель, сколько раундов требуется:
-```{r}
-ii <- 1
-
-res <- vector("list", 20)
-for (i in 1:20) {
-  xgb_model <- xgboost(data = X_train, label = Y_train[, ii],
-                       nrounds = i, objective = "reg:squarederror", eval_metric = "rmse", verbose = 0)
-  
-  pred_y <- predict(xgb_model, X_test)
-  res[[i]] <- data.frame(
-    nrounds = i,
-    test_rmse = my_rmse(Y_test[, ii], pred_y),
-    test_round_rmse = my_rmse(Y_test[, ii], pred_y %>% round())
-  )
-}
-
-res %>% rbindlist() %>% .[["test_rmse"]] %>% plot(main = "test_rmse")
-res %>% rbindlist() %>% .[["test_round_rmse"]] %>% plot(main = "test_round_rmse")
-```
-15 раундов хватает.
-
-```{r}
-.[xgb_ind_pred, xgb_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_XGBoost_model, X_train, Y_train, X_test, Y_test, T, F
-)
-
-# perform_stack_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test, T, F)
-# perform_chain_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test, T, F)
-```
+## 3.2 Важность признаков
 
 ```{r}
 lapply(xgb_ind_pred, \(x) x$calc_importance())
@@ -123,18 +80,6 @@ lapply(xgb_ind_pred, \(x) x$calc_importance())
 
 Порядок предсказания может иметь значение!
 
-
-## 3.3 LightGBM
-
-```{r}
-.[lgbm_ind_pred, lgbm_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_LightGBM_model, X_train, Y_train, X_test, Y_test, T, F
-)
-```
-
-
-### Feature Importance
 ```{r}
 LightGBM_models <- vector("list", 6)
 for (col_i in 1:6) {
@@ -159,7 +104,17 @@ xlsx::write.xlsx(importance_df, here("0. Data/1. Output/feature_importance.xlsx"
 ```
 
 
-### Cross Validation
+## 3.3 Проверка отдельных параметров моделей
+
+### Константный предсказатель
+```{r}
+const_pred <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
+# const_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test))
+
+show_custom_metrics(const_pred, "Константное")
+```
+
+### LightGBM Cross Validation
 
 ```{r}
 .[lgbm_cv_ind_pred, lgbm_cv_chain_pred] <- map(
@@ -168,43 +123,19 @@ xlsx::write.xlsx(importance_df, here("0. Data/1. Output/feature_importance.xlsx"
 )
 ```
 
-
-## 3.4 Random Forest
-
-```{r}
-.[rf_ind_pred, rf_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 500
-)
-
-.[rf_ind_pred, rf_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 2000
-)
-```
-
-
-## 3.5 lm
+### Линейная регрессия (lm)
 
 ```{r}
-lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., 
-               data = data.frame(X_train, Y_train)
-               # , na.action = na.omit
-               )
-
-lm_ind_pred <- predict(lm_model, newdata = X_test %>% as.data.frame()) %>% prediction_correction()
+lm_ind_pred <- simple_lm(X_train, Y_train, X_test, Y_test)
 show_custom_metrics(lm_ind_pred, "lm")
 ```
 
 ```{r}
-# .[lm_ind_pred, lm_chain_pred] <- map(
-#   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-#   my_lm_model, X_train, Y_train, X_test, Y_test, T, F
-# )
-```
+.[lm_ind_pred, lm_chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_lm_model, X_train, Y_train, X_test, Y_test, T, F
+)
 
-
-```{r}
 .[lm_stepw_ind_pred, lm_stepw_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_stepwise_lm_model, X_train, Y_train, X_test, Y_test, T, F
@@ -216,7 +147,6 @@ lm_L2_pred <- get_L1_L2_glmnet_preds(alpha = 0) # Ridge
 lm_L1_pred <- get_L1_L2_glmnet_preds(alpha = 1) # Lasso
 ```
 
-
 При этом по отдельности результат хуже
 ```{r}
 perform_stack_MO_regression(my_L1_L2_glmnet_model, X_train, Y_train, X_test, Y_test, T, alpha = 0)
@@ -224,60 +154,20 @@ perform_stack_MO_regression(my_L1_L2_glmnet_model, X_train, Y_train, X_test, Y_t
 ```
 
 
-## 3.6 CatBoost
+### kNN
 
 ```{r}
-.[catb_ind_pred, catb_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, X_train %>% apply(2, as.double), Y_train, X_test %>% apply(2, as.double), Y_test, T, F
-)
-```
-
-
-## 3.7 kNN
-
-```{r}
-for (k in c(2, 5, 7, 10, 12)) {
+for (k in c(3, seq(5, ncol(X_train), 5))) {
   message(paste0("k = ", k))
   perform_stack_MO_regression(my_knn_model, X_train, Y_train, X_test, Y_test, T, F, k = k)
 }
 ```
+Лучше k = 5, 20 или 35
 
 
-## 3.8 SVR
-```{r}
-.[svr_ind_pred, svr_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_SVR_model, X_train, Y_train, X_test, Y_test, T, F
-)
-```
+## 3.4 Stacking 
 
-
-## 3.9 ExtraTree
-```{r}
-.[et_ind_pred, et_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_ET_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 500
-)
-```
-
-
-```{r}
-.[et_ind_pred, et_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_ET_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 1000
-)
-
-.[et_ind_pred, et_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_ET_model, X_train, Y_train, X_test, Y_test, T, F, ntree = 2000
-)
-```
-
-
-## 3.10 Stacking 
-
-Настоящий стекинг
+Настоящий стэкинг:
 ```{r}
 # library(stacking)
 # library(snow)
@@ -301,7 +191,6 @@ for (i in 1:6) {
     proportion = 0.8
   ) 
 }
-
 
 st_pred <- lapply(1:6, \(i) stacking_predict(newX = X_test, stacking_train_result[[i]]))
 st_pred %>% 
@@ -401,98 +290,6 @@ final_pred %>%
 
 Стэкинг из lm, rpart, randomForest: Stacking. aRMSE: 1.98; aCindex: 9.926
 
-
-## 3.11 Результирущий датасет с предсказаниями
-
-```{r}
-calc_regression_models <- function(regr_models_df, X_train_, Y_train_, X_test_, Y_test_) {
-  const_model <- matrix(rep(colMeans(Y_train_), each = nrow(Y_test_)), nrow = nrow(Y_test_))
-  
-  simple_lm <- function() {
-    lm_model <- lm(cbind(HL_1, HL_2, HL_3, HL_4, HL_5, HL_6) ~ ., data = data.frame(X_train_, Y_train_))
-    pred <- predict(lm_model, newdata = X_test_ %>% as.data.frame())
-    return(pred)
-  }
-    
-  regulariz_lm <- function(alpha = 0) {
-    get_L1_L2_glmnet_preds(X_train_, Y_train_, X_test_, Y_test_, alpha = alpha, print_metric = FALSE)
-  }
-  
-  MO_res <- regr_models_df %>% 
-    copy() %>% 
-    .[need_MO == TRUE, pred := pmap(list(model, params), \(mdl, par) do.call(perform_stack_MO_regression,
-        c(list(mdl, X_train_, Y_train_, X_test_, Y_test_, print_model_name = FALSE), par)))] %>%
-    .[name == "const",    pred := map(model, \(mdl) const_model)] %>%
-    .[name == "lm",       pred := map(model, \(mdl) simple_lm())] %>%
-    .[name == "Lasso L1", pred := map(model, \(mdl) regulariz_lm(alpha = 1))] %>%
-    .[name == "Ridge L2", pred := map(model, \(mdl) regulariz_lm(alpha = 0))] %>%
-    .[, rmse := map_dbl(pred, \(x) df_metric(x, Y_test_, my_rmse) %>% round(3))] %>% 
-    .[map_lgl(pred, \(item) !is.null(item)), 
-      C_index := map_dbl(pred, \(x) df_metric(x, Y_test_, calc_C_index) %>% round(3))] %>% 
-    .[, .(name, pred, rmse, C_index)]
-  
-  return(MO_res)
-}
-```
-
-```{r}
-regr_experiments <- tribble(
-  ~model,                   ~name,                  ~need_MO, ~params,
-  NA,                       "const",                FALSE,    list(),
-  NA,                       "Lasso L1",             FALSE,    list(),
-  NA,                       "Ridge L2",             FALSE,    list(),
-  NA,                       "lm",                   FALSE,    list(),
-  my_stepwise_lm_model,     "stepwise lm",          TRUE,     list(),
-  my_XGBoost_model,         "XGBoost",              TRUE,     list(),
-  my_LightGBM_model,        "LightGBM",             TRUE,     list(),
-  my_Catboost_model,        "CatBoost",             TRUE,     list(),
-  my_RandomForest_model,    "Random Forest (500)",  TRUE,     list(ntree = 500),
-  my_RandomForest_model,    "Random Forest (1000)", TRUE,     list(ntree = 1000),
-  my_knn_model,             "kNN (k = 5)",          TRUE,     list(k = 5),
-  my_knn_model,             "kNN (k = 25)",         TRUE,     list(k = 25),
-  my_knn_model,             "kNN (k = 50)",         TRUE,     list(k = 50),
-  my_SVR_model,             "SVR",                  TRUE,     list(kernel = "sigmoid"),
-  my_ET_model,              "ExtraTree (500)",      TRUE,     list(ntree = 500),
-  my_ET_model,              "ExtraTree (2000)",     TRUE,     list(ntree = 2000)
-) %>%
-  as.data.table()
-```
-
-```{r}
-perform_MO_regression(my_knn_model, "chain")
-
-knn.reg(X_train, test = X_test_, y = as.data.frame(y_train), k = 5)
-
-X_train_ = X_train %>% copy()
-Y_train_ = Y_train %>% copy()
-X_test_  = X_test %>% copy()
-Y_test_  = Y_test %>% copy()
-
-y_train_ <- Y_train_[, 1]
-knn.reg(X_train_, test = X_test_, y = as.data.frame(y_train_), k = k)
-```
-
-
-```{r}
-regr_res <- calc_regression_models(regr_experiments, X_train, Y_train, X_test, Y_test)
-
-xlsx::write.xlsx(regr_res[order(-C_index)], 
-                 here("0. Data/1. Output/regression_results.xlsx"), 
-                 "stack", row.names = FALSE, append = TRUE)
-```
-
-
-```{r}
-regr_pred_matrices <- regr_res[, pred] %>% `names<-`(MO_res[, name])
-
-w_eq <- rep(1/length(regr_pred_matrices), length(regr_pred_matrices))
-weighted_cindex(w_eq, regr_pred_matrices, Y_test, label = "equal w")
-
-regr_w <- run_weights_search_experiments(w_config, regr_pred_matrices, Y_test)
-```
-
-Прогнать это же на PCA
-Добавить chain
 
 # 4. PCA
 
@@ -768,149 +565,81 @@ L2_pca_pred <- get_L1_L2_glmnet_preds(X_train_ = X_train_pca, Y_train_ = Y_train
 # 5. Ensemble
 
 ## 5.1 Стэкинг моделей на данных без пропусков
-
 ### Без PCA
-const_pred, xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred
 
+Какие модели используем (функция/класс, имя, доп. параметры):
 ```{r}
-MO_res[order(rmse), -c("model", "need_MO", "pred")]
-MO_res[order(-C_index), -c("model", "need_MO", "pred")]
+regr_experiments <- tribble(
+  ~model,                   ~name,                  ~need_MO, ~params,
+  const_model,              "const",                FALSE,    list(),
+  regularized_lm,           "Lasso L1",             FALSE,    list(alpha = 1),
+  regularized_lm,           "Ridge L2",             FALSE,    list(alpha = 0),
+  simple_lm,                "lm",                   FALSE,    list(),
+  my_stepwise_lm_model,     "stepwise lm",          TRUE,     list(),
+  my_XGBoost_model,         "XGBoost",              TRUE,     list(),
+  my_LightGBM_model,        "LightGBM",             TRUE,     list(),
+  my_Catboost_model,        "CatBoost",             TRUE,     list(),
+  my_RandomForest_model,    "Random Forest (500)",  TRUE,     list(ntree = 500),
+  my_RandomForest_model,    "Random Forest (1000)", TRUE,     list(ntree = 1000),
+  my_knn_model,             "kNN (k = 5)",          TRUE,     list(k = 5),
+  my_knn_model,             "kNN (k = 25)",         TRUE,     list(k = 25),
+  my_knn_model,             "kNN (k = 50)",         TRUE,     list(k = 50),
+  my_SVR_model,             "SVR",                  TRUE,     list(kernel = "sigmoid"),
+  my_ET_model,              "ExtraTree (500)",      TRUE,     list(ntree = 500),
+  my_ET_model,              "ExtraTree (2000)",     TRUE,     list(ntree = 2000)
+) %>%
+  as.data.table()
 ```
 
-1. Проба на случайных
+Результаты по моделям:
 ```{r}
-scalar_matrix_production(w_vec = c(0.5, 0.5), list(const_pred, xgb_ind_pred)) %>% 
-  show_custom_metrics(., "Const & Xgb", Y_test_ = Y_test)
+regr_stack_res <- calc_regression_models(regr_experiments, MO_strategy = "stack",
+                                         X_train, Y_train, X_test, Y_test)
 
-scalar_matrix_production(w_vec = c(0.5, 0.5), MO_res[name %in% c("const", "XGBoost"), pred]) %>%
-  show_custom_metrics(., "Const & Xgb", Y_test_ = Y_test)
+regr_chain_res <- calc_regression_models(regr_experiments, MO_strategy = "chain",
+                                         X_train, Y_train, X_test, Y_test)
+
+regr_res_file <- here("0. Data/1. Output/regression_results.xlsx")
+xlsx::write.xlsx(regr_stack_res[order(-C_index), -"pred"],
+                 regr_res_file, "stack", row.names = F, append = T)
+xlsx::write.xlsx(regr_chain_res[order(-C_index), -"pred"], 
+                 regr_res_file, "chain", row.names = F, append = T)
 ```
 
-2. Все или почти все вместе
+Нахождение весов по различным наборам моделей (независимым / по цепочке / только лучшие):
 ```{r}
-models_pred <- list(xgb_ind_pred, xgb_chain_pred, lgbm_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, lgbm_cv_chain_pred, rf_ind_pred, rf_chain_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred)
+stack_mtr <- regr_stack_res %>%
+  copy() %>% 
+  .[!name %in% c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 5)")] %>% 
+  extract_matrices()
 
-w <- rep(1/length(models_pred), length(models_pred))
-scalar_matrix_production(w_vec = w, models_pred) %>% show_custom_metrics("All", Y_test_ = Y_test)
+chain_mtr <- regr_chain_res %>% 
+  copy() %>% 
+  .[!name %in% c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 5)")] %>% 
+  extract_matrices()
 
-models_pred2 <- MO_res[name != "const_round", pred]
-w2 <- rep(1/length(models_pred2), length(models_pred2))
-scalar_matrix_production(w_vec = w2, models_pred2) %>% 
-  show_custom_metrics("All", Y_test_ = Y_test)
+stack_mtr_f <- cut_matr(stack_mtr, qnt_prob = 0.6, Y_true = Y_test)
+chain_mtr_f <- cut_matr(chain_mtr, qnt_prob = 0.6, Y_true = Y_test)
+
+regr_stack_w   <- get_regr_w(w_config, stack_mtr, Y_test)
+regr_chain_w   <- get_regr_w(w_config, chain_mtr, Y_test)
+regr_stack_w_f <- get_regr_w(w_config, stack_mtr_f, Y_test)
+regr_chain_w_f <- get_regr_w(w_config, chain_mtr_f, Y_test)
+
+# beepr::beep()
 ```
-
-3. Выборочные старые ансамбли: 
-3.1
-```{r}
-selected_models_pred <- list(xgb_ind_pred, lgbm_chain_pred, lgbm_cv_ind_pred, rf_ind_pred, lm_ind_pred, catb_ind_pred, catb_chain_pred)
-w <- c(1, 5, 5, 5, 1, 2, 6)
-scalar_matrix_production(w_vec = w, selected_models_pred) %>% show_custom_metrics("Selected", Y_test_ = Y_test)
-
-
-selected_models_pred <- MO_res[name %in% c("XGBoost", "LightGBM", "Random Forest", "lm", "CatBoost"), pred]
-w <- c(1, 10, 5, 1, 8)
-scalar_matrix_production(w_vec = w, selected_models_pred) %>% show_custom_metrics("Selected", Y_test_ = Y_test)
-```
-
-3.2
-```{r}
-selected2_models_pred <- list(lgbm_chain_pred, lgbm_cv_ind_pred, rf_ind_pred, catb_ind_pred, catb_chain_pred)
-w <- rep(1/length(selected2_models_pred), length(selected2_models_pred))
-scalar_matrix_production(w_vec = w, selected2_models_pred) %>% show_custom_metrics("Selected 2", Y_test_ = Y_test)
-
-selected2_models_pred <- MO_res[name %in% c("LightGBM", "Random Forest", "CatBoost"), pred]
-w <- rep(1/length(selected2_models_pred), length(selected2_models_pred))
-scalar_matrix_production(w_vec = w, selected2_models_pred) %>% show_custom_metrics("Selected 2", Y_test_ = Y_test)
-```
-
-3.3
-```{r}
-selected3_models_pred <- list(lgbm_ind_pred, rf_ind_pred, lm_ind_pred, catb_ind_pred)
-
-w <- c(1, 1, 1, 3)
-scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3.1", Y_test_ = Y_test)
-
-w <- rep(1/length(selected3_models_pred), length(selected3_models_pred))
-scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3.2", Y_test_ = Y_test)
-
-
-selected3_models_pred <- MO_res[name %in% c("LightGBM", "Random Forest", "lm", "CatBoost"), pred]
-
-w <- c(1, 1, 1, 3)
-scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3.3", Y_test_ = Y_test)
-
-w <- rep(1/length(selected3_models_pred), length(selected3_models_pred))
-scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3.4", Y_test_ = Y_test)
-```
-
-4. Выборочные новые ансамбли
-
-c("const", "const_round", "lm", "Lasso L1", "Ridge L2", "XGBoost", "LightGBM", "CatBoost", "Random Forest", "kNN", "SVR")
-```{r}
-models_pred1 <- MO_res[name %in% c("CatBoost", "Lasso L1", "LightGBM", "Random Forest", "Ridge L2"), pred]
-w1.1 <- rep(1/length(models_pred1), length(models_pred1))
-w1.2 <- c(10, 4, 1, 1, 1)
-w1.3 <- c(11, 6, 1, 2, 2)
-w1.4 <- c(0.6, 0.25, 0.05, 0.05, 0.05)
-
-scalar_matrix_production(w_vec = w1.1, models_pred1) %>% show_custom_metrics("1.1", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w1.2, models_pred1) %>% show_custom_metrics("1.2", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w1.3, models_pred1) %>% show_custom_metrics("1.3", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w1.4, models_pred1) %>% show_custom_metrics("1.4", Y_test_ = Y_test)
-```
+Код run_weights_search_experiments выполняется минуты 4 на полном наборе моделей и 2 на усеченном
 
 ```{r}
-models_pred2 <- MO_res[name %in% c("Random Forest", "LightGBM", "kNN", "SVR", "Lasso L1", "Ridge L2"), pred]
-w2.1 <- rep(1/length(models_pred2), length(models_pred2))
-w2.2 <- c(7, 5, 3, 1, 1, 1)
-w2.3 <- c(4, 3, 1, 0, 0, 0)
-w2.4 <- c(7, 3, 1, 0, 0, 0)
+fname <- here("0. Data/1. Output/regression_ensemble_results.xlsx")
 
-scalar_matrix_production(w_vec = w2.1, models_pred2) %>% show_custom_metrics("2.1", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w2.2, models_pred2) %>% show_custom_metrics("2.2", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w2.3, models_pred2) %>% show_custom_metrics("2.3", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w2.4, models_pred2) %>% show_custom_metrics("2.4", Y_test_ = Y_test)
+write_w_search_to_xlsx(regr_stack_w  , stack_mtr  , "stack", fname)
+write_w_search_to_xlsx(regr_stack_w_f, stack_mtr_f, "filtered stack", fname)
+write_w_search_to_xlsx(regr_chain_w  , stack_mtr  , "chain", fname)
+write_w_search_to_xlsx(regr_chain_w_f, chain_mtr_f, "filtered chain", fname)
 ```
 
-```{r}
-models_pred3 <- MO_res[name %in% c("Random Forest", "LightGBM", "Lasso L1"), pred]
-w3.1 <- rep(1/length(models_pred3), length(models_pred3))
-w3.2 <- c(5, 5, 1)
-w3.3 <- c(5, 5, 0)
-
-scalar_matrix_production(w_vec = w3.1, models_pred3) %>% show_custom_metrics("3.1", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w3.2, models_pred3) %>% show_custom_metrics("3.2", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w3.3, models_pred3) %>% show_custom_metrics("3.3", Y_test_ = Y_test)
-```
-
-```{r}
-models_pred4 <- MO_res[name %in% c("SVR", "LightGBM", "Lasso L1"), pred]
-w4.1 <- rep(1/length(models_pred4), length(models_pred4))
-w4.2 <- c(1, 5, 5)
-w4.3 <- c(0, 1, 1)
-
-scalar_matrix_production(w_vec = w4.1, models_pred4) %>% show_custom_metrics("4.1", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w4.2, models_pred4) %>% show_custom_metrics("4.2", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w4.3, models_pred4) %>% show_custom_metrics("4.3", Y_test_ = Y_test)
-```
-
-
-5. Выборочные ансамбли без округления
-```{r}
-models_pred5 <- MO_res[name %in% c("SVR", "lm", "LightGBM", "Lasso L1"), pred]
-w5.1 <- rep(1/length(models_pred5), length(models_pred5))
-w5.2 <- c(1, 1, 10, 10)
-w5.3 <- c(0, 0, 10, 10)
-
-scalar_matrix_production(w_vec = w5.1, models_pred5) %>% show_custom_metrics("5.1", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w5.2, models_pred5) %>% show_custom_metrics("5.2", Y_test_ = Y_test)
-scalar_matrix_production(w_vec = w5.3, models_pred5) %>% show_custom_metrics("5.3", Y_test_ = Y_test)
-```
-
-Выделим следующие ансамбли:
-1) all - 1.935 - 9.632
-2) RF* , LightGBM*, kNN - 1.913 - 10.132
-3) CatBoost* , L1*, LightGBM, RF, L2 - 1.911 - 10.118 
+Прогнать это же на PCA
 
 
 ### С PCA
@@ -963,7 +692,6 @@ selected4_models_pred <- list(catb_pca_ind_pred, L1_pca_pred, lgb_pca_ind_pred, 
 w <- c(0.6, 0.25, 0.05, 0.05, 0.05)
 scalar_matrix_production(w_vec = w, selected4_models_pred) %>% show_custom_metrics("Selected 4", Y_test_ = Y_test)
 ```
-
 
 
 ## 5.2 Стэкинг моделей отдельно на психологических тестах
