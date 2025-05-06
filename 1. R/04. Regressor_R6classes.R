@@ -350,7 +350,7 @@ my_knn_model <- R6Class(
     initialize = function(X_train_, y_train_, X_test_, y_test_ = NULL, k = 10, ...) {
       self$xtrain <- copy(X_train_) %>% as.data.frame()
       self$ytrain <- copy(y_train_) %>% as.data.frame()
-      self$k_neigb <- k
+      self$k_neigb <- min(ncol(X_train_), k)
       
       self$pred_train <- private$predict(X_train_)
       self$pred_test  <- private$predict(X_test_, is_test = TRUE)

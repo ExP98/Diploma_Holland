@@ -24,22 +24,6 @@ bool_mask_row <- function(matrix_row) {
 }
 
 
-pca_data_preparation <- function(X_train_, X_test_, k_dim = NULL, limit_ssq = 0.9) {
-  pca_model <- prcomp(X_train_, center = TRUE, scale. = TRUE)
-  
-  if (is.null(k_dim)) {
-    k_dim <- data.table(k = 1:length(pca_model$sdev),
-                        ssq = pca_model$sdev^2) %>%
-      .[, cumsum := cumsum(ssq / sum(ssq))] %>%
-      .[, limit_b := cumsum >= limit_ssq] %>%
-      .[limit_b == TRUE, min(k)]
-  }
-  X_train_ <- pca_scaler(X_train_, pca_model, k = k_dim)
-  X_test_  <- pca_scaler(X_test_, pca_model, k = k_dim)
-  return(list(X_train_, X_test_))
-}
-
-
 make_multiclass_df <- function(X_train_, Y_train_, k = 3) {
   class_label <- Y_train_ %>% 
     as.data.table() %>% 

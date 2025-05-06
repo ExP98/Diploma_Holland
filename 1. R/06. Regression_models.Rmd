@@ -291,7 +291,7 @@ final_pred %>%
 Стэкинг из lm, rpart, randomForest: Stacking. aRMSE: 1.98; aCindex: 9.926
 
 
-# 4. PCA
+## 3.5 PCA
 
 ```{r}
 pca_model <- prcomp(X_train, center = TRUE, scale. = TRUE)
@@ -310,13 +310,12 @@ plot(pca_model$sdev^2 / sum(pca_model$sdev^2),
      ylab = "Доля объясненной дисперсии")
 ```
 
-
-## 4.1 lm
+На примере lm
 
 Зависимость k (~PCA) и результатов lm:
 ```{r}
 res_k_lm1 <- get_k_PCA_model_table(my_lm_model, by = 1, metric_f = c_index_dist)
-res_k_lm2 <- get_k_PCA_model_table(my_lm_model, by = 1, metric_f = c_index_dist)
+res_k_lm2 <- get_k_PCA_model_table(my_lm_model, by = 1, metric_f = my_rmse)
 ```
 
 k = 29
@@ -333,239 +332,9 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 ```
 
 
-## 4.2 Random Forest
+# 4. Ансамбли
 
-Подбор лучшего k для PCA + Random Forest
-
-```{r}
-res_k_rf1 <- get_k_PCA_model_table(my_RandomForest_model, by = 3, metric_f = c_index_dist)
-res_k_rf2 <- get_k_PCA_model_table(my_RandomForest_model, by = 3, metric_f = my_rmse)
-```
-
-k = 11 (rmse), 32 (C-ind)
-```{r}
-best_k <- res_k_rf1[avg_metric == min(avg_metric), k]
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[rf_pca_ind_pred, rf_pca_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-
-# best_k <- res_k_rf2[avg_metric == min(avg_metric), k]
-# print(str_glue("Best k: {best_k}"))
-# X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-# X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-# 
-# .[rf_pca_ind_pred, rf_pca_chain_pred] <- map(
-#   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-#   my_RandomForest_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-# )
-```
-
-
-## 4.3 XGBoost
-
-```{r}
-res_k_xgb1 <- get_k_PCA_model_table(my_XGBoost_model, by = 2, metric_f = my_rmse)
-res_k_xgb2 <- get_k_PCA_model_table(my_XGBoost_model, by = 2, metric_f = c_index_dist)
-```
-
-k = 26 (rmse); 32 (C-index)
-```{r}
-# best_k <- res_k_xgb1[avg_metric == min(avg_metric), k]
-# print(str_glue("Best k: {best_k}"))
-# X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-# X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-# 
-# .[xgb_pca_ind_pred, xgb_pca_chain_pred] <- map(
-#   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-#   my_XGBoost_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-# )
-
-best_k <- res_k_xgb2[avg_metric == min(avg_metric), k]
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[xgb_pca_ind_pred, xgb_pca_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_XGBoost_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-```
-
-
-## 4.4 Catboost
-
-```{r}
-res_k_catb1 <- get_k_PCA_model_table(my_Catboost_model, by = 4, metric_f = my_rmse)
-# res_k_catb2 <- get_k_PCA_model_table(my_Catboost_model, by = 4, metric_f = c_index_dist)
-```
-
-k = 30 (rmse); 22 (C-index)
-```{r}
-# best_k <- res_k_catb1[avg_metric == min(avg_metric), k]
-best_k <- 30
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[catb_pca_ind_pred, catb_pca_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-```
-
-
-```{r}
-best_k <- 22
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[catb_pca_ind_pred, catb_pca_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-```
-
-
-## 4.5 LightGBM
-
-```{r}
-res_k_lgb1 <- get_k_PCA_model_table(my_LightGBM_model, by = 3, metric_f = my_rmse)
-res_k_lgb2 <- get_k_PCA_model_table(my_LightGBM_model, by = 3, metric_f = c_index_dist)
-```
-
-k = 11 (rmse); 8 (C-index)
-```{r}
-# best_k <- res_k_lgb[avg_metric == min(avg_metric), k]
-best_k <- 11
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[lgb_pca_ind_pred, lgb_pca_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_LightGBM_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-```
-
-
-## 4.6 LightGBM CV
-
-```{r}
-res_k_lgb_cv <- get_k_PCA_model_table(my_LightGBM_CV_model, by = 3, metric_f = c_index_dist)
-```
-
-k = 11 (rmse); 17 (C-index)
-```{r}
-best_k <- res_k_lgb_cv[avg_metric == min(avg_metric), k]
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_LightGBM_CV_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-```
-
-
-## 4.7 kNN
-
-```{r}
-res_k_knn1 <- get_k_PCA_model_table(my_knn_model, by = 1, metric_f = my_rmse)
-res_k_knn2 <- get_k_PCA_model_table(my_knn_model, by = 1, metric_f = c_index_dist)
-```
-
-k = 25 (rmse); 19 (C-index)
-```{r}
-best_k <- res_k_knn1[avg_metric == min(avg_metric), k]
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[knn_pca_ind_pred] <- map(
-  list(perform_stack_MO_regression), exec,
-  my_knn_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-
-best_k <- res_k_knn2[avg_metric == min(avg_metric), k]
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[knn_pca_ind_pred] <- map(
-  list(perform_stack_MO_regression), exec,
-  my_knn_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-```
-
-
-## 4.8 SVR
-
-```{r}
-res_k_svr1 <- get_k_PCA_model_table(my_SVR_model, by = 1, metric_f = my_rmse)
-res_k_svr2 <- get_k_PCA_model_table(my_SVR_model, by = 1, metric_f = c_index_dist)
-```
-
-k = 40 (rmse); 26 (C-index)
-```{r}
-best_k <- res_k_svr1[avg_metric == min(avg_metric), k]
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[svr_pca_ind_pred, svr_pca_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_SVR_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-
-best_k <- res_k_svr2[avg_metric == min(avg_metric), k]
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[svr_pca_ind_pred, svr_pca_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_SVR_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-```
-
-## 4.9 Lasso and Ridge
-
-only alpha 1 (lasso)
-```{r}
-res_k_glmnet <- get_k_PCA_model_table(my_L1_L2_glmnet_model, by = 1, metric_f = my_rmse)
-res_k_glmnet <- get_k_PCA_model_table(my_L1_L2_glmnet_model, by = 1, metric_f = c_index_dist)
-```
-
-k = 22 (rmse); 23 (C-index)
-```{r}
-best_k <- res_k_glmnet[avg_metric == min(avg_metric), k]
-print(str_glue("Best k: {best_k}"))
-X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
-X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
-
-.[glmnet_pca_ind_pred, glmnet_pca_chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_L1_L2_glmnet_model, X_train_pca, Y_train, X_test_pca, Y_test, T, F
-)
-```
-
-```{r}
-L1_pca_pred <- get_L1_L2_glmnet_preds(X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca, alpha = 1)
-L2_pca_pred <- get_L1_L2_glmnet_preds(X_train_ = X_train_pca, Y_train_ = Y_train, X_test_ = X_test_pca, alpha = 0)
-```
-
-
-# 5. Ensemble
-
-## 5.1 Стэкинг моделей на данных без пропусков
-### Без PCA
+## 4.1 Взвешенное ансамблирование (блендинг) на данных без пропусков
 
 Какие модели используем (функция/класс, имя, доп. параметры):
 ```{r}
@@ -589,7 +358,11 @@ regr_experiments <- tribble(
   my_ET_model,              "ExtraTree (2000)",     TRUE,     list(ntree = 2000)
 ) %>%
   as.data.table()
+
+model_to_exclude <- c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 5)", "const", "lm")
 ```
+
+### Без уменьшения размерности (PCA)
 
 Результаты по моделям:
 ```{r}
@@ -608,15 +381,8 @@ xlsx::write.xlsx(regr_chain_res[order(-C_index), -"pred"],
 
 Нахождение весов по различным наборам моделей (независимым / по цепочке / только лучшие):
 ```{r}
-stack_mtr <- regr_stack_res %>%
-  copy() %>% 
-  .[!name %in% c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 5)")] %>% 
-  extract_matrices()
-
-chain_mtr <- regr_chain_res %>% 
-  copy() %>% 
-  .[!name %in% c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 5)")] %>% 
-  extract_matrices()
+stack_mtr <- regr_stack_res[!name %in% model_to_exclude] %>% extract_matrices()
+chain_mtr <- regr_chain_res[!name %in% model_to_exclude] %>% extract_matrices()
 
 stack_mtr_f <- cut_matr(stack_mtr, qnt_prob = 0.6, Y_true = Y_test)
 chain_mtr_f <- cut_matr(chain_mtr, qnt_prob = 0.6, Y_true = Y_test)
@@ -631,70 +397,63 @@ regr_chain_w_f <- get_regr_w(w_config, chain_mtr_f, Y_test)
 Код run_weights_search_experiments выполняется минуты 4 на полном наборе моделей и 2 на усеченном
 
 ```{r}
-fname <- here("0. Data/1. Output/regression_ensemble_results.xlsx")
+reg_ens_fname <- here("0. Data/1. Output/regression_ensemble_results.xlsx")
 
-write_w_search_to_xlsx(regr_stack_w  , stack_mtr  , "stack", fname)
-write_w_search_to_xlsx(regr_stack_w_f, stack_mtr_f, "filtered stack", fname)
-write_w_search_to_xlsx(regr_chain_w  , stack_mtr  , "chain", fname)
-write_w_search_to_xlsx(regr_chain_w_f, chain_mtr_f, "filtered chain", fname)
+write_w_search_to_xlsx(regr_stack_w  , stack_mtr  , "stack", reg_ens_fname)
+write_w_search_to_xlsx(regr_stack_w_f, stack_mtr_f, "filtered stack", reg_ens_fname)
+write_w_search_to_xlsx(regr_chain_w  , stack_mtr  , "chain", reg_ens_fname)
+write_w_search_to_xlsx(regr_chain_w_f, chain_mtr_f, "filtered chain", reg_ens_fname)
 ```
+Один такой блок кода от и до выполняется 10 минут. 
 
-Прогнать это же на PCA
 
-
-### С PCA
-lm_pca_ind_pred, lm_pca_chain_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, xgb_pca_chain_pred, catb_pca_ind_pred, catb_pca_chain_pred, lgb_pca_ind_pred, lgb_pca_chain_pred, lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred
+### С использованием PCA
 
 ```{r}
-# models_pred <- list(lm_pca_ind_pred, lm_pca_chain_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, xgb_pca_chain_pred, catb_pca_ind_pred, catb_pca_chain_pred, lgb_pca_ind_pred, lgb_pca_chain_pred, lgb_cv_pca_ind_pred, lgb_cv_pca_chain_pred)
-models_pred1 <- list(lm_pca_ind_pred, lm_pca_chain_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, xgb_pca_chain_pred, catb_pca_ind_pred, catb_pca_chain_pred, lgb_pca_ind_pred, lgb_pca_chain_pred)
-models_pred2 <- list(lm_pca_ind_pred, rf_pca_ind_pred, xgb_pca_ind_pred, catb_pca_ind_pred, lgb_pca_ind_pred)
-
-# new
-models_pred3 <- list(lm_pca_ind_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, catb_pca_ind_pred, lgb_pca_ind_pred, knn_pca_ind_pred, svr_pca_ind_pred, L1_pca_pred, L2_pca_pred)
-
-w <- rep(1/length(models_pred1), length(models_pred1))
-scalar_matrix_production(w_vec = w, models_pred1) %>% show_custom_metrics("All", Y_test_ = Y_test)
-
-w <- rep(1/length(models_pred2), length(models_pred2))
-scalar_matrix_production(w_vec = w, models_pred2) %>% show_custom_metrics("All", Y_test_ = Y_test)
-
-w <- rep(1/length(models_pred3), length(models_pred3))
-scalar_matrix_production(w_vec = w, models_pred3) %>% show_custom_metrics("All", Y_test_ = Y_test)
+.[X_train_pca, X_test_pca] <- pca_data_preparation(X_train, X_test, limit_ssq = 0.9)
 ```
 
-
+Результаты по моделям:
 ```{r}
-selected_models_pred <- list(xgb_pca_ind_pred, lgb_pca_chain_pred, rf_pca_ind_pred, lm_pca_ind_pred, catb_pca_ind_pred, catb_pca_chain_pred)
+regr_stack_res_pca <- calc_regression_models(regr_experiments, MO_strategy = "stack",
+                                             X_train_pca, Y_train, X_test_pca, Y_test)
 
-w <- c(1, 5, 5, 1, 2, 6)
-scalar_matrix_production(w_vec = w, selected_models_pred) %>% show_custom_metrics("Selected", Y_test_ = Y_test)
+regr_chain_res_pca <- calc_regression_models(regr_experiments, MO_strategy = "chain",
+                                             X_train_pca, Y_train, X_test_pca, Y_test)
+
+regr_stack_res_pca[order(-C_index), -"pred"] %>% 
+  xlsx::write.xlsx(regr_res_file, "stack PCA", row.names = F, append = T)
+
+regr_chain_res_pca[order(-C_index), -"pred"] %>% 
+  xlsx::write.xlsx(regr_res_file, "chain PCA", row.names = F, append = T)
 ```
 
+Нахождение весов по различным наборам моделей (независимым / по цепочке / только лучшие):
 ```{r}
-selected2_models_pred <- list(lgb_pca_chain_pred, rf_pca_ind_pred, catb_pca_ind_pred, catb_pca_chain_pred)
+stack_mtr_pca <- regr_stack_res_pca[!name %in% model_to_exclude] %>% extract_matrices()
+chain_mtr_pca <- regr_chain_res_pca[!name %in% model_to_exclude] %>% extract_matrices()
 
-w <- rep(1/length(selected2_models_pred), length(selected2_models_pred))
-scalar_matrix_production(w_vec = w, selected2_models_pred) %>% show_custom_metrics("Selected 2", Y_test_ = Y_test)
-```
+stack_mtr_f_pca <- cut_matr(stack_mtr_pca, qnt_prob = 0.6, Y_true = Y_test)
+chain_mtr_f_pca <- cut_matr(chain_mtr_pca, qnt_prob = 0.6, Y_true = Y_test)
 
-models_pred3 <- list(lm_pca_ind_pred, rf_pca_ind_pred, rf_pca_chain_pred, xgb_pca_ind_pred, catb_pca_ind_pred, lgb_pca_ind_pred, knn_pca_ind_pred, svr_pca_ind_pred, L1_pca_pred, L2_pca_pred)
-```{r}
-selected3_models_pred <- list(rf_pca_ind_pred, lgb_pca_ind_pred, knn_pca_ind_pred)
+regr_stack_w_pca   <- get_regr_w(w_config, stack_mtr_pca, Y_test)
+regr_chain_w_pca   <- get_regr_w(w_config, chain_mtr_pca, Y_test)
+regr_stack_w_f_pca <- get_regr_w(w_config, stack_mtr_f_pca, Y_test)
+regr_chain_w_f_pca <- get_regr_w(w_config, chain_mtr_f_pca, Y_test)
 
-w <- c(7, 3, 1)
-# w <- rep(1/length(selected3_models_pred), length(selected3_models_pred))
-scalar_matrix_production(w_vec = w, selected3_models_pred) %>% show_custom_metrics("Selected 3", Y_test_ = Y_test)
+# beepr::beep()
 ```
 
 ```{r}
-selected4_models_pred <- list(catb_pca_ind_pred, L1_pca_pred, lgb_pca_ind_pred, rf_pca_ind_pred, L2_pca_pred)
-w <- c(0.6, 0.25, 0.05, 0.05, 0.05)
-scalar_matrix_production(w_vec = w, selected4_models_pred) %>% show_custom_metrics("Selected 4", Y_test_ = Y_test)
+write_w_search_to_xlsx(regr_stack_w_pca  , stack_mtr_pca  , "stack PCA", reg_ens_fname)
+write_w_search_to_xlsx(regr_stack_w_f_pca, stack_mtr_f_pca, "filtered stack PCA", reg_ens_fname)
+write_w_search_to_xlsx(regr_chain_w_pca  , stack_mtr_pca  , "chain PCA", reg_ens_fname)
+write_w_search_to_xlsx(regr_chain_w_f_pca, chain_mtr_f_pca, "filtered chain PCA", reg_ens_fname)
 ```
 
 
-## 5.2 Стэкинг моделей отдельно на психологических тестах
+
+## 4.2 Взвешенное ансамблирование (блендинг) отдельно на психологических тестах
 
 Найти наилучшую модель для каждого из тестов. Мб миксовать с PCA.
 
@@ -1023,7 +782,7 @@ scalar_matrix_production(w_vec = w3, models_pred2) %>%
 ```
 
 
-# 8. Распределение и сбалансированность предсказаний кодов Голланда
+# 5. Распределение и сбалансированность предсказаний кодов Голланда
 
 Распределение значений кодов HL_1:HL_6 предсказаний:
 ```{r}
@@ -1073,7 +832,7 @@ ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
 ```
 
 
-# 9. Сохранение модели
+# 6. Сохранение модели
 
 ```{r}
 cv_glm <- cv.glmnet(X_train, Y_train, family = "mgaussian", alpha = 1)
@@ -1082,4 +841,3 @@ cv_glm <- cv.glmnet(X_train, Y_train, family = "mgaussian", alpha = 1)
 glm_pred <- predict(cv_glm, newx = X_test[1, , drop = F], s = "lambda.min")[,,1] %>% 
   smart_integer_round()
 ```
-

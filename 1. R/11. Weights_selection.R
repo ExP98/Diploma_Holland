@@ -11,21 +11,6 @@ install_pkgs(libs)
 
 # sourceCpp(paste0(here::here(), "/1. R/05._Rcpp_functions.cpp")) # rcpp_rmse, approx_shapley_cpp
 
-w_config <- tribble(
-  ~method,                     ~label,           ~params,
-  equal_weights,               "Equal w",        list(list()),
-  simple_weights,              "Simple w",       list(list()),
-  filtered_weights,            "Filtered w",     list(list(qnt_prob = 0.67)),
-  approx_shapley,              "Approx Shap",    list(list(R = 500)),
-  grid_search_weights,         "Grid Search",    list(list(step = 1.0)),
-  stacking_qp_weights,         "QP",             list(list()),
-  genetic_algorithm_weights,   "GA",             list(list(popSize = 50, maxiter = 150)),
-  particle_swarm_weights,      "PSO",            list(list(swarm_size = 50, maxit = 100)),
-  # bayes_optimize_weights,      "Bayes Opt",      list(list(init_points = 15, n_iter = 15)),
-  coordinate_optimize_weights, "Coord. Asc",     list(list(tol = 1e-4, max_iter = 20))
-) %>% 
-  as.data.table()
-
 
 # 2. Функции                                                     ####
 
@@ -202,6 +187,10 @@ stacking_qp_weights <- function(models_probs, Y_true, ...) {
   bvec <- c(1, rep(0, M))
   meq  <- 1
   
+  eigenvalues <- eigen(Dmat, only.values = TRUE)$values
+  eigenvalues[abs(eigenvalues) < 1e-8] <- 0
+  if (any(eigenvalues <= 0)) Dmat <- Matrix::nearPD(Dmat)$mat %>% as.matrix()
+  
   w <- quadprog::solve.QP(Dmat, dvec, Amat, bvec, meq)$solution
   w_rnd <- (w / sum(w)) %>% round(8)
   return(w_rnd)
@@ -316,3 +305,20 @@ filtered_weights <- function(models_probs, Y_true, qnt_prob = 0.67) {
   w_norm <- cut_w(w, qnt_prob = 0.67)
   return(w_norm)
 }
+
+
+# 3. Данные и константы                                          ####
+w_config <- tribble(
+  ~method,                     ~label,           ~params,
+  equal_weights,               "Equal w",        list(list()),
+  simple_weights,              "Simple w",       list(list()),
+  filtered_weights,            "Filtered w",     list(list(qnt_prob = 0.67)),
+  approx_shapley,              "Approx Shap",    list(list(R = 500)),
+  grid_search_weights,         "Grid Search",    list(list(step = 1.0)),
+  stacking_qp_weights,         "QP",             list(list()),
+  genetic_algorithm_weights,   "GA",             list(list(popSize = 50, maxiter = 150)),
+  particle_swarm_weights,      "PSO",            list(list(swarm_size = 50, maxit = 100)),
+  # bayes_optimize_weights,      "Bayes Opt",      list(list(init_points = 15, n_iter = 15)),
+  coordinate_optimize_weights, "Coord. Asc",     list(list(tol = 1e-4, max_iter = 20))
+) %>% 
+  as.data.table()
