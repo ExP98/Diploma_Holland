@@ -9,7 +9,7 @@ author: "Egor Glushkov"
 library(psych) # desc stats
 library(xlsx)  # excel
 
-source(paste0(here(), "/1. R/4. data_preparation.R"))
+# source(paste0(here(), "/1. R/02. Data_preparation.R"))
 ```
 
 # 2. Данные
@@ -123,91 +123,6 @@ data %>%
 
 ## 3.3 Корреляции
 
-### Функции и словари
-
-```{r}
-show_desc_stats <- function(data) {
-  return(psych::describe(data, skew = FALSE, quant = c(.25, .75)) %>% 
-           select(vars, n, min, Q0.25, mean, median, Q0.75, max, range, sd, se))
-}
-
-
-feature_replacement <- function(str) {
-  str %>% 
-    str_replace_all("индивидуальный.приоритет", "ИП") %>%
-    str_replace_all("нормативный.идеал", "НИ") %>%
-    str_replace_all("^X(\\.){2,}|(\\.){2,}?$", "") %>%
-    str_replace("(\\.){2,}", " - ") %>%
-    str_replace_all("_", " ") %>% 
-    str_replace_all("\\.", " - ") %>% 
-    str_trim()
-}
-
-
-golland_enum <- function(str) {
-  riasec <- c(
-    "Реалистический (R)", 
-    "Исследовательский (I)",
-    "Артистический (A)",
-    "Социальный (S)",
-    "Предприимчивый (E)",
-    "Традиционный (C)"
-  )
-  # riasec <- c("R", "I", "A", "S", "E", "C")
-  return(str %>% str_replace("X", "") %>% as.numeric() %>% riasec[.])
-}
-
-
-replace_col_using_df <- function(data, var_name, dict_df) {
-  data <- data %>% 
-    as.data.table() %>% 
-    merge(dict_df %>% setnames(old = colnames(.), new = c(var_name, "V2")), 
-          all.x = TRUE, by = var_name) %>% 
-    .[, paste0(var_name) := if_else(is.na(V2), get(var_name), V2)] %>% 
-    .[, -c("V2")]
-  return(data)
-}
-
-
-test_names_df <- tribble(
-  ~code, ~name,
-  "golland",        "Тест Голланда",
-  "leonhard_poll",  "Опросник Леонгарда-Шмишека",
-  "temperament",    "Личностный опросник Айзенка",
-  "cattell_poll",   "16-факторный опросник Кеттелла",
-  "big_five",       "Пятифакторный опросник личности",
-  "schwartz_poll",  "Ценностный опросник Шварца",
-  "golland_v2",     "Обновленный тест Голланда"
-)
-
-leonhard_rus_factors <- tibble(
-  labels = paste0("Г - ", 1:10),
-  names = c("Гипертимность", "Дистимность", "Циклотимность", "Неуравновешенность", 
-            "Застревание", "Эмотивность", "Экзальтированность", "Тревожность",
-            "Педантичность", "Демонстративность")
-)
-
-cattell_rus_factors <- tribble(
-  ~labels, ~names,
-  "A",  "Открытость - Замкнутость",
-  "B",  "Развитое мышление - Ограниченное мышление",
-  "C",  "Эмоциональная стабильность - Эмоциональная неустойчивость",
-  "E",  "Независимость - Податливость",
-  "F",  "Беспечность - Озабоченность",
-  "G",  "Сознательность - Беспринципность",
-  "H",  "Смелость - Застенчивость",
-  "I",  "Чувственность - Твердость",
-  "L",  "Подозрительность - Доверчивость",
-  "M",  "Мечтательность - Практичность",
-  "N",  "Утонченность - Простота",
-  "O",  "Склонность к чувству вины - Спокойная самоуверенность",
-  "Q1", "Радикализм - Консерватизм",
-  "Q2", "Самостоятельность - Зависимость от группы",
-  "Q3", "Самоконтроль, сильная воля - Недостаток самоконтроля, индифферентность",
-  "Q4", "Внутренняя напряженность - Внутренняя расслабленность"
-)
-```
-
 ### Cor-рисунки
 ```{r}
 make_png_cor_plot <- function(dt, plot_name) {
@@ -265,10 +180,10 @@ ggplot(cor_df[value > 0.5], aes(x = value)) +
 #   mutate(factor2_feature = if_else(factor2_test == "golland", 
 #                                    factor2_feature %>% golland_enum(),
 #                                    factor2_feature)) %>% 
-#   replace_col_using_df("factor1_test", test_names_df) %>%
+#   replace_col_using_df("factor1_test", psytest_names_df) %>%
 #   replace_col_using_df("factor1_feature", leonhard_rus_factors) %>%
 #   replace_col_using_df("factor1_feature", cattell_rus_factors) %>%
-#   replace_col_using_df("factor2_test", test_names_df) %>%
+#   replace_col_using_df("factor2_test", psytest_names_df) %>%
 #   replace_col_using_df("factor2_feature", leonhard_rus_factors) %>%
 #   replace_col_using_df("factor2_feature", cattell_rus_factors) %>%
 #   filter(value > 0.65) %>% 
@@ -324,16 +239,7 @@ untd_dt %>%
 ```{r message=FALSE, warning=FALSE}
 library(dplyr)
 
-translation_names_dict <- shrt_nms_df %>% 
-  copy() %>% 
-  .[full_name != "id" & !str_detect(full_name, "golland_v2")] %>% 
-  separate_wider_delim(cols = "full_name", delim = " / ", names = c("test", "feature")) %>% 
-  mutate(feature = feature %>% feature_replacement()) %>%
-  mutate(feature = if_else(test == "golland", feature %>% golland_enum(), feature)) %>%
-  replace_col_using_df("test", test_names_df) %>%
-  replace_col_using_df("feature", leonhard_rus_factors) %>%
-  replace_col_using_df("feature", cattell_rus_factors)
-
+translation_names_dict <- get_translation_names_dict(shrt_nms_df)
 
 desc_stats <- untd_dt %>%
   .[, -c("id")] %>% 
@@ -385,7 +291,14 @@ desc_stats %>%
 
 
 # 5. Графики
+
 ```{r}
+show_desc_stats <- function(data) {
+  return(psych::describe(data, skew = FALSE, quant = c(.25, .75)) %>% 
+           select(vars, n, min, Q0.25, mean, median, Q0.75, max, range, sd, se))
+}
+
+
 check_data <- function(wide_data_, test_name) {
   data <- wide_data_ %>% 
     .[, .SD, .SDcols = names(.) %like% paste0("^id$|^", test_name)]

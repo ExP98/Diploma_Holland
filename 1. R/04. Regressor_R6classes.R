@@ -90,7 +90,8 @@ my_XGBoost_model <- R6Class(
   
   public = list(
     calc_importance = function() {
-      self$importance <- xgb.importance(model = self$model)
+      imp <- xgb.importance(model = self$model)[, c("Feature", "Gain")]
+      self$importance <- imp[["Gain"]] %>% `names<-`(imp[["Feature"]])
       return(self$importance)
     }
   ),
@@ -125,6 +126,12 @@ my_LightGBM_model <- R6Class(
       if (!is.null(y_test_) && !is.null(self$pred_test)) private$calc_rmse(y_test_, self$pred_test)
       
       return(invisible(self))
+    },
+    
+    calc_importance = function() {
+      imp <- lgb.importance(model = self$model)[, c("Feature", "Gain")]
+      self$importance <- imp[["Gain"]] %>% `names<-`(imp[["Feature"]])
+      return(self$importance)
     }
   ),
   
@@ -192,7 +199,7 @@ my_RandomForest_model <- R6Class(
   
   public = list(
     calc_importance = function() {
-      self$importance <- self$model$importance
+      self$importance <- self$model$importance[, "%IncMSE"]
       return(self$importance)
     }
   ),
@@ -236,20 +243,29 @@ my_lm_model <- R6Class(
 )
 
 
+## my_stepwise_lm_model                                 ####
 my_stepwise_lm_model <- R6Class(
   classname = "my_stepwise_lm_model",
   inherit = my_lm_model,
   
+  public = list(
+    calc_importance = function() {
+      self$importance <- coef(self$model)[-1]
+      return(self$importance)
+    }
+  ),
+  
   private = list(
     fit = function(X_train_, y_train_) {
       just_lm  <- lm(target ~ ., data = data.frame(X_train_, target = y_train_))
-      self$model <- stepAIC(just_lm, direction = "both", trace = FALSE)
+      self$model <- MASS::stepAIC(just_lm, direction = "both", trace = FALSE)
       return(invisible(self))
     }
   )
 )
 
 
+## get_L1_L2_glmnet_preds                                 ####
 # Обучение модели с кросс-валидацией
 get_L1_L2_glmnet_preds <- function(X_train_ = X_train, Y_train_ = Y_train, 
                                    X_test_ = X_test, Y_test_ = Y_test,
@@ -264,6 +280,7 @@ get_L1_L2_glmnet_preds <- function(X_train_ = X_train, Y_train_ = Y_train,
 }
 
 
+## my_L1_L2_glmnet_model                                 ####
 my_L1_L2_glmnet_model <- R6Class(
   classname = "my_L1_L2_glmnet_model",
   inherit = my_template_model,
@@ -304,9 +321,13 @@ my_Catboost_model <- R6Class(
   inherit = my_template_model,
   
   public = list(
+    feature_names = NA_character_,
+    
     initialize = function(X_train_, y_train_, X_test_, y_test_) {
       train_pool <- catboost.load_pool(data = X_train_, label = y_train_)
       test_pool  <- catboost.load_pool(data = X_test_,  label = y_test_)
+      
+      self$feature_names <- colnames(X_train_)
       
       private$fit(train_pool, test_pool)
       self$pred_train <- private$predict(train_pool)
@@ -315,6 +336,13 @@ my_Catboost_model <- R6Class(
       if (!is.null(y_test_) && !is.null(self$pred_test)) private$calc_rmse(y_test_, self$pred_test)
       
       return(invisible(self))
+    },
+    
+    calc_importance = function() {
+      self$importance <- catboost.get_feature_importance(model = self$model) %>% 
+        as.vector() %>% 
+        `names<-`(self$feature_names)
+      return(self$importance)
     }
   ),
   
@@ -392,10 +420,17 @@ my_ET_model <- R6Class(
   classname = "my_ET_model",
   inherit = my_template_model,
   
+  public = list(
+    calc_importance = function() {
+      self$importance <- self$model$variable.importance
+      return(self$importance)
+    }
+  ),
+  
   private = list(
     fit = function(X_train_, y_train_, ntree = 1000, ...) {
       self$model <- ranger(formula = y ~ .,  data = data.frame(X_train_, y = y_train_), 
-                           num.trees = ntree, splitrule = "extratrees", ...)
+                           num.trees = ntree, splitrule = "extratrees", importance = "impurity", ...)
       
       return(invisible(self))
     },

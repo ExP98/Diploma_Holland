@@ -74,44 +74,91 @@ show_custom_metrics(rf_predictions, "RF", Y_test_ = Y_test)
 ## 3.2 Важность признаков
 
 ```{r}
-lapply(xgb_ind_pred, \(x) x$calc_importance())
-```
-Для XGBoost (и позже для Random Forest) самая важная фича -- CT_1 (открытость-замкнутость)
-
-Порядок предсказания может иметь значение!
-
-```{r}
-LightGBM_models <- vector("list", 6)
-for (col_i in 1:6) {
-  LightGBM_models[[col_i]] <- my_LightGBM_model$new(X_train, Y_train[, col_i], X_test, Y_test[, col_i])
+get_feature_importance <- function(features_df) {
+  # features_df: {6 code rows x 55 feature cols} 
+  importance_df <- data.table(
+    feature = colnames(features_df),
+    avg_imp = features_df %>% colMeans(na.rm = TRUE)
+  ) %>% 
+    .[, avg_imp := abs(avg_imp)] %>% 
+    .[, avg_imp := (avg_imp / sum(avg_imp))] %>% 
+    .[order(-avg_imp)] %>% 
+    .[, cumsum_imp := cumsum(avg_imp)] %>% 
+    .[, names(.SD) := round(.SD, 3), .SDcols = c("avg_imp", "cumsum_imp")]
+  return(importance_df)
 }
 
-res <- lapply(1:6, \(i) lgb.importance(LightGBM_models[[i]]$model, percentage = TRUE)[, .(col = i, Feature, Gain)]) %>% 
-  rbindlist() %>% 
-  dcast(col ~ Feature, value.var = "Gain", fill = 0) %>% 
-  .[, -c("col")]
 
-importance_df <- data.table(
-  feature = colnames(res),
-  avg_imp = res %>% colMeans()
-) %>% 
-  .[order(-avg_imp)] %>% 
-  .[, cumsum_imp := cumsum(avg_imp)] %>% 
-  .[cumsum_imp <= 0.55] %>% 
-  .[, names(.SD) := round(.SD, 3), .SDcols = c("avg_imp", "cumsum_imp")]
-
-xlsx::write.xlsx(importance_df, here("0. Data/1. Output/feature_importance.xlsx"))
+get_model_importance <- function(model_class, X_train_ = X_train, Y_train_ = Y_train,
+                                 X_test_ = X_test, Y_test_ = Y_test) {
+  imp <- vector("list", 6)
+  for (col_i in 1:6) {
+    model <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i])
+    imp[[col_i]] <- model$calc_importance()
+  }
+  imp_df <- bind_rows(imp)
+  imp_df[is.na(imp_df)] <- 0
+  return(imp_df)
+}
 ```
+
+GLM
+```{r}
+glm_importance_by_model <- function(glm_model) {
+  cf <- coef(glm_model, s = "lambda.min")
+  imp_df <- cf %>% 
+    sapply(\(x) x %>% unlist() %>% as.matrix()) %>%
+    t() %>% rbind() %>% 
+    as.data.table() %>% 
+    setnames(new = pluck(cf, 1) %>% rownames()) %>% 
+    .[, -"(Intercept)"]
+  return(imp_df)
+}
+
+glm_importance <- function(X_train_, Y_train_, alpha = 1) {
+  cv_glm <- cv.glmnet(X_train_, Y_train_, family = "mgaussian", alpha = alpha)
+  imp <- glm_importance_by_model(cv_glm)
+  return(imp)
+}
+
+glm_imp_1 <- glm_importance(X_train, Y_train, alpha = 1)
+glm_imp_2 <- glm_importance(X_train, Y_train, alpha = 0)
+```
+        
+```{r}
+models <- list(my_stepwise_lm_model, my_XGBoost_model, my_LightGBM_model, 
+               my_Catboost_model, my_RandomForest_model, my_ET_model)
+
+fi_filename <- here("0. Data/1. Output/Feature_importance.xlsx")
+translation_names_dict <- get_translation_names_dict(shrt_nms_df)
+
+imps <- c(list(glm_imp_1, glm_imp_2), lapply(models, \(mdl) get_model_importance(mdl)))
+model_names <- c("glm_L1", "glm_L2",  lapply(models, \(mdl) mdl$classname)) %>% 
+  str_remove_all("my_|_model")
+
+tmp <- map2(imps, model_names, 
+  function(imp, model_name) {
+    get_feature_importance(imp) %>% 
+      merge(translation_names_dict, all.x = TRUE, by.x = "feature", by.y = "short_name") %>% 
+      .[order(-avg_imp)] %>% 
+      xlsx::write.xlsx(fi_filename, model_name, row.names = FALSE, append = TRUE)
+  }
+)
+```
+
+Часто самая важная фича -- CT_1 (открытость-замкнутость)
+Порядок предсказания может иметь значение!
 
 
 ## 3.3 Проверка отдельных параметров моделей
 
 ### Константный предсказатель
 ```{r}
-const_pred <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
-# const_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test))
+const_int_pred  <- matrix(rep(rep(7, times = 6), each = nrow(Y_test)), nrow = nrow(Y_test))
+const_mean_pred <- matrix(rep(colMeans(Y_train), each = nrow(Y_test)), nrow = nrow(Y_test))
 
-show_custom_metrics(const_pred, "Константное")
+show_custom_metrics(const_int_pred,  "Константное")
+show_custom_metrics(const_mean_pred, "Константное")
 ```
 
 ### LightGBM Cross Validation

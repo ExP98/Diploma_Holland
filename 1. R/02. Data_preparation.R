@@ -12,6 +12,8 @@
 
 
 # 2. Функции                                           ####
+## 2.1 Основные функции обработки данных               ####
+
 extract_psytest_result <- function(res_str) {
   res <- res_str %>%
     str_extract("\\{[^\\}]*\\}") %>%
@@ -97,6 +99,95 @@ train_test_split <- function(features, targets, train_size = 0.8) {
     Y_test = Y_test,
     split_idx = split_idx
   ))
+}
+
+
+## 2.2 Имена признаков                         ####
+
+get_translation_names_dict <- function(short_names_df = shrt_nms_df) {
+  psytest_names_df <- tribble(
+    ~code, ~name,
+    "golland",        "Тест Голланда",
+    "leonhard_poll",  "Опросник Леонгарда-Шмишека",
+    "temperament",    "Личностный опросник Айзенка",
+    "cattell_poll",   "16-факторный опросник Кеттелла",
+    "big_five",       "Пятифакторный опросник личности",
+    "schwartz_poll",  "Ценностный опросник Шварца",
+    "golland_v2",     "Обновленный тест Голланда"
+  )
+  
+  leonhard_rus_factors <- tibble(
+    labels = paste0("Г - ", 1:10),
+    names = c("Гипертимность", "Дистимность", "Циклотимность", "Неуравновешенность", 
+              "Застревание", "Эмотивность", "Экзальтированность", "Тревожность",
+              "Педантичность", "Демонстративность")
+  )
+  
+  cattell_rus_factors <- tribble(
+    ~labels, ~names,
+    "A",  "Открытость - Замкнутость",
+    "B",  "Развитое мышление - Ограниченное мышление",
+    "C",  "Эмоциональная стабильность - Эмоциональная неустойчивость",
+    "E",  "Независимость - Податливость",
+    "F",  "Беспечность - Озабоченность",
+    "G",  "Сознательность - Беспринципность",
+    "H",  "Смелость - Застенчивость",
+    "I",  "Чувственность - Твердость",
+    "L",  "Подозрительность - Доверчивость",
+    "M",  "Мечтательность - Практичность",
+    "N",  "Утонченность - Простота",
+    "O",  "Склонность к чувству вины - Спокойная самоуверенность",
+    "Q1", "Радикализм - Консерватизм",
+    "Q2", "Самостоятельность - Зависимость от группы",
+    "Q3", "Самоконтроль, сильная воля - Недостаток самоконтроля, индифферентность",
+    "Q4", "Внутренняя напряженность - Внутренняя расслабленность"
+  )
+  
+  feature_replacement <- function(str) {
+    str %>% 
+      str_replace_all("индивидуальный.приоритет", "ИП") %>%
+      str_replace_all("нормативный.идеал", "НИ") %>%
+      str_replace_all("^X(\\.){2,}|(\\.){2,}?$", "") %>%
+      str_replace("(\\.){2,}", " - ") %>%
+      str_replace_all("_", " ") %>% 
+      str_replace_all("\\.", " - ") %>% 
+      str_trim()
+  }
+  
+  golland_enum <- function(str) {
+    riasec <- c(
+      "Реалистический (R)", 
+      "Исследовательский (I)",
+      "Артистический (A)",
+      "Социальный (S)",
+      "Предприимчивый (E)",
+      "Традиционный (C)"
+    )
+    # riasec <- c("R", "I", "A", "S", "E", "C")
+    return(str %>% str_replace("X", "") %>% as.numeric() %>% riasec[.])
+  }
+  
+  replace_col_using_df <- function(data, var_name, dict_df) {
+    data <- data %>% 
+      merge(dict_df %>% setnames(old = colnames(.), new = c(var_name, "V2")), 
+            all.x = TRUE, by = var_name) %>% 
+      .[, paste0(var_name) := if_else(is.na(V2), get(var_name), V2)] %>% 
+      .[, -c("V2")]
+    return(data)
+  }
+  
+  translation_names_dict <- short_names_df %>% 
+    copy() %>% 
+    .[full_name != "id" & !str_detect(full_name, "golland_v2")] %>% 
+    separate_wider_delim(cols = "full_name", delim = " / ", names = c("test", "feature")) %>% 
+    as.data.table() %>% 
+    .[, feature := feature %>% feature_replacement()] %>% 
+    .[test == "golland", feature := feature %>% golland_enum()] %>% 
+    replace_col_using_df("test",    psytest_names_df) %>%
+    replace_col_using_df("feature", leonhard_rus_factors) %>%
+    replace_col_using_df("feature", cattell_rus_factors)
+  
+  return(translation_names_dict)
 }
 
 
