@@ -450,15 +450,13 @@ write_w_search_to_xlsx(regr_chain_w_f_pca, chain_mtr_f_pca, "filtered chain PCA"
 Подходы:
   1. Множественная импутация (MICE)
   2. Матричные и тензорные методы
-  3. Многовидовое обучение (Incomplete Multi-View Learning)
-  4. Многозадачное обучение
-  5. Модели, работающие с пропусками (RF, XGBoost)
+  3. Добавление масок
+  4. Потестовое обучение + обединение с разными весами
+  5. Модели, работающие с пропусками (RF, XGBoost) - оч плохо
 
 ```{r}
-wide_data2
+# wide_data2
 ```
-
-### Multiple Imputation
 
 Проверять на датасете, где есть все данные: искусственно сделать там NA. Обычно заполнено 3 или 4 теста:
 ```{r}
@@ -477,54 +475,293 @@ na_data <- na_data %>%
   .[order(id)]
 ```
 
+```{r}
+simple_lm(X_train, Y_train, X_test, Y_test) %>% show_custom_metrics("lm")
+get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
+get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
+perform_stack_MO_regression(my_RandomForest_model, X_train, Y_train, X_test, Y_test) %>%
+  show_custom_metrics("RF", Y_test)
+perform_stack_MO_regression(my_Catboost_model, X_train, Y_train, X_test, Y_test) %>%
+  show_custom_metrics("Catboost", Y_test)
+```
+
+
+### 1. Multiple Imputation
 
 ```{r}
 library(mice)
 
-DT <- na_data %>% copy()
-to_imp <- setdiff(colnames(DT), c("id", paste0("HL_", 1:6)))
 
-# Строим одну импутацию методом predictive mean matching (pmm)
-imp <- mice(
-  DT[, ..to_imp],
-  m       = 1,        # одна «заполненная» версия
-  method  = "pmm",    # predictive mean matching
-  maxit   = 5,        # число итераций
-  printFlag = FALSE
-)
-
-# Подставляем заполненные значения обратно в DT
-DT[, (to_imp) := complete(imp, 1)]
-
-# Проверка: теперь ни в одной колонке to_imp нет NA
-all(colSums(is.na(DT[, ..to_imp])) == 0L)
+mice_imputation <- function(df_with_na) {
+  df <- df_with_na %>% copy()
+  to_imp <- setdiff(colnames(df), c("id", paste0("HL_", 1:6)))
+  
+  # Строим одну импутацию методом predictive mean matching (pmm)
+  imp <- mice(
+    df[, ..to_imp],
+    m       = 1,        # одна «заполненная» версия
+    method  = "pmm",    # predictive mean matching
+    maxit   = 5,        # число итераций
+    printFlag = FALSE
+  )
+  
+  # Подставляем заполненные значения обратно в DT
+  df[, (to_imp) := complete(imp, 1)]
+  return(df)
+}
 ```
 
-Разделение данных:
+Разделение восстановленных данных:
 ```{r}
+DT <- mice_imputation(na_data)
+
 set.seed(SEED)
 .[ftr, trg] <- separate_X_y(DT)
 .[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg, split_idx = split_idx)
-```
 
-```{r}
 simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
 simple_lm(X_train, Y_train, X_test, Y_test) %>% show_custom_metrics("lm")
-```
 
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
+
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
+```
+Работает неплохо, пусть и заметно хуже изначально полных данных. Лучше всего -- GLM Ridge
+
+Разделение данных с пропусками, проверка на XGBoost.
 ```{r}
+set.seed(SEED)
+.[ftr_na, trg_na] <- separate_X_y(na_data)
+.[X_tr_na, X_ts_na, Y_tr_na, Y_ts_na, ..] <- train_test_split(ftr_na, trg_na, split_idx = split_idx)
+
+perform_stack_MO_regression(my_XGBoost_model, X_tr_na, Y_tr_na, X_ts_na, Y_ts_na) %>% 
+  show_custom_metrics(., "XGB with NA", Y_ts_na)
+
+perform_stack_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test) %>% 
+  show_custom_metrics(., "XGB", Y_test)
+
+perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("RF with NA", Y_test)
+
+perform_stack_MO_regression(my_RandomForest_model, X_train, Y_train, X_test, Y_test) %>% 
+  show_custom_metrics("RF", Y_test)
+```
+Качество -- оч плохо.
+
+
+Проба на данных с реальными пропусками:
+```{r}
+DT <- mice_imputation(wide_data2)
+
+set.seed(SEED)
+.[ftr, trg] <- separate_X_y(DT)
+.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg)
+
+simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
 get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
 get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
 
-get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
-get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
+perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("RF", Y_test)
+
+perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("Catboost", Y_test)
 ```
+
+
+### 2. Matrix/Tensor Completion
+
+```{r}
+library(softImpute)
+
+train_matrix_completion <- function(DT, rank.max = 20) {
+  aux_feats <- setdiff(colnames(DT), c("id", paste0("HL_", 1:6)))
+  M         <- as.matrix(DT[, ..aux_feats])
+  fit       <- softImpute::softImpute(M, rank.max = rank.max, lambda = 0, type = "als")
+  return(list(fit = fit, aux = aux_feats))
+}
+
+transform_matrix_completion <- function(fit_obj, DT_new) {
+  aux_feats <- fit_obj$aux
+  M_new <- as.matrix(DT_new[, ..aux_feats])
+  M_imp <- softImpute::complete(M_new, fit_obj$fit)
+  DT_new <- DT_new[, (aux_feats) := as.data.table(M_imp)]
+  return(DT_new)
+}
+```
+
+Как выбрать rank.max:
+```{r}
+M_obs <- as.matrix(wide_data2[, ..aux_feats])
+sv <- svd(M_obs, nu = 0, nv = 0)$d
+plot(sv, type="b", ylab="Singular values", xlab="Component")
+```
+
+Восстановим данные там, где есть известные значения:
+```{r}
+fit_obj <- train_matrix_completion(na_data)
+DT <- transform_matrix_completion(fit_obj, na_data)
+
+set.seed(SEED)
+.[ftr, trg] <- separate_X_y(new_user_filled)
+.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg) # , split_idx = split_idx
+
+simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("RF", Y_test)
+perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("Catboost", Y_test)
+```
+Хорошо для GLM, плохо на RF, Catboost.
+
+
+Данные с реальными пропусками:
+```{r}
+fit_obj <- train_matrix_completion(wide_data)
+DT <- transform_matrix_completion(fit_obj, wide_data2)
+
+set.seed(SEED)
+.[ftr, trg] <- separate_X_y(DT)
+.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg)
+
+simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+
+perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("RF", Y_test)
+
+perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("Catboost", Y_test)
+```
+
+
+### 3. Добавление масок
+
+```{r}
+prepare_data <- function(DT, y_cols = NULL) {
+  df <- DT %>% as.data.table() %>% copy()
+  x_cols <- setdiff(colnames(df), c("id", y_cols))
+  
+  # создаём маски и заполняем NA нулями
+  for (x in x_cols) {
+    mcol <- paste0(x, "_mask")
+    df <- df %>% 
+      .[, (mcol) := as.integer(!is.na(get(x)))] %>% 
+      .[is.na(get(x)), (x) := 0L]
+  }
+  
+  feats <- c(x_cols, paste0(x_cols, "_mask"))
+  return(as.matrix(df[, ..feats]))
+}
+```
+
+```{r}
+set.seed(SEED)
+.[ftr, trg] <- separate_X_y(na_data)
+DT <- ftr %>% as.data.table() %>% prepare_data(y_cols = paste0("HL_", 1:6))
+.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(DT, trg, split_idx = split_idx)
+
+simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+
+perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("RF", Y_test)
+
+perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("Catboost", Y_test)
+```
+
+На wide_data "обучаем", на wide_data2 тестим
+```{r}
+sp_idx <- c(rep(TRUE, wide_data[, .N]), rep(FALSE, wide_data2[, .N]))
+
+set.seed(SEED)
+.[ftr, trg] <- separate_X_y(untd_dt)
+.[X_tr, X_ts, Y_tr, Y_ts, ..] <- train_test_split(ftr, trg, split_idx = sp_idx)
+X_tr <- prepare_data(X_tr, y_cols = paste0("HL_", 1:6))
+X_ts <- prepare_data(X_ts, y_cols = paste0("HL_", 1:6))
+
+simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+
+perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("RF", Y_test)
+
+perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
+  show_custom_metrics("Catboost", Y_test)
+```
+
+### 4. Потестовое обучение + обединениее с разными весами
+
+Обучаем на wd, тестим на wd2
+```{r}
+psytests <- c("BF", "EY", "LN", "SC", "CT")
+model_class <- my_RandomForest_model
+MO_type <- "stack"
+weight_model <- particle_swarm_weights
+```
+
+Потом вставить ..., поменять всё на XXX_
+```{r}
+models_by_psytests     <- vector("list", length(psytests))
+pred_valid_by_psytests <- vector("list", length(psytests))
+
+for (psytest in psytests) {
+  models <- vector("list", 6)
+  for (col_i in 1:6) {
+    models[[col_i]] <- model_class$new(
+      X_train_ = X_train[, str_subset(colnames(X_train), psytest), drop = FALSE], 
+      y_train_ = Y_train[, col_i],
+      X_test_ = X_test[, str_subset(colnames(X_test), psytest), drop = FALSE], 
+      y_test_ = Y_test[, col_i]
+    )
+  }
+  
+  models_by_psytests[[psytest]]     <- models
+  pred_valid_by_psytests[[psytest]] <- sapply(models, \(x) x$pred_test)
+}
+```
+
+```{r}
+.[ind_pred, chain_pred] <- map(
+  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
+  my_XGBoost_model, X_train, Y_train, X_test, Y_test, T, F
+)
+```
+
+
+
+
+
+
+
+```{r}
+p_idx <- c(rep(TRUE, wide_data[, .N]), rep(FALSE, wide_data2[, .N]))
+
+set.seed(SEED)
+.[ftr, trg] <- separate_X_y(untd_dt)
+.[X_tr, X_ts, Y_tr, Y_ts, ..] <- train_test_split(ftr, trg, split_idx = sp_idx)
+
+# for (test_lbl in ) {}
+X_tr_1test <- X_tr[, str_subset(colnames(X_tr), "BF"), drop = FALSE]
+X_ts_1test <- X_ts[, str_subset(colnames(X_ts), "BF"), drop = FALSE]
+pred <- perform_stack_MO_regression(my_RandomForest_model, X_tr_1test, Y_tr, X_ts_1test, Y_ts)
+```
+
+
+---
 
 Важные моменты:
  - мб для учета зависимостей лучше давать на вход wide_data без пропусков тоже (полнее данные для "обучения" зависимостей)
  - стоит задать вопрос, а могут ли этим подходы делать такие превращения и для новых данных? То есть готовые преобразования, как обученный scaler
-
----
+ 
 
 Найти наилучшую модель для каждого из тестов. Мб миксовать с PCA.
 

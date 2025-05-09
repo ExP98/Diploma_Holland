@@ -207,7 +207,8 @@ my_RandomForest_model <- R6Class(
   private = list(
     fit = function(X_train_, y_train_, ntree = 1000) {
       # na.action = na.omit,
-      self$model <- randomForest(x = X_train_, y = y_train_, ntree = ntree, importance = TRUE) 
+      self$model <- randomForest(x = X_train_, y = y_train_, ntree = ntree,
+                                 na.action = na.roughfix, importance = TRUE) 
       return(invisible(self))
     }
   )

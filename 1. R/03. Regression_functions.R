@@ -249,55 +249,60 @@ get_k_PCA_model_table <- function(model, by = 5, X_train_ = X_train, X_test_ = X
 
 
 # 2.3 MO -- multioutput        ####
-perform_MO_regression <- function(model_class, type = c("stack", "chain"), X_train_ = X_train, 
-                                  Y_train_ = Y_train, X_test_ = X_test, Y_test_ = Y_test, ...) {
-  type <- match.arg(type)
-  method_f <- if (type == "stack") perform_stack_MO_regression else perform_chain_MO_regression
-  pred <- method_f(model_class, X_train_, Y_train_, X_test_, Y_test_, print_metric = FALSE, ...)
-  return(pred)
-}
-
-
-perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_,
-                                        print_metric = FALSE, print_model_name = TRUE, 
-                                        need_to_correct = FALSE, ...) {
-  if (print_model_name) message(paste0("Stack - ", model_class$classname))
+stack_MO_regr <- function(model_class, X_train_, Y_train_, X_test_, Y_test_, ...) {
   models <- vector("list", 6)
   for (col_i in 1:6) {
     models[[col_i]] <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i], ...)
   }
+  return(models)
+}
+
+
+chain_MO_regr <- function(model_class, X_train_, Y_train_, X_test_, Y_test_, ...) {
+  models <- vector("list", 6)
+  cbind_X_train <- X_train_
+  cbind_X_test  <- X_test_
+  for (col_i in 1:6) {
+    if (col_i != 1) {
+      cbind_X_train <- cbind(cbind_X_train, col_i = models[[col_i-1]]$pred_train)
+      cbind_X_test  <- cbind(cbind_X_test, col_i = models[[col_i-1]]$pred_test)
+      colnames(cbind_X_train)[ncol(cbind_X_train)] <- paste0("output_", col_i)
+      colnames(cbind_X_test)[ncol(cbind_X_test)]   <- paste0("output_", col_i)
+    }
+    models[[col_i]] <- model_class$new(cbind_X_train, Y_train_[, col_i], cbind_X_test, Y_test_[, col_i], ...)
+  }
+  return(models)
+}
+
+
+perform_MO_regression <- function(model_class, MO_type = c("stack", "chain"), 
+                                  X_train_, Y_train_, X_test_, Y_test_, 
+                                  print_metric = FALSE, print_model_name = TRUE, ...) {
+  MO_type <- match.arg(MO_type)
+  method_f <- if (MO_type == "stack") stack_MO_regr else chain_MO_regr
+  if (print_model_name) message(paste0(MO_type, " - ", model_class$classname))
   
-  stack_pred <- sapply(models, \(x) x$pred_test)
-  if (need_to_correct == TRUE) stack_pred <- stack_pred %>% prediction_correction()
+  models <- method_f(model_class, X_train_, Y_train_, X_test_, Y_test_, ...)
+  pred <- sapply(models, \(x) x$pred_test)
   
-  if (print_metric) print(show_custom_metrics(stack_pred, paste0(model_class$classname, " stack"), Y_test_ = Y_test_))
+  if (print_metric) print(show_custom_metrics(pred, paste(model_class$classname, MO_type), Y_test_))
+  return(invisible(pred))
+}
+
+
+# Для обратной совместимости
+perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_, 
+                                        print_metric = FALSE, print_model_name = TRUE, ...) {
+  stack_pred <- perform_MO_regression(model_class, "stack", X_train_, Y_train_, X_test_, Y_test_,
+                                      print_metric, print_model_name)
   return(invisible(stack_pred))
 }
 
 
-perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_,
-                                        print_metric = FALSE, print_model_name = TRUE, 
-                                        need_to_correct = FALSE, ...) {
-  if (print_model_name) message(paste0("Chain - ", model_class$classname))
-  models <- vector("list", 6)
-  
-  cbind_X_train <- X_train_
-  cbind_X_test <- X_test_
-  
-  for (col_i in 1:6) {
-    if (col_i != 1) {
-      cbind_X_train <- cbind(cbind_X_train, col_i = models[[col_i-1]]$pred_train)
-      cbind_X_test <- cbind(cbind_X_test, col_i = models[[col_i-1]]$pred_test)
-      colnames(cbind_X_train)[ncol(cbind_X_train)] <- paste0("output_", col_i)
-      colnames(cbind_X_test)[ncol(cbind_X_test)] <- paste0("output_", col_i)
-    }
-    models[[col_i]] <- model_class$new(cbind_X_train, Y_train_[, col_i], cbind_X_test, Y_test_[, col_i], ...)
-  }
-  
-  chain_pred <- sapply(models, \(x) x$pred_test)
-  if (need_to_correct == TRUE) chain_pred <- chain_pred %>% prediction_correction()
-  
-  if (print_metric) print(show_custom_metrics(chain_pred, paste0(model_class$classname, " Chained"), Y_test_ = Y_test_))
+perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_, 
+                                        print_metric = FALSE, print_model_name = TRUE, ...) {
+  chain_pred <- perform_MO_regression(model_class, "chain", X_train_, Y_train_, X_test_, Y_test_,
+                                      print_metric, print_model_name)
   return(invisible(chain_pred))
 }
 

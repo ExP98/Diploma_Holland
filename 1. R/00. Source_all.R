@@ -34,6 +34,6 @@ source(paste0(here::here(), "/1. R/11. Weights_selection.R"))
 
 
 # 3. Константы                                         ####
-SEED <- 142
+SEED <- 143
 set.seed(SEED)
 here::here()
