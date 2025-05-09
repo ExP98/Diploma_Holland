@@ -20,6 +20,7 @@ author: "Egor Glushkov"
 
 valid
 ```{r}
+set.seed(SEED)
 split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.6, 0.4))
 
 .[X_train_unscaled, X_test_unscaled] <- list(features[split_idx, ], features[!split_idx, ])
@@ -43,7 +44,6 @@ nn <- round(nrow(X_test)/2)
 Stepwise (back, forward), L2-regression
 
 ```{r}
-### Метод 1: Многомерная пошаговая регрессия (отдельные модели для каждого таргета)
 .[lm_ind_pred, lm_chain_pred] <- map(
   list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
   my_stepwise_lm_model, X_train, Y_train, X_test, Y_test, T, F
@@ -53,74 +53,14 @@ Stepwise (back, forward), L2-regression
 Признаки после выполнения пошаговой регрессии
 ```{r}
 features_stepw <- sapply(1:6, \(i) stepwise_results[[i]]$model %>% colnames() %>% .[. != "y"])
-# reduce(features_stepw, union)
-```
-
-```{r}
-### Метод 2: Многомерный случайный лес
-rf_predictions <- matrix(0, nrow = nrow(X_test), ncol = ncol(Y_test))
-colnames(rf_predictions) <- colnames(Y_test)
-
-for(i in 1:ncol(Y_train)) {
-  df <- data.frame(X_train, y = Y_train[,i])
-  rf_model <- randomForest(y ~ ., data = df)
-  rf_predictions[,i] <- predict(rf_model, X_test)
-}
-
-show_custom_metrics(rf_predictions, "RF", Y_test_ = Y_test)
+reduce(features_stepw, union)
 ```
 
 
 ## 3.2 Важность признаков
 
-```{r}
-get_feature_importance <- function(features_df) {
-  # features_df: {6 code rows x 55 feature cols} 
-  importance_df <- data.table(
-    feature = colnames(features_df),
-    avg_imp = features_df %>% colMeans(na.rm = TRUE)
-  ) %>% 
-    .[, avg_imp := abs(avg_imp)] %>% 
-    .[, avg_imp := (avg_imp / sum(avg_imp))] %>% 
-    .[order(-avg_imp)] %>% 
-    .[, cumsum_imp := cumsum(avg_imp)] %>% 
-    .[, names(.SD) := round(.SD, 3), .SDcols = c("avg_imp", "cumsum_imp")]
-  return(importance_df)
-}
-
-
-get_model_importance <- function(model_class, X_train_ = X_train, Y_train_ = Y_train,
-                                 X_test_ = X_test, Y_test_ = Y_test) {
-  imp <- vector("list", 6)
-  for (col_i in 1:6) {
-    model <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i])
-    imp[[col_i]] <- model$calc_importance()
-  }
-  imp_df <- bind_rows(imp)
-  imp_df[is.na(imp_df)] <- 0
-  return(imp_df)
-}
-```
-
 GLM
 ```{r}
-glm_importance_by_model <- function(glm_model) {
-  cf <- coef(glm_model, s = "lambda.min")
-  imp_df <- cf %>% 
-    sapply(\(x) x %>% unlist() %>% as.matrix()) %>%
-    t() %>% rbind() %>% 
-    as.data.table() %>% 
-    setnames(new = pluck(cf, 1) %>% rownames()) %>% 
-    .[, -"(Intercept)"]
-  return(imp_df)
-}
-
-glm_importance <- function(X_train_, Y_train_, alpha = 1) {
-  cv_glm <- cv.glmnet(X_train_, Y_train_, family = "mgaussian", alpha = alpha)
-  imp <- glm_importance_by_model(cv_glm)
-  return(imp)
-}
-
 glm_imp_1 <- glm_importance(X_train, Y_train, alpha = 1)
 glm_imp_2 <- glm_importance(X_train, Y_train, alpha = 0)
 ```
@@ -409,6 +349,12 @@ regr_experiments <- tribble(
 model_to_exclude <- c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 5)", "const", "lm")
 ```
 
+Краткие выводы по отдельным моделям:
+ - Без PCA обе метрики лучше на всех алгоритмах
+ - stack лучше по С-индексу, chain - по RMSE
+ - лучшая модель - Lasso L1 без PCA; среди не lm, то Catboost
+
+
 ### Без уменьшения размерности (PCA)
 
 Результаты по моделям:
@@ -497,230 +443,92 @@ write_w_search_to_xlsx(regr_stack_w_f_pca, stack_mtr_f_pca, "filtered stack PCA"
 write_w_search_to_xlsx(regr_chain_w_pca  , stack_mtr_pca  , "chain PCA", reg_ens_fname)
 write_w_search_to_xlsx(regr_chain_w_f_pca, chain_mtr_f_pca, "filtered chain PCA", reg_ens_fname)
 ```
-
-
+ 
 
 ## 4.2 Взвешенное ансамблирование (блендинг) отдельно на психологических тестах
 
+Подходы:
+  1. Множественная импутация (MICE)
+  2. Матричные и тензорные методы
+  3. Многовидовое обучение (Incomplete Multi-View Learning)
+  4. Многозадачное обучение
+  5. Модели, работающие с пропусками (RF, XGBoost)
+
+```{r}
+wide_data2
+```
+
+### Multiple Imputation
+
+Проверять на датасете, где есть все данные: искусственно сделать там NA. Обычно заполнено 3 или 4 теста:
+```{r}
+na_data <- wide_data %>% copy()
+tests <- c("BF", "EY", "LN", "SC", "CT")
+
+na_data <- na_data %>% 
+  .[, N_na := sample(c(1, 2), 1, prob = c(0.33, 1-0.33)), by = .I] %>% 
+  .[, tests_to_na := list(list(sample(tests, N_na))), by = .I] %>% 
+  melt(id.vars = c("id", "N_na", "tests_to_na"), variable.name = "factor_name") %>% 
+  .[, test := str_sub(factor_name, 1, 2)] %>% 
+  .[, is_a_in_b := mapply('%in%', test, tests_to_na)] %>% 
+  .[is_a_in_b == TRUE, value := NA] %>% 
+  .[, -c("tests_to_na", "test", "is_a_in_b", "N_na")] %>% 
+  dcast(id ~ factor_name, value.var = "value") %>% 
+  .[order(id)]
+```
+
+
+```{r}
+library(mice)
+
+DT <- na_data %>% copy()
+to_imp <- setdiff(colnames(DT), c("id", paste0("HL_", 1:6)))
+
+# Строим одну импутацию методом predictive mean matching (pmm)
+imp <- mice(
+  DT[, ..to_imp],
+  m       = 1,        # одна «заполненная» версия
+  method  = "pmm",    # predictive mean matching
+  maxit   = 5,        # число итераций
+  printFlag = FALSE
+)
+
+# Подставляем заполненные значения обратно в DT
+DT[, (to_imp) := complete(imp, 1)]
+
+# Проверка: теперь ни в одной колонке to_imp нет NA
+all(colSums(is.na(DT[, ..to_imp])) == 0L)
+```
+
+Разделение данных:
+```{r}
+set.seed(SEED)
+.[ftr, trg] <- separate_X_y(DT)
+.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg, split_idx = split_idx)
+```
+
+```{r}
+simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
+simple_lm(X_train, Y_train, X_test, Y_test) %>% show_custom_metrics("lm")
+```
+
+```{r}
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+
+get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
+get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
+```
+
+Важные моменты:
+ - мб для учета зависимостей лучше давать на вход wide_data без пропусков тоже (полнее данные для "обучения" зависимостей)
+ - стоит задать вопрос, а могут ли этим подходы делать такие превращения и для новых данных? То есть готовые преобразования, как обученный scaler
+
+---
+
 Найти наилучшую модель для каждого из тестов. Мб миксовать с PCA.
 
-```{r}
-prepare_psytest_dataset_by_split <- function(input_dt, psytest_label = c("BF", "EY", "CT", "LN", "SC")) {
-  psytest_label <- match.arg(psytest_label)
-  
-  input_dt <- input_dt %>% 
-    copy() %>% 
-    .[, .SD, .SDcols = names(input_dt) %like% paste0(psytest_label, "|HL")] %>% 
-    drop_na()
-  
-  split_idx <- sample(c(TRUE, FALSE), nrow(input_dt), replace = TRUE, prob = c(0.8, 0.2))
-  
-  .[X_train_unscaled, X_test_unscaled] <- list(
-    input_dt[split_idx, .SD, .SDcols = names(input_dt) %like% psytest_label], 
-    input_dt[!split_idx, .SD, .SDcols = names(input_dt) %like% psytest_label])
-  
-  .[Y_train, Y_test] <- list(input_dt[split_idx, .SD, .SDcols = names(input_dt) %like% "HL_"], 
-                             input_dt[!split_idx, .SD, .SDcols = names(input_dt) %like% "HL_"]) %>% 
-    lapply(as.matrix)
-  
-  mean_train <- apply(X_train_unscaled, 2, mean, na.rm = TRUE)
-  sd_train <- apply(X_train_unscaled, 2, sd, na.rm = TRUE)
-  
-  X_train <- scale(X_train_unscaled, center = mean_train, scale = sd_train)
-  X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
-  
-  if (nrow(X_train) == 0 | nrow(X_test) == 0) error("X_train or X_test are empty!")
-  
-  return(list(X_train = X_train, Y_train = Y_train, X_test = X_test, Y_test = Y_test))
-}
-```
-
 Важно: обучаем на новых потестовых данных (wide_data2), оцениваем на wide_data (старые данные, которые есть по всем тестам, потому в конце можно оценивать ансамбль на них же).
-
-
-### Catboost
-Для примера берем Catboost и обучаем его на данных каждого и тестов по отдельности.
-
-1. BF
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "BF")
-
-.[BF_catb_ind, BF_catb_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-2. EY
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "EY")
-
-.[EY_catb_ind, EY_catb_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-
-3. CT
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "CT")
-
-.[CT_catb_ind, CT_catb_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-4. LN
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "LN")
-
-.[LN_catb_ind, LN_catb_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-5. SC
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "SC")
-
-.[SC_catb_ind, SC_catb_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_Catboost_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-Ансамбль
-```{r}
-models_pred <- list(BF_catb_chain, EY_catb_ind, CT_catb_ind, LN_catb_ind, SC_catb_ind)
-
-w1 <- rep(1/length(models_pred), length(models_pred))
-w2 <- c(1, 1, 10, 5, 2) # BF 2.203 (1), EY 2.203 (1), CT 2.089 (10), LN 2.149 (5), SC 2.192 (2)
-
-scalar_matrix_production(w_vec = w1, models_pred) %>% 
-  show_custom_metrics("All equal", Y_test_ = df[["Y_test"]])
-
-scalar_matrix_production(w_vec = w2, models_pred) %>% 
-  show_custom_metrics("All preferences", Y_test_ = df[["Y_test"]])
-```
-Catboost:
-All equal. aRMSE: 2.117; aCosDist: 0.288
-All preferences. aRMSE: 2.083; aCosDist: 0.284
-
-
-### Random Forest
-
-1. BF
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "BF")
-
-.[BF_rf_ind, BF_rf_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-2. EY
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "EY")
-
-.[EY_rf_ind, EY_rf_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-
-3. CT
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "CT")
-
-.[CT_rf_ind, CT_rf_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-4. LN
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "LN")
-
-.[LN_rf_ind, LN_rf_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-5. SC
-```{r}
-df <- prepare_psytest_dataset(wide_data, wide_data2, "SC")
-
-.[SC_rf_ind, SC_rf_chain] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_RandomForest_model, df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], T, F
-)
-
-rep(colMeans(df[["Y_train"]]), each = nrow(df[["Y_test"]])) %>% 
-  matrix(nrow = nrow(df[["Y_test"]])) %>% 
-  show_custom_metrics("Константное", Y_test_ = df[["Y_test"]])
-```
-
-Ансамбль
-```{r}
-# list(BF_rf_chain 2.243, EY_rf_ind 2.241, CT_rf_ind 2.089, LN_rf_ind 2.193, SC_rf_ind 2.205)
-models_pred <- list(BF_rf_chain, EY_rf_ind, CT_rf_ind, LN_rf_ind, SC_rf_ind)
-
-w1 <- rep(1/length(models_pred), length(models_pred))
-w2 <- c(1, 1, 6, 2, 2)
-w3 <- c(1, 1, 10, 2, 2)
-
-scalar_matrix_production(w_vec = w1, models_pred) %>% 
-  show_custom_metrics("All equal", Y_test_ = df[["Y_test"]])
-
-scalar_matrix_production(w_vec = w2, models_pred) %>% 
-  show_custom_metrics("All preferences", Y_test_ = df[["Y_test"]])
-
-scalar_matrix_production(w_vec = w3, models_pred) %>% 
-  show_custom_metrics("All preferences 2", Y_test_ = df[["Y_test"]])
-```
 
 ### Пример поиска лучшей модели для одного теста
 
@@ -731,6 +539,7 @@ one_test_model_map <- function(model, df_ = df) {
     list(perform_stack_MO_regression), exec, # perform_chain_MO_regression
     model, df_[["X_train"]], df_[["Y_train"]], df_[["X_test"]], df_[["Y_test"]], T, F
   )
+  return(x)
 }
 
 

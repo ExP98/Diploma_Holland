@@ -76,9 +76,12 @@ separate_X_y <- function(wide_data) {
 }
 
 
-train_test_split <- function(features, targets, train_size = 0.8) {
-  split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(train_size, 1-train_size))
-  
+train_test_split <- function(features, targets, train_size = 0.8, split_idx = NULL) {
+  if (is.null(split_idx)) {
+    set.seed(SEED)
+    split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(train_size, 1-train_size))
+  }
+
   .[X_train_unscaled, X_test_unscaled] <- list(features[split_idx, ], features[!split_idx, ])
   .[Y_train, Y_test] <- list(targets[split_idx, ], targets[!split_idx, ])
   
@@ -195,7 +198,7 @@ get_translation_names_dict <- function(short_names_df = shrt_nms_df) {
 wide_data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv")) %>% 
   transform_data_to_wide() %>% 
   rename_to_short() %>% 
-  .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0)), .SDcols = patterns("HL")] %>% 
+  .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0L)), .SDcols = patterns("HL")] %>% 
   # у первых двух субъектов сумма кодов Голланда не 42. Исправим это:
   .[id == "10749", HL_1 := 14] %>% 
   .[id == "39803", HL_6 := 1] 
@@ -204,7 +207,7 @@ wide_data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025_1.csv")) %>%
   setnames(old = "group_id", new = "id") %>% 
   transform_data_to_wide() %>% 
   rename_to_short() %>% 
-  .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0)), .SDcols = patterns("HL")] %>% 
+  .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0L)), .SDcols = patterns("HL")] %>% 
   .[id == "736", HL_6 := 2] # лишь у одного сумма кодов не равна 42
 
 untd_dt <- bind_rows(wide_data, wide_data2) %>% .[, id := .I]

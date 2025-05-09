@@ -322,3 +322,46 @@ calc_regression_models <- function(regr_models_df, MO_strategy = c("stack", "cha
 
 
 extract_matrices <- function(pred_res_df) return(pred_res_df[, pred] %>% `names<-`(pred_res_df[, name]))
+
+
+# 2.4 Важность признаков        ####
+
+get_feature_importance <- function(features_df) {
+  # features_df: {6 code rows x 55 feature cols} 
+  importance_df <- data.table(
+    feature = colnames(features_df),
+    avg_imp = features_df %>% colMeans(na.rm = TRUE)
+  ) %>% 
+    .[, avg_imp := abs(avg_imp)] %>% 
+    .[, avg_imp := (avg_imp / sum(avg_imp))] %>% 
+    .[order(-avg_imp)] %>% 
+    .[, cumsum_imp := cumsum(avg_imp)] %>% 
+    .[, names(.SD) := round(.SD, 3), .SDcols = c("avg_imp", "cumsum_imp")]
+  return(importance_df)
+}
+
+
+get_model_importance <- function(model_class, X_train_ = X_train, Y_train_ = Y_train,
+                                 X_test_ = X_test, Y_test_ = Y_test) {
+  imp <- vector("list", 6)
+  for (col_i in 1:6) {
+    model <- model_class$new(X_train_, Y_train_[, col_i], X_test_, Y_test_[, col_i])
+    imp[[col_i]] <- model$calc_importance()
+  }
+  imp_df <- bind_rows(imp)
+  imp_df[is.na(imp_df)] <- 0
+  return(imp_df)
+}
+
+
+glm_importance <- function(X_train_, Y_train_, alpha = 1) {
+  glm_model <- cv.glmnet(X_train_, Y_train_, family = "mgaussian", alpha = alpha)
+  cf <- coef(glm_model, s = "lambda.min")
+  imp_df <- cf %>% 
+    sapply(\(x) x %>% unlist() %>% as.matrix()) %>%
+    t() %>% rbind() %>% 
+    as.data.table() %>% 
+    setnames(new = pluck(cf, 1) %>% rownames()) %>% 
+    .[, -"(Intercept)"]
+  return(imp_df)
+}

@@ -477,6 +477,7 @@ res
 
 ```{r}
 # Случайные предсказания
+set.seed(SEED)
 Y_rand <- replicate(n = nrow(Y_b_test), sample(c(rep(TRUE, 3), rep(FALSE, 3)), size = 6)) %>% t()
 
 bind_rows(
