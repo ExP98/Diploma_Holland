@@ -275,15 +275,21 @@ chain_MO_regr <- function(model_class, X_train_, Y_train_, X_test_, Y_test_, ...
 }
 
 
-perform_MO_regression <- function(model_class, MO_type = c("stack", "chain"), 
+no_MO_regr <- function(model_class, X_train_, Y_train_, X_test_, Y_test_, ...) {
+  model <- model_class$new(X_train_, Y_train_, X_test_, Y_test_, ...)
+  return(list(model))
+}
+
+
+perform_MO_regression <- function(model_class, MO_type = c("stack", "chain", "none"), 
                                   X_train_, Y_train_, X_test_, Y_test_, 
                                   print_metric = FALSE, print_model_name = TRUE, ...) {
   MO_type <- match.arg(MO_type)
-  method_f <- if (MO_type == "stack") stack_MO_regr else chain_MO_regr
+  method_f <- if (MO_type == "stack") stack_MO_regr else if (MO_type == "chain") chain_MO_regr else no_MO_regr
   if (print_model_name) message(paste0(MO_type, " - ", model_class$classname))
   
   models <- method_f(model_class, X_train_, Y_train_, X_test_, Y_test_, ...)
-  pred <- sapply(models, \(x) x$pred_test)
+  pred <- lapply(models, \(x) x$pred_test) %>% do.call(cbind, .)
   
   if (print_metric) print(show_custom_metrics(pred, paste(model_class$classname, MO_type), Y_test_))
   return(invisible(pred))
@@ -307,21 +313,15 @@ perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_
 }
 
 
-calc_regression_models <- function(regr_models_df, MO_strategy = c("stack", "chain"),
-                                   X_train_, Y_train_, X_test_, Y_test_) {
-  MO_strategy <- match.arg(MO_strategy)
-  
+calc_regression_models <- function(regr_models_df, X_train_, Y_train_, X_test_, Y_test_) {
   MO_res <- regr_models_df %>% 
     copy() %>% 
-    .[need_MO == T, pred := pmap(list(model, params), \(mdl, par) do.call(perform_MO_regression, 
-        c(list(mdl, MO_strategy, X_train_, Y_train_, X_test_, Y_test_, print_model_name = F), par)))] %>%
-    .[need_MO == F, pred := pmap(list(model, params), \(mdl, par) 
-        do.call(mdl, c(list(X_train_, Y_train_, X_test_, Y_test_), par)))] %>% 
+    .[, pred := pmap(list(model, params, MO_type), \(mdl, par, mo_type) do.call(perform_MO_regression, 
+        c(list(mdl, mo_type, X_train_, Y_train_, X_test_, Y_test_, print_model_name = F), par)))] %>% 
     .[, rmse := map_dbl(pred, \(x) df_metric(x, Y_test_, my_rmse) %>% round(3))] %>% 
-    .[map_lgl(pred, \(item) !is.null(item)), 
+    .[map_lgl(pred, \(item) !is.null(item)),
       C_index := map_dbl(pred, \(x) df_metric(x, Y_test_, calc_C_index) %>% round(3))] %>% 
     .[, .(name, pred, rmse, C_index)]
-  
   return(MO_res)
 }
 

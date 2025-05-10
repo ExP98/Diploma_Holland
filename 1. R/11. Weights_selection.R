@@ -113,7 +113,7 @@ write_w_search_to_xlsx <- function(w_srch_res, matr, sheetname,
 
 # Шэпли + Монте-Карло
 # также можно использовать approx_shapley_cpp
-approx_shapley <- function(models_probs, Y_true, metric_fn = matr_cind, R = 500) {
+approx_shapley <- function(models_probs, Y_true, R = 500) {
   M <- length(models_probs)
   N <- nrow(models_probs[[1]])
   K <- ncol(models_probs[[1]])
@@ -132,8 +132,8 @@ approx_shapley <- function(models_probs, Y_true, metric_fn = matr_cind, R = 500)
       idx <- perm[k]
       prob_k <- prob_array[,,idx]
       cum_avg <- (cum_sum + prob_k) / k
-      v_prev <- if (k == 1) 0 else metric_fn(cum_sum / (k - 1), Y_true)
-      v_curr <- metric_fn(cum_avg, Y_true)
+      v_prev <- if (k == 1) 0 else matr_cind(cum_sum / (k - 1), Y_true)
+      v_curr <- matr_cind(cum_avg, Y_true)
       phi[idx] <- phi[idx] + (v_curr - v_prev)
       cum_sum <- cum_sum + prob_k
     }
@@ -308,6 +308,110 @@ filtered_weights <- function(models_probs, Y_true, qnt_prob = 0.67) {
 }
 
 
+## 2.3 Ансамбли для потестовых данных                ####
+
+fit_by_tests_ensemble <- function(model_class, 
+                                  X_train_, Y_train_, X_test_, Y_test_,
+                                  psytests = c("BF", "CT", "EY", "LN", "SC"), 
+                                  MO_regr = stack_MO_regr, 
+                                  weight_model = particle_swarm_weights, 
+                                  weight_model_params = list(),
+                                  ...) {
+  models_by_psytests <- NULL
+  pred_valid_by_psytests <- NULL
+  psytests <- psytests %>% sort()
+  
+  for (psytest in psytests) {
+    models <- MO_regr(
+      model_class = model_class, 
+      X_train_ = X_train_[, str_subset(colnames(X_train_), psytest), drop = FALSE], 
+      Y_train_ = Y_train_,
+      X_test_ = X_test_[, str_subset(colnames(X_test_), psytest), drop = FALSE], 
+      Y_test_ = Y_test_,
+      ...
+    )
+    models_by_psytests[[psytest]]     <- models
+    pred_valid_by_psytests[[psytest]] <- lapply(models, \(x) x$pred_test) %>% do.call(cbind, .)
+  }
+  
+  # 31 комбинация
+  psy_combos <- sapply(1:length(psytests), \(i) combn(psytests, i, simplify = FALSE)) %>%
+    purrr::list_flatten() %>% 
+    lapply(sort)
+  
+  # веса для каждой из комбинаций (и их cindex)
+  w_combos <- data.table(comb = psy_combos) %>% 
+    .[, comb_str := sapply(comb, toString)] %>% 
+    .[, w_comb := lapply(comb, \(cmb) do.call(
+      weight_model, 
+      args = c(list(pred_valid_by_psytests[cmb], Y_test), weight_model_params)
+    ))] %>% 
+    .[, cindex := map2_dbl(w_comb, comb, \(w, cm)
+                           weighted_cindex_value(w, pred_valid_by_psytests[cm], Y_test))]
+  
+  return(list(models_by_psytests = models_by_psytests, w_combos = w_combos))
+}
+
+
+predict_by_tests_ensemble <- function(X_na, Y_na, models_by_psytests, w_combos, 
+                                      psytests = c("BF", "CT", "EY", "LN", "SC")) {
+  psytests <- psytests %>% sort()
+  psytest_preds_by_id <- X_na[, .(id)]
+  
+  for (psytest in psytests) {
+    X_psytest <- X_na[, .SD, .SDcols = patterns(paste0(psytest, "|id"))] %>% drop_na()
+    
+    pred <- lapply(models_by_psytests[[psytest]], \(mdl) mdl$predict(as.matrix(X_psytest[, -"id"]))) %>% 
+      do.call(cbind, .)
+    pred_id <- X_psytest[, .(id)] %>% 
+      cbind(pred) %>% 
+      setnames(new = c("id", paste0("HL_", 1:6))) %>% 
+      .[, .(test = list(as.numeric(.SD))), by = id, .SDcols = paste0("HL_", 1:6)] %>% 
+      setnames(old = "test", new = psytest)
+    
+    psytest_preds_by_id <- psytest_preds_by_id %>% merge(pred_id, all.x = TRUE, by = "id")
+  }
+  
+  # какие тесты для каждого id были пройдены
+  psytests_by_id <- psytest_preds_by_id %>% 
+    copy() %>% 
+    melt(id.vars = "id", variable.name = "psytest", variable.factor = FALSE) %>% 
+    .[, val_len := sapply(value, \(v) length(v) > 0)] %>% 
+    .[val_len == TRUE] %>%
+    .[, .(comb_str = psytest %>% sort() %>% toString()), by = "id"]
+  
+  # для каждого id собраны предсказания по каждому тесту, его комбинация тестов, их веса, сделанное на их основе общее предсказание
+  psytest_preds_by_id <- psytest_preds_by_id %>% 
+    merge(psytests_by_id, all.x = TRUE, by = "id") %>% 
+    merge(w_combos[, -c("cindex")], all.x = TRUE, by = "comb_str") %>%
+    .[order(id)] %>%
+    .[, pred := pmap(.SD, function(...) {
+        args <- list(...)                        # named list: w_comb, BF, EY, …
+        # args[psytests] -- идут строго в том же порядке, что и веса, для их 1-1 соответствия
+        vecs <- purrr::compact(args[psytests])   # compact удаляет NULL-элементы
+        scalar_matrix_production(w_vec = args[["w_comb"]], mat_list = vecs)
+      },
+      .SDcols = c("w_comb", psytests)
+    )]
+  
+  # Y_pred <- psytest_preds_by_id %>% copy() %>% 
+  #   .[order(id), pred] %>%
+  #   do.call(rbind, .)
+  # distr_metric(Y_pred, Y_na, func = calc_C_index)
+  
+  # предсказание + настоящая метка + оценка C-index для каждой строки
+  pred_true_df <- psytest_preds_by_id %>% copy() %>% 
+    .[order(id), .(id, pred)] %>% 
+    cbind(Y_na) %>% 
+    .[, .(pred, y_true = list(as.numeric(.SD))), by = id, .SDcols = paste0("HL_", 1:6)] %>% 
+    .[, cindex := map2_dbl(pred, y_true, calc_C_index)]
+  
+  # cindex = pred_true_df$cindex %>% mean() %>% round(3)
+  # p = pred_true_df$cindex %>% plot_cindex_hist()
+  return(pred_true_df)
+}
+
+
 # 3. Данные и константы                                          ####
 w_config <- tribble(
   ~method,                     ~label,           ~params,
@@ -321,5 +425,17 @@ w_config <- tribble(
   particle_swarm_weights,      "PSO",            list(list(swarm_size = 50, maxit = 100)),
   # bayes_optimize_weights,      "Bayes Opt",      list(list(init_points = 15, n_iter = 15)),
   coordinate_optimize_weights, "Coord. Asc",     list(list(tol = 1e-4, max_iter = 20))
+) %>% 
+  as.data.table()
+
+w_bytest_comb_config <- tribble(
+  ~method,                     ~label,           ~params,
+  equal_weights,               "Equal w",        list(),
+  simple_weights,              "Simple w",       list(),
+  grid_search_weights,         "Grid Search",    list(step = 0.5),
+  stacking_qp_weights,         "QP",             list(),
+  genetic_algorithm_weights,   "GA",             list(popSize = 10, maxiter = 50),
+  particle_swarm_weights,      "PSO",            list(swarm_size = NA, maxit = 75)
+  #, coordinate_optimize_weights, "Coord. Asc",     list(tol = 1e-3, max_iter = 15)
 ) %>% 
   as.data.table()

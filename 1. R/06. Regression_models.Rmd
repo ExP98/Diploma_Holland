@@ -130,14 +130,14 @@ show_custom_metrics(lm_ind_pred, "lm")
 ```
 
 ```{r}
-lm_L2_pred <- get_L1_L2_glmnet_preds(alpha = 0) # Ridge
-lm_L1_pred <- get_L1_L2_glmnet_preds(alpha = 1) # Lasso
+lm_L2_pred <- regularized_lm(alpha = 0, print_metric = T) # Ridge
+lm_L1_pred <- regularized_lm(alpha = 1, print_metric = T) # Lasso
 ```
 
 При этом по отдельности результат хуже
 ```{r}
-perform_stack_MO_regression(my_L1_L2_glmnet_model, X_train, Y_train, X_test, Y_test, T, alpha = 0)
-perform_stack_MO_regression(my_L1_L2_glmnet_model, X_train, Y_train, X_test, Y_test, T, alpha = 1)
+perform_stack_MO_regression(my_regularized_lm_model, X_train, Y_train, X_test, Y_test, T, alpha = 0)
+perform_stack_MO_regression(my_regularized_lm_model, X_train, Y_train, X_test, Y_test, T, alpha = 1)
 ```
 
 
@@ -326,23 +326,23 @@ X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 Какие модели используем (функция/класс, имя, доп. параметры):
 ```{r}
 regr_experiments <- tribble(
-  ~model,                   ~name,                  ~need_MO, ~params,
-  const_model,              "const",                FALSE,    list(),
-  regularized_lm,           "Lasso L1",             FALSE,    list(alpha = 1),
-  regularized_lm,           "Ridge L2",             FALSE,    list(alpha = 0),
-  simple_lm,                "lm",                   FALSE,    list(),
-  my_stepwise_lm_model,     "stepwise lm",          TRUE,     list(),
-  my_XGBoost_model,         "XGBoost",              TRUE,     list(),
-  my_LightGBM_model,        "LightGBM",             TRUE,     list(),
-  my_Catboost_model,        "CatBoost",             TRUE,     list(),
-  my_RandomForest_model,    "Random Forest (500)",  TRUE,     list(ntree = 500),
-  my_RandomForest_model,    "Random Forest (1000)", TRUE,     list(ntree = 1000),
-  my_knn_model,             "kNN (k = 5)",          TRUE,     list(k = 5),
-  my_knn_model,             "kNN (k = 25)",         TRUE,     list(k = 25),
-  my_knn_model,             "kNN (k = 50)",         TRUE,     list(k = 50),
-  my_SVR_model,             "SVR",                  TRUE,     list(kernel = "sigmoid"),
-  my_ET_model,              "ExtraTree (500)",      TRUE,     list(ntree = 500),
-  my_ET_model,              "ExtraTree (2000)",     TRUE,     list(ntree = 2000)
+  ~model,                   ~name,                  ~MO_type,    ~params,
+  my_const_model,           "const",                "none",      list(),
+  my_regularized_lm_model,  "Lasso L1",             "none",      list(alpha = 1),
+  my_regularized_lm_model,  "Ridge L2",             "none",      list(alpha = 0),
+  my_lm_model,              "lm",                   "none",      list(),
+  my_stepwise_lm_model,     "stepwise lm",          "stack",     list(),
+  my_XGBoost_model,         "XGBoost",              "stack",     list(),
+  my_LightGBM_model,        "LightGBM",             "stack",     list(),
+  my_Catboost_model,        "CatBoost",             "stack",     list(),
+  my_RandomForest_model,    "Random Forest (500)",  "stack",     list(ntree = 500),
+  my_RandomForest_model,    "Random Forest (1000)", "stack",     list(ntree = 1000),
+  my_knn_model,             "kNN (k = 5)",          "stack",     list(k = 5),
+  my_knn_model,             "kNN (k = 25)",         "stack",     list(k = 25),
+  my_knn_model,             "kNN (k = 50)",         "stack",     list(k = 50),
+  my_SVR_model,             "SVR",                  "stack",     list(kernel = "sigmoid"),
+  my_ET_model,              "ExtraTree (500)",      "stack",     list(ntree = 500),
+  my_ET_model,              "ExtraTree (2000)",     "stack",     list(ntree = 2000)
 ) %>%
   as.data.table()
 
@@ -359,11 +359,8 @@ model_to_exclude <- c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 5)", "
 
 Результаты по моделям:
 ```{r}
-regr_stack_res <- calc_regression_models(regr_experiments, MO_strategy = "stack",
-                                         X_train, Y_train, X_test, Y_test)
-
-regr_chain_res <- calc_regression_models(regr_experiments, MO_strategy = "chain",
-                                         X_train, Y_train, X_test, Y_test)
+regr_stack_res <- calc_regression_models(regr_experiments, X_train, Y_train, X_test, Y_test)
+regr_chain_res <- calc_regression_models(regr_experiments, X_train, Y_train, X_test, Y_test)
 
 regr_res_file <- here("0. Data/1. Output/regression_results.xlsx")
 xlsx::write.xlsx(regr_stack_res[order(-C_index), -"pred"],
@@ -408,11 +405,8 @@ write_w_search_to_xlsx(regr_chain_w_f, chain_mtr_f, "filtered chain", reg_ens_fn
 
 Результаты по моделям:
 ```{r}
-regr_stack_res_pca <- calc_regression_models(regr_experiments, MO_strategy = "stack",
-                                             X_train_pca, Y_train, X_test_pca, Y_test)
-
-regr_chain_res_pca <- calc_regression_models(regr_experiments, MO_strategy = "chain",
-                                             X_train_pca, Y_train, X_test_pca, Y_test)
+regr_stack_res_pca <- calc_regression_models(regr_experiments, X_train_pca, Y_train, X_test_pca, Y_test)
+regr_chain_res_pca <- calc_regression_models(regr_experiments, X_train_pca, Y_train, X_test_pca, Y_test)
 
 regr_stack_res_pca[order(-C_index), -"pred"] %>% 
   xlsx::write.xlsx(regr_res_file, "stack PCA", row.names = F, append = T)
@@ -477,8 +471,8 @@ na_data <- na_data %>%
 
 ```{r}
 simple_lm(X_train, Y_train, X_test, Y_test) %>% show_custom_metrics("lm")
-get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
-get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
+regularized_lm(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
+regularized_lm(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
 perform_stack_MO_regression(my_RandomForest_model, X_train, Y_train, X_test, Y_test) %>%
   show_custom_metrics("RF", Y_test)
 perform_stack_MO_regression(my_Catboost_model, X_train, Y_train, X_test, Y_test) %>%
@@ -522,11 +516,11 @@ set.seed(SEED)
 simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
 simple_lm(X_train, Y_train, X_test, Y_test) %>% show_custom_metrics("lm")
 
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+regularized_lm(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
 
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
-get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+regularized_lm(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
 ```
 Работает неплохо, пусть и заметно хуже изначально полных данных. Лучше всего -- GLM Ridge
 
@@ -560,8 +554,8 @@ set.seed(SEED)
 .[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg)
 
 simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
 
 perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
   show_custom_metrics("RF", Y_test)
@@ -609,8 +603,8 @@ set.seed(SEED)
 .[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg) # , split_idx = split_idx
 
 simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
 perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
   show_custom_metrics("RF", Y_test)
 perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
@@ -629,8 +623,8 @@ set.seed(SEED)
 .[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg)
 
 simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
 
 perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
   show_custom_metrics("RF", Y_test)
@@ -667,8 +661,8 @@ DT <- ftr %>% as.data.table() %>% prepare_data(y_cols = paste0("HL_", 1:6))
 .[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(DT, trg, split_idx = split_idx)
 
 simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
 
 perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
   show_custom_metrics("RF", Y_test)
@@ -688,8 +682,8 @@ X_tr <- prepare_data(X_tr, y_cols = paste0("HL_", 1:6))
 X_ts <- prepare_data(X_ts, y_cols = paste0("HL_", 1:6))
 
 simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-get_L1_L2_glmnet_preds(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
+regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
 
 perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
   show_custom_metrics("RF", Y_test)
@@ -698,137 +692,92 @@ perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>%
   show_custom_metrics("Catboost", Y_test)
 ```
 
+
 ### 4. Потестовое обучение + обединениее с разными весами
 
 Обучаем на wd, тестим на wd2
-```{r}
-psytests <- c("BF", "EY", "LN", "SC", "CT") %>% sort()
-model_class <- my_RandomForest_model
-MO_regr <- stack_MO_regr
-weight_model <- particle_swarm_weights
-weight_model_params <- list()
-```
 
-Потом вставить ..., поменять всё на XXX_
-
-fit-стадия
-```{r}
-models_by_psytests <- NULL
-pred_valid_by_psytests <- NULL
-
-for (psytest in psytests) {
-  models <- MO_regr(
-    model_class = model_class, 
-    X_train_ = X_train[, str_subset(colnames(X_train), psytest), drop = FALSE], 
-    Y_train_ = Y_train,
-    X_test_ = X_test[, str_subset(colnames(X_test), psytest), drop = FALSE], 
-    Y_test_ = Y_test
-  )
-  models_by_psytests[[psytest]]     <- models
-  pred_valid_by_psytests[[psytest]] <- sapply(models, \(x) x$pred_test)
-}
-
-# 31 комбинация
-psy_combos <- sapply(1:length(psytests), \(i) combn(psytests, i, simplify = FALSE)) %>%
-  purrr::list_flatten() %>% 
-  lapply(sort)
-
-# веса для каждой из комбинаций (и их cindex)
-w_combos <- data.table(comb = psy_combos) %>% 
-  .[, comb_str := sapply(comb, toString)] %>% 
-  .[, w_comb := lapply(comb, \(cmb) do.call(
-    weight_model, 
-    args = c(list(pred_valid_by_psytests[cmb], Y_test), weight_model_params)
-  ))] %>% 
-  .[, cindex := map2_dbl(w_comb, comb, \(w, cm)
-                         weighted_cindex_value(w, pred_valid_by_psytests[cm], Y_test))]
-```
-
-predict-стадия
 ```{r}
 # .[ftrs_na, trgs_na] <- separate_X_y(wide_data2)
 ftrs_na <- wide_data2[, .SD, .SDcols = !patterns("HL|HL2")]
-trgs_na <- wide_data2[, .SD, .SDcols =  patterns("HL|HL2")] %>% as.matrix()
+Y_na <- wide_data2[, .SD, .SDcols =  patterns("HL|HL2")] %>% as.matrix()
 
 # Нормировать!
-.[X_tr_unsc, ..] <- list(features[split_idx, ], features[!split_idx, ])
+X_tr_unsc <- features[split_idx, ]
 mean_train <- apply(X_tr_unsc, 2, mean, na.rm = TRUE) %>% c(0, .) # первое -- для id
 sd_train <- apply(X_tr_unsc, 2, sd, na.rm = TRUE) %>% c(1, .)
 
 X_na <- scale(ftrs_na, center = mean_train, scale = sd_train) %>% as.data.table()
-psytest_preds_by_id <- X_na[, .(id)]
-
-for (psytest in psytests) {
-  X_psytest <- X_na[, .SD, .SDcols = patterns(paste0(psytest, "|id"))] %>% drop_na()
-  
-  pred <- sapply(models_by_psytests[[psytest]], \(mdl) mdl$predict(as.matrix(X_psytest[, -"id"])))
-  pred_id <- X_psytest[, .(id)] %>% 
-    cbind(pred) %>% 
-    setnames(new = c("id", paste0("HL_", 1:6))) %>% 
-    .[, .(test = list(as.numeric(.SD))), by = id, .SDcols = paste0("HL_", 1:6)] %>% 
-    setnames(old = "test", new = psytest)
-  
-  psytest_preds_by_id <- psytest_preds_by_id %>% merge(pred_id, all.x = TRUE, by = "id")
-}
-
-# какие тесты для каждого id были пройдены
-psytests_by_id <- psytest_preds_by_id %>% 
-  copy() %>% 
-  melt(id.vars = "id", variable.name = "psytest", variable.factor = FALSE) %>% 
-  .[, val_len := sapply(value, \(v) length(v) > 0)] %>% 
-  .[val_len == TRUE] %>%
-  .[, .(comb_str = psytest %>% sort() %>% toString()), by = "id"]
-
-# для каждого id собраны предсказания по каждому тесту, его комбинация тестов, их веса, сделанное на их основе общее предсказание
-psytest_preds_by_id <- psytest_preds_by_id %>% 
-  merge(psytests_by_id, all.x = TRUE, by = "id") %>% 
-  merge(w_combos[, -c("cindex")], all.x = TRUE, by = "comb_str") %>%
-  .[order(id)] %>%
-  .[, pred := pmap(
-    .l = .SD,
-    .f = function(...) {
-      args <- list(...)                        # named list: w_comb, BF, EY, …
-      # args[psytests] -- идут строго в том же порядке, что и веса, для их 1-1 соответствия
-      vecs <- purrr::compact(args[psytests])   # compact удаляет NULL-элементы
-      scalar_matrix_production(w_vec = args[["w_comb"]], mat_list = vecs)
-    },
-    .SDcols = c("w_comb", psytests)
-  )]
-
-# Y_pred <- psytest_preds_by_id %>% copy() %>% 
-#   .[order(id), pred] %>%
-#   do.call(rbind, .)
-# distr_metric(Y_pred, trgs_na, func = calc_C_index)
-
-# предсказание + настоящая метка + оценка C-index для каждой строки
-pred_true_vals <- psytest_preds_by_id %>% copy() %>% 
-  .[order(id), .(id, pred)] %>% 
-  cbind(trgs_na) %>% 
-  .[, .(pred, y_true = list(as.numeric(.SD))), by = id, .SDcols = paste0("HL_", 1:6)] %>% 
-  .[, cindex := map2_dbl(pred, y_true, calc_C_index)]
-
-cindex_val <- pred_true_vals$cindex %>% mean()
-p <- pred_true_vals$cindex %>% plot_cindex_hist()
+# X_na, Y_na
 ```
 
-Обернуть это в функцию
+```{r}
+for (i in 1:nrow(w_bytest_comb_config)) {
+  .[w_model, w_par, lbl] <- w_bytest_comb_config[i, .(method, params, label)] %>% sapply(\(obj) obj)
+  
+  tic()
+  .[psytest_models, wght_combos] <- fit_by_tests_ensemble(
+    model_class = my_knn_model,
+    X_train, Y_train, X_test, Y_test,
+    MO_regr = stack_MO_regr,
+    weight_model = w_model,
+    weight_model_params = w_par
+  )
+  
+  pred_true_values <- predict_by_tests_ensemble(X_na, Y_na, psytest_models, wght_combos)
+  toc()
+  
+  val <- pred_true_values$cindex %>% mean() %>% round(3)
+  cat(lbl, ", cindex: ", val, "\n\n", sep = "")
+  # pred_true_values$cindex %>% plot_cindex_hist()
+}
+```
+
+```{r}
+for (row_exp in 1:nrow(regr_experiments)) {
+  my_model     <- regr_experiments[row_exp, model][[1]]
+  model_name   <- regr_experiments[row_exp, name][[1]]
+  mo_type      <- regr_experiments[row_exp, MO_type][[1]]
+  model_params <- regr_experiments[row_exp, params][[1]]
+  
+  method_f <- if (mo_type == "stack") stack_MO_regr else if (mo_type == "chain") chain_MO_regr else no_MO_regr
+  cat(row_exp, ". ", model_name, "\n\n", sep = "")
+  
+  for (i in 1:nrow(w_bytest_comb_config)) {
+    .[w_model, w_par, lbl] <- w_bytest_comb_config[i, .(method, params, label)] %>% sapply(\(obj) obj)
+    
+    tic()
+    .[psytest_models, wght_combos] <- do.call(
+      fit_by_tests_ensemble,
+      args = c(
+        list(
+          model_class = my_model,
+          X_train, Y_train, X_test, Y_test,
+          psytests = c("BF", "CT", "EY", "LN", "SC"),
+          MO_regr = method_f,
+          weight_model = w_model,
+          weight_model_params = w_par
+        ),
+        model_params
+      )
+    )
+      
+    pred_true_values <- predict_by_tests_ensemble(X_na, Y_na, psytest_models, wght_combos)
+    toc()
+    
+    val <- pred_true_values$cindex %>% mean() %>% round(3)
+    cat(lbl, ", cindex: ", val, "\n\n", sep = "")
+  }
+}
+```
+
+
+
 Прогнать на разных моделях и weight_model
 Сравнить с другими способами заполнения пропусков
 
-Чтобы прогнать на других моделях, надо везде predict убрать из private
 
----
-
-Важные моменты:
- - мб для учета зависимостей лучше давать на вход wide_data без пропусков тоже (полнее данные для "обучения" зависимостей)
- - стоит задать вопрос, а могут ли этим подходы делать такие превращения и для новых данных? То есть готовые преобразования, как обученный scaler
- 
-
-Найти наилучшую модель для каждого из тестов. Мб миксовать с PCA.
-
-Важно: обучаем на новых потестовых данных (wide_data2), оцениваем на wide_data (старые данные, которые есть по всем тестам, потому в конце можно оценивать ансамбль на них же).
-
-### Пример поиска лучшей модели для одного теста
+### 5. Пример поиска лучшей модели для одного теста
 
 Перечислим все модели:
 ```{r}
@@ -881,8 +830,8 @@ for (test_lbl in c("BF", "EY", "CT", "LN", "SC")) {
     }
     
     # models_by_tests[[test_lbl]] <- map(class_models$models, one_test_model_map, df_ = df)
-    models_by_tests[[test_lbl]][["Lasso"]] <- get_L1_L2_glmnet_preds(df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], alpha = 1)
-    models_by_tests[[test_lbl]][["Ridge"]] <- get_L1_L2_glmnet_preds(df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], alpha = 0)
+    models_by_tests[[test_lbl]][["Lasso"]] <- regularized_lm(df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], alpha = 1)
+    models_by_tests[[test_lbl]][["Ridge"]] <- regularized_lm(df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], alpha = 0)
     show_constant_pred_metric(df) %>% cat()
     cat("\n")
   # }

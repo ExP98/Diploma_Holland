@@ -189,7 +189,7 @@ best_k <- 23
 X_train_pca <- pca_scaler(X_train, pca_model, k = best_k)
 X_test_pca  <- pca_scaler(X_test,  pca_model, k = best_k)
 
-pred <- perform_stack_MO_regression(my_L1_L2_glmnet_model, X_train_pca, Y_train, X_test_pca, Y_test, print_metric = TRUE)
+pred <- perform_stack_MO_regression(my_regularized_lm_model, X_train_pca, Y_train, X_test_pca, Y_test, print_metric = TRUE)
 first_inds_vec <- apply(pred, 1, \(x) which.max(x)) %>% unname()
 predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
 ```
@@ -210,7 +210,7 @@ predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
 ```{r}
 # my_RandomForest_model, my_LightGBM_model
 pred <- perform_stack_MO_regression(my_LightGBM_model, X_train, Y_train, X_test, Y_test, print_metric = TRUE)
-# pred <- get_L1_L2_glmnet_preds(X_train, Y_train, X_test, Y_test, print_metric = TRUE)
+# pred <- regularized_lm(X_train, Y_train, X_test, Y_test, print_metric = TRUE)
 first_inds_vec <- apply(pred, 1, \(x) which.max(x)) %>% unname()
 predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
 ```
