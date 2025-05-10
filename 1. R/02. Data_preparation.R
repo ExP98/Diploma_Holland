@@ -201,15 +201,17 @@ wide_data <- fread(paste0(here(), "/0. Data/AllTestsData_092024.csv")) %>%
   .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0L)), .SDcols = patterns("HL")] %>% 
   # у первых двух субъектов сумма кодов Голланда не 42. Исправим это:
   .[id == "10749", HL_1 := 14] %>% 
-  .[id == "39803", HL_6 := 1] 
+  .[id == "39803", HL_6 := 1] %>% 
+  .[order(id)]
   
 wide_data2 <- fread(paste0(here(), "/0. Data/AllTestsData_022025_1.csv")) %>% 
   setnames(old = "group_id", new = "id") %>% 
   transform_data_to_wide() %>% 
   rename_to_short() %>% 
   .[, names(.SD) := lapply(.SD, \(x) replace(x, is.na(x), 0L)), .SDcols = patterns("HL")] %>% 
-  .[id == "736", HL_6 := 2] # лишь у одного сумма кодов не равна 42
-
+  .[id == "736", HL_6 := 2] %>% # лишь у одного сумма кодов не равна 42
+  .[order(id)]
+  
 untd_dt <- bind_rows(wide_data, wide_data2) %>% .[, id := .I]
 # rm(wide_data, wide_data2)
 

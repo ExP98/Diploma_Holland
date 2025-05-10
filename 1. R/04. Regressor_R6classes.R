@@ -53,17 +53,15 @@ my_template_model <- R6Class(
     },
     
     initialize = function(X_train_, y_train_, X_test_ = NULL, y_test_ = NULL, ...) {
-      private$fit(X_train_, y_train_, ...)
-      self$pred_train <- private$predict(X_train_)
+      self$fit(X_train_, y_train_, ...)
+      self$pred_train <- self$predict(X_train_)
       
-      if (!is.null(X_test_)) self$pred_test <- private$predict(X_test_, is_test = TRUE)
-      if (!is.null(y_test_) && !is.null(self$pred_test)) private$calc_rmse(y_test_, self$pred_test)
+      if (!is.null(X_test_)) self$pred_test <- self$predict(X_test_, is_test = TRUE)
+      if (!is.null(y_test_) && !is.null(self$pred_test)) self$calc_rmse(y_test_, self$pred_test)
       
       return(invisible(self))
-    }
-  ),
+    },
   
-  private = list(
     calc_rmse = function(y_test_, y_preds = self$pred_test) {
       self$rmse_test <- my_rmse(y_test_, self$pred_test)
       return(invisible(self))
@@ -201,12 +199,9 @@ my_RandomForest_model <- R6Class(
     calc_importance = function() {
       self$importance <- self$model$importance[, "%IncMSE"]
       return(self$importance)
-    }
-  ),
-  
-  private = list(
+    },
+    
     fit = function(X_train_, y_train_, ntree = 1000) {
-      # na.action = na.omit,
       self$model <- randomForest(x = X_train_, y = y_train_, ntree = ntree,
                                  na.action = na.roughfix, importance = TRUE) 
       return(invisible(self))

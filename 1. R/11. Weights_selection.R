@@ -163,7 +163,7 @@ grid_search_weights <- function(models_probs, Y_true, step = 1.0) {
   dt <- dt %>% copy() %>% 
     .[, score := weighted_cindex_value(as.numeric(.SD), models_probs, Y_true), 
       by = .I, .SDcols = weight_cols]
-  w <- as.numeric(best[, weight_cols, with = FALSE])
+  w <- dt[which.max(score), ..weight_cols] %>% as.numeric()
   return(w / sum(w))
 }
 
@@ -223,11 +223,12 @@ particle_swarm_weights <- function(models_probs, Y_true, swarm_size = 50, maxit 
   PSOres <- pso::psoptim(
     par       = rep(1/M, M),
     fn        = fn_pso,
-    lower     = rep(0, M),
+    lower     = rep(.Machine$double.eps, M),
     upper     = rep(1, M),
-    control   = list(s = swarm_size, maxit = maxit, trace = FALSE)
+    control   = list(s = swarm_size, maxit = maxit, trace = FALSE, vectorize = TRUE, maxit.stagnate = 10)
   )
   w <- PSOres$par
+  w[w < 1e-6] <- 0
   return(w / sum(w))
 }
 

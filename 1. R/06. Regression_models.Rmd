@@ -702,59 +702,120 @@ perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>%
 
 Обучаем на wd, тестим на wd2
 ```{r}
-psytests <- c("BF", "EY", "LN", "SC", "CT")
+psytests <- c("BF", "EY", "LN", "SC", "CT") %>% sort()
 model_class <- my_RandomForest_model
-MO_type <- "stack"
+MO_regr <- stack_MO_regr
 weight_model <- particle_swarm_weights
+weight_model_params <- list()
 ```
 
 Потом вставить ..., поменять всё на XXX_
+
+fit-стадия
 ```{r}
-models_by_psytests     <- vector("list", length(psytests))
-pred_valid_by_psytests <- vector("list", length(psytests))
+models_by_psytests <- NULL
+pred_valid_by_psytests <- NULL
 
 for (psytest in psytests) {
-  models <- vector("list", 6)
-  for (col_i in 1:6) {
-    models[[col_i]] <- model_class$new(
-      X_train_ = X_train[, str_subset(colnames(X_train), psytest), drop = FALSE], 
-      y_train_ = Y_train[, col_i],
-      X_test_ = X_test[, str_subset(colnames(X_test), psytest), drop = FALSE], 
-      y_test_ = Y_test[, col_i]
-    )
-  }
-  
+  models <- MO_regr(
+    model_class = model_class, 
+    X_train_ = X_train[, str_subset(colnames(X_train), psytest), drop = FALSE], 
+    Y_train_ = Y_train,
+    X_test_ = X_test[, str_subset(colnames(X_test), psytest), drop = FALSE], 
+    Y_test_ = Y_test
+  )
   models_by_psytests[[psytest]]     <- models
   pred_valid_by_psytests[[psytest]] <- sapply(models, \(x) x$pred_test)
 }
+
+# 31 комбинация
+psy_combos <- sapply(1:length(psytests), \(i) combn(psytests, i, simplify = FALSE)) %>%
+  purrr::list_flatten() %>% 
+  lapply(sort)
+
+# веса для каждой из комбинаций (и их cindex)
+w_combos <- data.table(comb = psy_combos) %>% 
+  .[, comb_str := sapply(comb, toString)] %>% 
+  .[, w_comb := lapply(comb, \(cmb) do.call(
+    weight_model, 
+    args = c(list(pred_valid_by_psytests[cmb], Y_test), weight_model_params)
+  ))] %>% 
+  .[, cindex := map2_dbl(w_comb, comb, \(w, cm)
+                         weighted_cindex_value(w, pred_valid_by_psytests[cm], Y_test))]
 ```
 
+predict-стадия
 ```{r}
-.[ind_pred, chain_pred] <- map(
-  list(perform_stack_MO_regression, perform_chain_MO_regression), exec,
-  my_XGBoost_model, X_train, Y_train, X_test, Y_test, T, F
-)
+# .[ftrs_na, trgs_na] <- separate_X_y(wide_data2)
+ftrs_na <- wide_data2[, .SD, .SDcols = !patterns("HL|HL2")]
+trgs_na <- wide_data2[, .SD, .SDcols =  patterns("HL|HL2")] %>% as.matrix()
+
+# Нормировать!
+.[X_tr_unsc, ..] <- list(features[split_idx, ], features[!split_idx, ])
+mean_train <- apply(X_tr_unsc, 2, mean, na.rm = TRUE) %>% c(0, .) # первое -- для id
+sd_train <- apply(X_tr_unsc, 2, sd, na.rm = TRUE) %>% c(1, .)
+
+X_na <- scale(ftrs_na, center = mean_train, scale = sd_train) %>% as.data.table()
+psytest_preds_by_id <- X_na[, .(id)]
+
+for (psytest in psytests) {
+  X_psytest <- X_na[, .SD, .SDcols = patterns(paste0(psytest, "|id"))] %>% drop_na()
+  
+  pred <- sapply(models_by_psytests[[psytest]], \(mdl) mdl$predict(as.matrix(X_psytest[, -"id"])))
+  pred_id <- X_psytest[, .(id)] %>% 
+    cbind(pred) %>% 
+    setnames(new = c("id", paste0("HL_", 1:6))) %>% 
+    .[, .(test = list(as.numeric(.SD))), by = id, .SDcols = paste0("HL_", 1:6)] %>% 
+    setnames(old = "test", new = psytest)
+  
+  psytest_preds_by_id <- psytest_preds_by_id %>% merge(pred_id, all.x = TRUE, by = "id")
+}
+
+# какие тесты для каждого id были пройдены
+psytests_by_id <- psytest_preds_by_id %>% 
+  copy() %>% 
+  melt(id.vars = "id", variable.name = "psytest", variable.factor = FALSE) %>% 
+  .[, val_len := sapply(value, \(v) length(v) > 0)] %>% 
+  .[val_len == TRUE] %>%
+  .[, .(comb_str = psytest %>% sort() %>% toString()), by = "id"]
+
+# для каждого id собраны предсказания по каждому тесту, его комбинация тестов, их веса, сделанное на их основе общее предсказание
+psytest_preds_by_id <- psytest_preds_by_id %>% 
+  merge(psytests_by_id, all.x = TRUE, by = "id") %>% 
+  merge(w_combos[, -c("cindex")], all.x = TRUE, by = "comb_str") %>%
+  .[order(id)] %>%
+  .[, pred := pmap(
+    .l = .SD,
+    .f = function(...) {
+      args <- list(...)                        # named list: w_comb, BF, EY, …
+      # args[psytests] -- идут строго в том же порядке, что и веса, для их 1-1 соответствия
+      vecs <- purrr::compact(args[psytests])   # compact удаляет NULL-элементы
+      scalar_matrix_production(w_vec = args[["w_comb"]], mat_list = vecs)
+    },
+    .SDcols = c("w_comb", psytests)
+  )]
+
+# Y_pred <- psytest_preds_by_id %>% copy() %>% 
+#   .[order(id), pred] %>%
+#   do.call(rbind, .)
+# distr_metric(Y_pred, trgs_na, func = calc_C_index)
+
+# предсказание + настоящая метка + оценка C-index для каждой строки
+pred_true_vals <- psytest_preds_by_id %>% copy() %>% 
+  .[order(id), .(id, pred)] %>% 
+  cbind(trgs_na) %>% 
+  .[, .(pred, y_true = list(as.numeric(.SD))), by = id, .SDcols = paste0("HL_", 1:6)] %>% 
+  .[, cindex := map2_dbl(pred, y_true, calc_C_index)]
+
+cindex_val <- pred_true_vals$cindex %>% mean()
+p <- pred_true_vals$cindex %>% plot_cindex_hist()
 ```
 
+Обернуть это в функцию
+Прогнать на разных моделях и weight_model
+Сравнить с другими способами заполнения пропусков
 
-
-
-
-
-
-```{r}
-p_idx <- c(rep(TRUE, wide_data[, .N]), rep(FALSE, wide_data2[, .N]))
-
-set.seed(SEED)
-.[ftr, trg] <- separate_X_y(untd_dt)
-.[X_tr, X_ts, Y_tr, Y_ts, ..] <- train_test_split(ftr, trg, split_idx = sp_idx)
-
-# for (test_lbl in ) {}
-X_tr_1test <- X_tr[, str_subset(colnames(X_tr), "BF"), drop = FALSE]
-X_ts_1test <- X_ts[, str_subset(colnames(X_ts), "BF"), drop = FALSE]
-pred <- perform_stack_MO_regression(my_RandomForest_model, X_tr_1test, Y_tr, X_ts_1test, Y_ts)
-```
-
+Чтобы прогнать на других моделях, надо везде predict убрать из private
 
 ---
 
