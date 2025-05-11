@@ -6,7 +6,6 @@ author: "Egor Glushkov"
 # 1. Библиотеки
 
 ```{r message=FALSE, warning=FALSE}
-library(psych) # desc stats
 library(xlsx)  # excel
 
 # source(paste0(here(), "/1. R/02. Data_preparation.R"))
@@ -124,14 +123,15 @@ data %>%
 ## 3.3 Корреляции
 
 ### Cor-рисунки
+
 ```{r}
 make_png_cor_plot <- function(dt, plot_name) {
-  png(filename = paste0(here(), "/0. Data/Output/", plot_name, ".png"))
+  png(filename = here("4. Output/08. Descriptive_stats_n_plots", paste0(plot_name, ".png")))
   cor_plot <- dt %>% 
     .[, .SD, .SDcols = patterns("HL_")] %>% 
-    cor.plot(main = str_glue("Матрица корреляций факторов\nмодели Голланда (N = {dt[, .N]})"), 
-             labels = c("R", "I", "A", "S", "E", "C"),
-             cex = 1, scale = FALSE, diag = FALSE, upper = TRUE)
+    psych::cor.plot(main = str_glue("Матрица корреляций факторов\nмодели Голланда (N = {dt[, .N]})"), 
+                    labels = c("R", "I", "A", "S", "E", "C"),
+                    cex = 1, scale = FALSE, diag = FALSE, upper = TRUE)
   
   # recordPlot()
   dev.off()
@@ -244,7 +244,7 @@ translation_names_dict <- get_translation_names_dict(shrt_nms_df)
 desc_stats <- untd_dt %>%
   .[, -c("id")] %>% 
   psych::describe(skew = FALSE, quant = c(.25, .75)) %>% 
-  dplyr::select(vars, mean, sd, median, Q0.25, Q0.75, min, max) %>% 
+  dplyr::select(vars, n, mean, sd, median, Q0.25, Q0.75, min, max) %>% 
   as.data.frame() %>% 
   rownames_to_column("short_name") %>% 
   merge(translation_names_dict, all.x = TRUE, by = "short_name") %>% 
@@ -257,14 +257,15 @@ desc_stats <- untd_dt %>%
     `Признак` = feature, 
     short_name,
     `#` = num,
+    `N` = n,
     `Mean (SD)` = str_glue("{mean} ({sd})"),
     `Median (IQR)` = str_glue("{median} ({Q0.25}-{Q0.75})"),
     `Min` = min,
     `Max` = max
   )
 
-desc_file_name <- paste0(here(), "/0. Data/1. Output/desc_stats/desc_stats_24.04_whole_df.xlsx")
-write.xlsx2(desc_stats, desc_file_name, "All", append = TRUE)
+desc_file_name <- here("4. Output/08. Descriptive_stats_n_plots/desc_stats.xlsx")
+xlsx::write.xlsx(desc_stats, desc_file_name, "All", append = TRUE)
 ```
 
 Отдельно выделим опросник Шварца с его х2 шкалами (нормативный идеал и инд. приоритет)
@@ -274,7 +275,7 @@ desc_stats %>%
   .[`Опросник` == "Ценностный опросник Шварца"] %>%
   separate_wider_delim(cols = "Признак", delim = " - ", names = c("Признак", "norm")) %>%
   arrange(norm, `#`) %>%
-  write.xlsx2(desc_file_name, "Шварц", append = TRUE)
+  xlsx::write.xlsx(desc_file_name, "Шварц", append = TRUE)
 ```
 
 
@@ -410,13 +411,13 @@ schwartz_tranformed <- untd_dt %>%
   arrange(attr, feature) %>% 
   as.data.table()
 
-p5 <- schwartz_tranformed[attr == "нормативный идеал"] %>% 
+p5 <- schwartz_tranformed[attr == "НИ"] %>% 
   just_box_plot(rus_rest_name = "Ценностный опросник Шварца (нормативный идеал)", 
-                test_name = "SC", x_range = c(-11, 61), n_str_wrap = 30) 
+                test_name = "SC_NI", x_range = c(-11, 61), n_str_wrap = 30) 
   
-p6 <- schwartz_tranformed[attr == "индивидуальный приоритет"] %>% 
+p6 <- schwartz_tranformed[attr == "ИП"] %>% 
   just_box_plot(rus_rest_name = "Ценностный опросник Шварца (индивидуальный приоритет)",
-                test_name = "SC", x_range = c(-6, 26), n_str_wrap = 30)
+                test_name = "SC_IP", x_range = c(-6, 26), n_str_wrap = 30)
 ```
 
 
@@ -428,7 +429,8 @@ untd_dt %>%
   drop_na() %>% 
   slice_sample(n = 5) %>% 
   mutate(`dots` = "...", .before = "LN_9") %>% 
-  write.xlsx2("../../0. Data/Output/slice_data.xlsx")
+  mutate(id = row_number()) %>% 
+  xlsx::write.xlsx(desc_file_name, "slice", append = TRUE)
 ```
 
 
@@ -437,25 +439,49 @@ untd_dt %>%
 library(ggridges)
 
 
-df_long <- untd_dt[, .SD, .SDcols = patterns("id|HL_")] %>% 
-   pivot_longer(cols = HL_1:HL_6, names_to = "Group", values_to = "Value")
+riasec_codes <- c("R", "I", "A", "S", "E", "C")
+plot_name <- \(name) here("4. Output/08. Descriptive_stats_n_plots/codes_distr", paste0(name, ".png"))
 
-ggplot(df_long, aes(x = Value, color = Group, fill = Group)) +
-  geom_density(alpha = 0.2) +
-  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
-  theme_minimal()
+df_long <- untd_dt[, .SD, .SDcols = patterns("id|HL_")] %>% copy() %>% 
+  setnames(c("id", riasec_codes)) %>% 
+  pivot_longer(cols = all_of(riasec_codes), names_to = "Group", values_to = "Value") %>% 
+  mutate(Group = factor(Group, levels = riasec_codes))
 
-ggplot(df_long, aes(x = Value, color = Group, fill = Group)) +
+
+p <- ggplot(df_long, aes(x = Value, color = Group, fill = Group)) +
   geom_density(alpha = 0.2) +
-  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
+  scale_x_continuous(limits = c(0, 14), breaks = seq(0, 14, by = 2), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 0.3), breaks = seq(0, 0.3, 0.06), expand = c(0, 0)) +
+  labs(title = "Плотность значений кодов Голланда", x = "Значение кода",
+       y = "Плотность значений кода", color = "Код Голланда", fill = "Код Голланда") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave(plot_name("all_in_one"), p, width = 16, height = 12, units = "cm", dpi = 300)
+
+p <- ggplot(df_long, aes(x = Value, color = Group, fill = Group)) +
+  geom_density(alpha = 0.2) +
+  scale_x_continuous(limits = c(0, 14), breaks = seq(0, 14, by = 2), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 0.3), breaks = seq(0, 0.3, 0.1), expand = c(0, 0)) +
+  labs(title = "Плотность значений кодов Голланда", x = "Значение кода",
+       y = "Плотность значений кодов", color = "Код Голланда", fill = "Код Голланда") +
   facet_wrap(~ Group) +
-  theme_minimal()
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), panel.spacing.x = unit(15, "pt"))
 
-ggplot(df_long, aes(x = Value, y = Group, fill = stat(x))) +
-  geom_density_ridges_gradient() +
-  scale_fill_viridis_c(name = "Temp.", option = "C") +
-  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
-  theme_minimal()
+ggsave(plot_name("facet"), p, width = 16, height = 12, units = "cm", dpi = 300)
+
+
+p <- ggplot(df_long, aes(x = Value, y = Group, fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 1.25, rel_min_height = 0.01, alpha = 0.8) +
+  scale_fill_viridis_c(name = "Значение кода", option = "C") +
+  labs(title = "Плотность значений кодов Голланда", 
+       x = "Значение кода", 
+       y = "Плотность значений кодов") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+
+ggsave(plot_name("volny"), p, width = 16, height = 12, units = "cm", dpi = 300)
 ```
 
 Какие обычно значения у 1-6 кодов (неважно, какой именно код)
@@ -463,18 +489,28 @@ ggplot(df_long, aes(x = Value, y = Group, fill = stat(x))) +
 value_rank_df <- df_long %>% 
   as.data.table() %>% 
   .[order(id, -Value)] %>% 
-  .[, rank := paste0("rank_", 1:.N), by = .(id)] %>% 
-  .[, .(Value, rank)]
+  .[, rank := paste0("Топ", 1:.N), by = .(id)] %>% 
+  .[, .(id, Value, rank)] %>% 
+  .[, rank := factor(rank, levels = paste0("Топ", 6:1))]
 
-ggplot(value_rank_df, aes(x = Value, color = rank, fill = rank)) +
-  geom_density(alpha = 0.2) +
-  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
-  facet_wrap(~ rank) +
-  theme_minimal()
+# ggplot(value_rank_df, aes(x = Value, color = rank, fill = rank)) +
+#   geom_density(alpha = 0.2) +
+#   labs(title = "Плотность предсказаний кодов Голланда",
+#        x = "Предсказанное значение кода", 
+#        y = "Плотность предсказанных значений кодов") +
+#   facet_wrap(~ rank) +
+#   theme_minimal() + 
+#   theme(plot.title = element_text(hjust = 0.5))
 
-ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
-  geom_density_ridges_gradient() +
-  scale_fill_viridis_c(name = "Temp.", option = "C") +
+p <- ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
+  ggridges::geom_density_ridges_gradient(scale = 1.25, rel_min_height = 0.01, alpha = 0.8) +
+  scale_fill_viridis_c(name = "Значение кодов", option = "C") +
   labs(title = "Частоты значений кодов по убыванию") +
-  theme_minimal()
+  labs(title = "Частоты значений кодов Голланда по их значимости", 
+       x = "Значение кода", 
+       y = "Плотность значений кодов") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+
+ggsave(plot_name("ranks"), p, width = 16, height = 12, units = "cm", dpi = 300)
 ```
