@@ -275,7 +275,7 @@ perform_MO_regression <- function(model_class, MO_type = c("stack", "chain", "no
 perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_, 
                                         print_metric = FALSE, print_model_name = TRUE, ...) {
   stack_pred <- perform_MO_regression(model_class, "stack", X_train_, Y_train_, X_test_, Y_test_,
-                                      print_metric, print_model_name)
+                                      print_metric, print_model_name, ...)
   return(invisible(stack_pred))
 }
 
@@ -283,7 +283,7 @@ perform_stack_MO_regression <- function(model_class, X_train_, Y_train_, X_test_
 perform_chain_MO_regression <- function(model_class, X_train_, Y_train_, X_test_, Y_test_, 
                                         print_metric = FALSE, print_model_name = TRUE, ...) {
   chain_pred <- perform_MO_regression(model_class, "chain", X_train_, Y_train_, X_test_, Y_test_,
-                                      print_metric, print_model_name)
+                                      print_metric, print_model_name, ...)
   return(invisible(chain_pred))
 }
 

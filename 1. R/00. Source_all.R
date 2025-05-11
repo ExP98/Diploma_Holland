@@ -9,7 +9,7 @@
 install_pkgs <- function(libs) {
   uninstall_pkgs <- libs[!(libs %in% installed.packages()[, "Package"])]
   if (length(uninstall_pkgs)) install.packages(uninstall_pkgs)
-  suppressMessages(lapply(libs, require, character.only = TRUE))
+  suppressWarnings(lapply(libs, require, character.only = TRUE))
   return(invisible(NULL))
 }
 
@@ -26,15 +26,15 @@ library(MASS, include.only = "stepAIC")
 library(mclust, include.only = "softmax")
 
 
-# 2. Файлы                                             ####
+# 2. Константы                                         ####
+SEED <- 143
+set.seed(SEED)
+here::here()
+
+
+# 3. Файлы                                             ####
 source(paste0(here::here(), "/1. R/02. Data_preparation.R"))
 source(paste0(here::here(), "/1. R/03. Regression_functions.R"))
 source(paste0(here::here(), "/1. R/04. Regressor_R6classes.R"))
 source(paste0(here::here(), "/1. R/10. Classification_functions.R"))
 source(paste0(here::here(), "/1. R/11. Weights_selection.R"))
-
-
-# 3. Константы                                         ####
-SEED <- 143
-set.seed(SEED)
-here::here()
