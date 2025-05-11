@@ -503,7 +503,7 @@ regr_stack_res_na <- calc_regression_models(
  - почти топ: Ridge L2 (9.92), ET (9.9), lm (9.876)
 
 
-### 4. Потестовое обучение + обединениее с разными весами
+### 4. Ансамбль на потестовых данных
 
 Перебираем все регрессоры со всеми способами получить веса. Фактически каждую модель обучаем на данных различных тестов отдельно, затем для каждой из 31 комбинаций наличия тестов с помощью <метода получения весов> находим лучшие веса. Проверяем на данных с пропусками, т.е. wide_data2:
 ```{r}
@@ -566,111 +566,26 @@ pred_true_values$cindex %>% plot_cindex_hist()
 Выполняется ~1 мин, результат ~9.929
 
 
-### 5. Пример поиска лучшей модели для одного теста
-
-Перечислим все модели:
-```{r}
-one_test_model_map <- function(model, df_ = df) {
-  x <- map(
-    list(perform_stack_MO_regression), exec, # perform_chain_MO_regression
-    model, df_[["X_train"]], df_[["Y_train"]], df_[["X_test"]], df_[["Y_test"]], T, F
-  )
-  return(x)
-}
-
-
-show_constant_pred_metric <- function(df_) {
-  res <- rep(colMeans(df_[["Y_train"]]), each = nrow(df_[["Y_test"]])) %>% 
-    matrix(nrow = nrow(df_[["Y_test"]])) %>% 
-    show_custom_metrics("Константное", Y_test_ = df_[["Y_test"]])
-  return(res)
-}
-
-
-class_models <- data.table(
-  models = list(my_lm_model, my_XGBoost_model, my_LightGBM_model, my_Catboost_model, my_RandomForest_model, my_knn_model, my_SVR_model),
-  labels = list("lm", "XGBoost", "LightGBM", "CatBoost", "Random Forest", "kNN", "SVR")
-)
-
-
-# class_models2 <- data.table(
-#   models = list(my_lm_model),
-#   labels = list("lm")
-# )
-```
-
-c("BF", "EY", "CT", "LN", "SC")
-```{r}
-sink("model_log_noPCA.txt", append = TRUE, split = TRUE)
-
-models_by_tests <- NULL
-
-for (test_lbl in c("BF", "EY", "CT", "LN", "SC")) {
-  cat(test_lbl, "\n")
-  # for (pca_b in c(TRUE, FALSE)) {
-    # pca_lbl <- if (pca_b) "PCA" else "no PCA"
-    
-    # cat(pca_lbl, "\n")
-    df <- prepare_psytest_dataset(wide_data, wide_data2, test_lbl, use_PCA_b = FALSE)
-    # models_by_tests[[test_lbl]][[pca_lbl]] <- map(class_models$models, one_test_model_map, df_ = df)
-    
-    for (i in 1:nrow(class_models)) {
-      models_by_tests[[test_lbl]][[class_models[i, labels][[1]]]] <- one_test_model_map(class_models[i, models][[1]], df)
-    }
-    
-    # models_by_tests[[test_lbl]] <- map(class_models$models, one_test_model_map, df_ = df)
-    models_by_tests[[test_lbl]][["Lasso"]] <- regularized_lm(df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], alpha = 1)
-    models_by_tests[[test_lbl]][["Ridge"]] <- regularized_lm(df[["X_train"]], df[["Y_train"]], df[["X_test"]], df[["Y_test"]], alpha = 0)
-    show_constant_pred_metric(df) %>% cat()
-    cat("\n")
-  # }
-  # cat("\n\n")
-}
-
-sink()
-```
+### 5. Результаты моделей для одного теста
 
 ```{r}
-for (test_lbl in c("BF", "EY", "CT", "LN", "SC")) {
-  cat(test_lbl, "\n")
-  df <- prepare_psytest_dataset(wide_data, wide_data2, test_lbl, use_PCA_b = FALSE)
-  show_constant_pred_metric(df) %>% cat()
-  cat("\n")
-}
-```
+res_by_psytests <- NULL
 
-```{r}
-for (cur_label in c("BF", "EY", "CT", "LN", "SC")) {
-  df <- prepare_psytest_dataset(wide_data, wide_data2, cur_label, use_PCA_b = FALSE)
-  mbt <- models_by_tests[[cur_label]]
+for (psytest_lbl in c("BF", "EY", "CT", "LN", "SC")) {
+  cat(psytest_lbl, "\n")
+  .[X_tr, X_ts, Y_tr, Y_ts] <- prepare_psytest_data(wide_data, wide_data2, psytest_lbl)
   
-  scalar_matrix_production(w_vec = rep(1/length(mbt), length(mbt)), lapply(names(mbt), \(ii) pluck(x, ii, 1))) %>% 
-    show_custom_metrics("All equal", Y_test_ = df[["Y_test"]]) %>% 
-    print()
+  res_tst <- calc_regression_models(regr_experiments, X_tr, Y_tr, X_ts, Y_ts) %>% 
+    .[, psytest := psytest_lbl] %>% 
+    .[, pred := NULL]
+  res_by_psytests <- rbind(res_by_psytests, res_tst)
 }
-```
 
-```{r}
-# models_pred <- list(x[[1]][[1]], x[[2]][[2]], x[[3]][[1]], x[[4]][[2]], x[[5]][[1]], x[[6]][[1]])
-models_pred <- list(x[[1]][[1]], x[[2]][[2]], x[[3]][[1]], x[[4]][[1]], x[[5]][[1]], x[[6]][[1]])
-
-w1 <- rep(1/length(models_pred), length(models_pred))
-w2 <- c(1, 2, 2, 2, 9, 2)
-
-scalar_matrix_production(w_vec = w1, models_pred) %>% 
-  show_custom_metrics("All equal", Y_test_ = df[["Y_test"]])
-
-scalar_matrix_production(w_vec = w2, models_pred) %>% 
-  show_custom_metrics("All preferences", Y_test_ = df[["Y_test"]])
-```
-
-LN (no PCA):
-```{r}
-models_pred2 <- list(x[[1]][[1]], x[[2]][[1]], x[[3]][[2]], x[[4]][[1]], x[[5]][[1]], x[[6]][[1]])
-w3 <- c(1, 3, 3, 3, 3, 13)
-
-scalar_matrix_production(w_vec = w3, models_pred2) %>% 
-  show_custom_metrics("All preferences", Y_test_ = df[["Y_test"]])
+filename <- here("0. Data/1. Output/bytest_ensembles/bytest_model_results.xlsx")
+res_by_psytests %>% dcast(name ~ psytest, value.var = "rmse") %>% .[order(BF)] %>% 
+  xlsx::write.xlsx(., filename, "rmse", row.names = F, append = T)
+res_by_psytests %>% dcast(name ~ psytest, value.var = "C_index") %>% .[order(-CT)] %>% 
+  xlsx::write.xlsx(., filename, "C_index", row.names = F, append = T)
 ```
 
 

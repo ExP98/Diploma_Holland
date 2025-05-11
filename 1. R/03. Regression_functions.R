@@ -175,50 +175,25 @@ scalar_matrix_production <- function(w_vec, mat_list) {
 }
 
 
-prepare_psytest_dataset <- function(wide_data_, wide_data2_, 
-                                    psytest_label = c("BF", "EY", "CT", "LN", "SC"),
-                                    use_PCA_b = FALSE) {
+prepare_psytest_data <- function(wide_data_, wide_data2_, 
+                                 psytest_label = c("BF", "CT", "EY", "LN", "SC")) {
   psytest_label <- match.arg(psytest_label)
   
-  wide_data_ <- wide_data_ %>% copy() %>% 
-    .[, .SD, .SDcols = patterns(paste0(psytest_label, "|HL"))] %>% 
-    drop_na()
+  .[psytest_fts, psytest_tgs] <- bind_rows(wide_data_, wide_data2_) %>% copy() %>% 
+    .[, .SD, .SDcols = patterns(paste0(psytest_label, "|HL"))] %>%
+    separate_X_y()
   
-  wide_data2_ <- wide_data2_ %>% copy() %>% 
-    .[, .SD, .SDcols = patterns(paste0(psytest_label, "|HL"))] %>% 
-    drop_na()
+  wd_split_idx <- c(rep(FALSE, nrow(wide_data_)), rep(TRUE, nrow(wide_data2_)))
+  .[X_tr, X_ts, Y_tr, Y_ts] <- train_test_split(psytest_fts, psytest_tgs, split_idx = wd_split_idx)
   
-  X_train_unsc <- wide_data2_ %>% .[, .SD, .SDcols = patterns(psytest_label)]
-  X_test_unsc  <- wide_data_  %>% .[, .SD, .SDcols = patterns(psytest_label)]
+  X_tr <- X_tr %>% na.omit()
+  Y_tr <- Y_tr[-attr(X_tr, "na.action"),]
   
-  Y_train <- wide_data2_ %>% .[, .SD, .SDcols = patterns("HL_")] %>% as.matrix()
-  Y_test  <- wide_data_  %>% .[, .SD, .SDcols = patterns("HL_")] %>% as.matrix()
-  
-  mean_train <- apply(X_train_unsc, 2, mean, na.rm = TRUE)
-  sd_train <- apply(X_train_unsc, 2, sd, na.rm = TRUE)
-  
-  X_train <- scale(X_train_unsc, center = mean_train, scale = sd_train)
-  X_test  <- scale(X_test_unsc, center = mean_train, scale = sd_train)
-  
-  if (use_PCA_b) {
-    pca_model <- prcomp(X_train, center = TRUE, scale. = TRUE)
-    opt_k <- data.table(k = 1:length(pca_model$sdev),
-                        ssq = pca_model$sdev^2) %>% 
-      .[, cumsum := cumsum(ssq / sum(ssq))] %>% 
-      .[, limit_b := cumsum >= 0.85] %>% 
-      .[limit_b == TRUE, min(k)]
-    
-    X_train <- pca_scaler(X_train, pca_model, opt_k)
-    X_test <- pca_scaler(X_test, pca_model, opt_k)
-  }
-  
-  n_train <- nrow(X_train)
-  n_test <- nrow(X_test)
+  n_train <- nrow(X_tr)
+  n_test  <- nrow(X_ts)
   
   print(str_glue("Train: {n_train} rows; test: {n_test} rows ({round(n_test / (n_train + n_test) * 100, 2)}%)."))
-  if (nrow(X_train) == 0 | nrow(X_test) == 0) error("X_train or X_test are empty!")
-  
-  return(list(X_train = X_train, Y_train = Y_train, X_test = X_test, Y_test = Y_test))
+  return(list(X_tr, X_ts, Y_tr, Y_ts))
 }
 
 
