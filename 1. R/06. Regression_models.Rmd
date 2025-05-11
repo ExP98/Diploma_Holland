@@ -33,8 +33,8 @@ Stepwise (back, forward), L2-regression
 
 Признаки после выполнения пошаговой регрессии
 ```{r}
-features_stepw <- sapply(1:6, \(i) stepwise_results[[i]]$model %>% colnames() %>% .[. != "y"])
-reduce(features_stepw, union)
+# features_stepw <- sapply(1:6, \(i) stepwise_results[[i]]$model %>% colnames() %>% .[. != "y"])
+# reduce(features_stepw, union)
 ```
 
 
@@ -50,7 +50,7 @@ glm_imp_2 <- glm_importance(X_train, Y_train, alpha = 0)
 models <- list(my_stepwise_lm_model, my_XGBoost_model, my_LightGBM_model, 
                my_Catboost_model, my_RandomForest_model, my_ET_model)
 
-fi_filename <- here("0. Data/1. Output/Feature_importance.xlsx")
+fi_filename <- here("4. Output/02. Feature_importance.xlsx")
 translation_names_dict <- get_translation_names_dict(shrt_nms_df)
 
 imps <- c(list(glm_imp_1, glm_imp_2), lapply(models, \(mdl) get_model_importance(mdl)))
@@ -115,7 +115,7 @@ lm_L2_pred <- regularized_lm(alpha = 0, print_metric = T) # Ridge
 lm_L1_pred <- regularized_lm(alpha = 1, print_metric = T) # Lasso
 ```
 
-При этом по отдельности результат хуже
+При этом по отдельности результат может быть хуже:
 ```{r}
 perform_stack_MO_regression(my_regularized_lm_model, X_train, Y_train, X_test, Y_test, T, alpha = 0)
 perform_stack_MO_regression(my_regularized_lm_model, X_train, Y_train, X_test, Y_test, T, alpha = 1)
@@ -131,6 +131,18 @@ for (k in c(3, seq(5, ncol(X_train), 5))) {
 }
 ```
 Лучше k = 5, 20 или 35
+
+### SVR
+
+```{r}
+perform_stack_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T, kernel = "sigmoid")
+perform_stack_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T, kernel = "radial")
+perform_stack_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T, kernel = "linear")
+
+perform_chain_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T, kernel = "sigmoid")
+perform_chain_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T, kernel = "radial")
+perform_chain_MO_regression(my_SVR_model, X_train, Y_train, X_test, Y_test, T, kernel = "linear")
+```
 
 
 ## 3.4 Stacking 
@@ -166,7 +178,7 @@ st_pred %>%
   as.matrix() %>% 
   show_custom_metrics(case_name = "Stacking")
 ```
-
+Стэкинг из glm-моделей (с регуляризацией), метамодель -- тоже glm. aRMSE: 2.111; aCindex: 10.887
 
 ```{r}
 library(MASS)
@@ -247,16 +259,14 @@ for (hol_i in 1:6) {
   # Финальное предсказание мета-модели
   final_pred[[hol_i]] <- predict(meta_model, newdata = test_preds)
 }
-```
 
-```{r}
 final_pred %>% 
   as.data.table() %>% 
   as.matrix() %>% 
   show_custom_metrics(case_name = "Stacking", need_to_correct = TRUE)
 ```
 
-Стэкинг из lm, rpart, randomForest: Stacking. aRMSE: 1.98; aCindex: 9.926
+Стэкинг из Lasso, Ridge, LightGBM, CatBoost, RF: aRMSE: 2.091; aCindex: 10.688
 
 
 ## 3.5 PCA
@@ -318,16 +328,16 @@ regr_experiments <- tribble(
   my_Catboost_model,        "CatBoost",             "stack",     list(),
   my_RandomForest_model,    "Random Forest (500)",  "stack",     list(ntree = 500),
   my_RandomForest_model,    "Random Forest (1000)", "stack",     list(ntree = 1000),
-  my_knn_model,             "kNN (k = 5)",          "stack",     list(k = 5),
-  my_knn_model,             "kNN (k = 25)",         "stack",     list(k = 25),
-  my_knn_model,             "kNN (k = 50)",         "stack",     list(k = 50),
-  my_SVR_model,             "SVR",                  "stack",     list(kernel = "sigmoid"),
+  my_knn_model,             "kNN (k = 15)",         "stack",     list(k = 15),
+  my_knn_model,             "kNN (k = 40)",         "stack",     list(k = 40),
+  my_knn_model,             "kNN (k = 55)",         "stack",     list(k = 55),
+  my_SVR_model,             "SVR (radial)",         "stack",     list(kernel = "radial"),
   my_ET_model,              "ExtraTree (500)",      "stack",     list(ntree = 500),
   my_ET_model,              "ExtraTree (2000)",     "stack",     list(ntree = 2000)
 ) %>%
   as.data.table()
 
-model_to_exclude <- c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 5)", "const", "lm")
+model_to_exclude <- c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 15)", "const", "lm")
 ```
 
 Краткие выводы по отдельным моделям:
@@ -336,14 +346,14 @@ model_to_exclude <- c("Random Forest (500)", "ExtraTree (500)", "kNN (k = 5)", "
  - лучшая модель - Lasso L1 без PCA; среди не lm, то Catboost
 
 
-### Без уменьшения размерности (PCA)
+### Без уменьшения размерности (no PCA)
 
 Результаты по моделям:
 ```{r}
 regr_stack_res <- calc_regression_models(regr_experiments, X_train, Y_train, X_test, Y_test)
 regr_chain_res <- calc_regression_models(regr_experiments, X_train, Y_train, X_test, Y_test)
 
-regr_res_file <- here("0. Data/1. Output/regression_results.xlsx")
+regr_res_file <- here("4. Output/03. Regression_results.xlsx")
 xlsx::write.xlsx(regr_stack_res[order(-C_index), -"pred"],
                  regr_res_file, "stack", row.names = F, append = T)
 xlsx::write.xlsx(regr_chain_res[order(-C_index), -"pred"], 
@@ -368,7 +378,7 @@ regr_chain_w_f <- get_regr_w(w_config, chain_mtr_f, Y_test)
 Код run_weights_search_experiments выполняется минуты 4 на полном наборе моделей и 2 на усеченном
 
 ```{r}
-reg_ens_fname <- here("0. Data/1. Output/regression_ensemble_results.xlsx")
+reg_ens_fname <- here("4. Output/04. Regression_ensemble_results.xlsx")
 
 write_w_search_to_xlsx(regr_stack_w  , stack_mtr  , "stack", reg_ens_fname)
 write_w_search_to_xlsx(regr_stack_w_f, stack_mtr_f, "filtered stack", reg_ens_fname)
@@ -468,6 +478,10 @@ filled_X_na <- mice_imputation(X_na[, -"id"])
 set.seed(SEED)
 .[X_tr, X_ts, Y_tr, Y_ts] <- train_test_split(filled_X_na, Y_na)
 regr_stack_res_na <- calc_regression_models(regr_experiments, X_tr, Y_tr, X_ts, Y_ts)
+
+incompl_file <- here("4. Output/05. Incomplete data.xlsx")
+xlsx::write.xlsx(regr_stack_res_na[order(-C_index), -"pred"],
+                 incompl_file, "MICE", row.names = F, append = T)
 ```
 Лишь LightGBM (9.9) и SVR (9.7) лучше константы (9.69). Дальше CatBoost, stepwise, RF
 
@@ -476,6 +490,7 @@ regr_stack_res_na <- calc_regression_models(regr_experiments, X_tr, Y_tr, X_ts, 
 
 Как выбрать rank.max для train_matrix_completion:
 ```{r}
+aux_feats <- setdiff(colnames(wide_data), c("id", paste0("HL_", 1:6)))
 M_obs <- as.matrix(wide_data[, ..aux_feats])
 sv <- svd(M_obs, nu = 0, nv = 0)$d
 plot(sv, type="b", ylab="Singular values", xlab="Component")
@@ -486,6 +501,8 @@ fit_obj <- train_matrix_completion(X_wd)
 filled_X_na <- transform_matrix_completion(fit_obj, X_na[, -"id"])
 
 regr_stack_res_na <- calc_regression_models(regr_experiments, X_wd, Y_wd, filled_X_na, Y_na)
+regr_stack_res_na[order(-C_index), -"pred"] %>% 
+  xlsx::write.xlsx(., incompl_file, "Matrix_completion", row.names = F, append = T)
 ```
  - Лучше всех: stepwise (9.929, но велик rmse), Lasso L1 (9.925)
  - Хороши: Ridge L2, kNN (k=50) (оба -- около 9.8)
@@ -493,11 +510,14 @@ regr_stack_res_na <- calc_regression_models(regr_experiments, X_wd, Y_wd, filled
 
 ### 3. Добавление масок
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 regr_stack_res_na <- calc_regression_models(
   regr_experiments, 
   prepare_data(X_wd), Y_wd, prepare_data(X_na), Y_na
 )
+
+regr_stack_res_na[order(-C_index), -"pred"] %>% 
+  xlsx::write.xlsx(., incompl_file, "Masks", row.names = F, append = T)
 ```
  - лучше всех: Lasso L1 (>10), stepwise (9.98)
  - почти топ: Ridge L2 (9.92), ET (9.9), lm (9.876)
@@ -507,19 +527,23 @@ regr_stack_res_na <- calc_regression_models(
 
 Перебираем все регрессоры со всеми способами получить веса. Фактически каждую модель обучаем на данных различных тестов отдельно, затем для каждой из 31 комбинаций наличия тестов с помощью <метода получения весов> находим лучшие веса. Проверяем на данных с пропусками, т.е. wide_data2:
 ```{r}
-for (row_exp in 1:nrow(regr_experiments)) {
-  my_model     <- regr_experiments[row_exp, model][[1]]
-  model_name   <- regr_experiments[row_exp, name][[1]]
-  mo_type      <- regr_experiments[row_exp, MO_type][[1]]
-  model_params <- regr_experiments[row_exp, params][[1]]
+w_btc <- w_bytest_comb_config[label == "PSO"]
+r_exp <- regr_experiments
+res <- NULL
+
+for (row_exp in 1:nrow(r_exp)) {
+  my_model     <- r_exp[row_exp, model][[1]]
+  model_name   <- r_exp[row_exp, name][[1]]
+  mo_type      <- r_exp[row_exp, MO_type][[1]]
+  model_params <- r_exp[row_exp, params][[1]]
   
   method_f <- if (mo_type == "stack") stack_MO_regr else if (mo_type == "chain") chain_MO_regr else no_MO_regr
   cat(row_exp, ". ", model_name, "\n\n", sep = "")
   
-  for (i in 1:nrow(w_bytest_comb_config)) {
-    .[w_model, w_par, lbl] <- w_bytest_comb_config[i, .(method, params, label)] %>% sapply(\(obj) obj)
+  for (i in 1:nrow(w_btc)) {
+    .[w_model, w_par, lbl] <- w_btc[i, .(method, params, label)] %>% sapply(\(obj) obj)
     
-    tic()
+    # tic()
     .[psytest_models, wght_combos] <- do.call(
       fit_by_tests_ensemble,
       args = c(
@@ -536,12 +560,17 @@ for (row_exp in 1:nrow(regr_experiments)) {
     )
       
     pred_true_values <- predict_by_tests_ensemble(X_na, Y_na, psytest_models, wght_combos)
-    toc()
+    # toc()
     
     val <- pred_true_values$cindex %>% mean() %>% round(3)
     cat(lbl, ", cindex: ", val, "\n\n", sep = "")
+    
+    res <- rbind(res, data.table(label = model_name, w_method = lbl, cind = val))
   }
 }
+
+xlsx::write.xlsx(res, incompl_file, "w_bytests", row.names = F, append = T)
+# beepr::beep()
 ```
 
 Лучше всего себя показали:
@@ -581,11 +610,11 @@ for (psytest_lbl in c("BF", "EY", "CT", "LN", "SC")) {
   res_by_psytests <- rbind(res_by_psytests, res_tst)
 }
 
-filename <- here("0. Data/1. Output/bytest_ensembles/bytest_model_results.xlsx")
+bytest_file <- here("4. Output/06. Bytest_model_results.xlsx")
 res_by_psytests %>% dcast(name ~ psytest, value.var = "rmse") %>% .[order(BF)] %>% 
-  xlsx::write.xlsx(., filename, "rmse", row.names = F, append = T)
+  xlsx::write.xlsx(., bytest_file, "rmse", row.names = F, append = T)
 res_by_psytests %>% dcast(name ~ psytest, value.var = "C_index") %>% .[order(-CT)] %>% 
-  xlsx::write.xlsx(., filename, "C_index", row.names = F, append = T)
+  xlsx::write.xlsx(., bytest_file, "C_index", row.names = F, append = T)
 ```
 
 
@@ -593,49 +622,83 @@ res_by_psytests %>% dcast(name ~ psytest, value.var = "C_index") %>% .[order(-CT
 
 Распределение значений кодов HL_1:HL_6 предсказаний:
 ```{r}
-df_long_preds <- as.data.table(rf_ind_pred) %>%  # lm_L1_pred
-  setnames(paste0("HL_", 1:6)) %>% 
+library(ggridges)
+
+riasec_codes <- c("R", "I", "A", "S", "E", "C")
+plot_name <- \(name) here("4. Output/07. Plots_density_predictions", paste0(name, ".png"))
+
+df_long_preds <- as.data.table(lm_L1_pred) %>%
+  setnames(riasec_codes) %>% 
   .[, id := .I] %>% 
-  pivot_longer(cols = HL_1:HL_6, names_to = "Group", values_to = "Value")
+  pivot_longer(cols = all_of(riasec_codes), names_to = "Group", values_to = "Value") %>% 
+  mutate(Group = factor(Group, levels = riasec_codes))
 
-
-ggplot(df_long_preds, aes(x = Value, color = Group, fill = Group)) +
+p <- ggplot(df_long_preds, aes(x = Value, color = Group, fill = Group)) +
   geom_density(alpha = 0.2) +
-  labs(title = "Накладывающиеся графики плотности предсказаний", x = "Значение", y = "Плотность") +
-  theme_minimal()
+  scale_x_continuous(limits = c(2, 12), breaks = seq(2, 12, by = 2), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2), expand = c(0, 0)) +
+  labs(title = "Плотность предсказаний кодов Голланда", x = "Предсказанное значение кода",
+       y = "Плотность предсказаний кода", color = "Код Голланда", fill = "Код Голланда") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
 
-ggplot(df_long_preds, aes(x = Value, color = Group, fill = Group)) +
+ggsave(plot_name("all_in_one"), p, width = 16, height = 12, units = "cm", dpi = 300)
+
+p <- ggplot(df_long_preds, aes(x = Value, color = Group, fill = Group)) +
   geom_density(alpha = 0.2) +
-  labs(title = "Накладывающиеся графики плотности предсказаний", x = "Значение", y = "Плотность") +
+  scale_x_continuous(limits = c(2, 12), breaks = seq(2, 12, by = 2), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 0.8), breaks = seq(0, 0.8, 0.2), expand = c(0, 0)) +
+  labs(title = "Плотность предсказаний кодов Голланда", x = "Предсказанное значение кода",
+       y = "Плотность предсказаний кодов", color = "Код Голланда", fill = "Код Голланда") +
   facet_wrap(~ Group) +
-  theme_minimal()
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), panel.spacing.x = unit(15, "pt"))
 
-ggplot(df_long_preds, aes(x = Value, y = Group, fill = stat(x))) +
-  geom_density_ridges_gradient() +
-  scale_fill_viridis_c(name = "Temp.", option = "C") +
-  labs(title = "Накладывающиеся графики плотности предсказаний", x = "Значение", y = "Плотность") +
-  theme_minimal()
+ggsave(plot_name("facet"), p, width = 16, height = 12, units = "cm", dpi = 300)
+
+
+p <- ggplot(df_long_preds, aes(x = Value, y = Group, fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 1.25, rel_min_height = 0.01, alpha = 0.8) +
+  scale_fill_viridis_c(name = "Значение предсказания", option = "C") +
+  labs(title = "Плотность предсказаний кодов Голланда", 
+       x = "Предсказанное значение кода", 
+       y = "Плотность предсказаний кодов") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+
+ggsave(plot_name("volny"), p, width = 16, height = 12, units = "cm", dpi = 300)
 ```
+
 
 Распределение значений топ1:топ6 предсказаний:
 ```{r}
 value_rank_df <- df_long_preds %>% 
   as.data.table() %>% 
   .[order(id, -Value)] %>% 
-  .[, rank := paste0("rank_", 1:.N), by = .(id)] %>% 
-  .[, .(Value, rank)]
+  .[, rank := paste0("Топ", 1:.N), by = .(id)] %>% 
+  .[, .(id, Value, rank)] %>% 
+  .[, rank := factor(rank, levels = paste0("Топ", 6:1))]
 
-ggplot(value_rank_df, aes(x = Value, color = rank, fill = rank)) +
-  geom_density(alpha = 0.2) +
-  labs(title = "Накладывающиеся графики плотности", x = "Значение", y = "Плотность") +
-  facet_wrap(~ rank) +
-  theme_minimal()
+# ggplot(value_rank_df, aes(x = Value, color = rank, fill = rank)) +
+#   geom_density(alpha = 0.2) +
+#   labs(title = "Плотность предсказаний кодов Голланда",
+#        x = "Предсказанное значение кода", 
+#        y = "Плотность предсказанных значений кодов") +
+#   facet_wrap(~ rank) +
+#   theme_minimal() + 
+#   theme(plot.title = element_text(hjust = 0.5))
 
-ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
-  geom_density_ridges_gradient() +
-  scale_fill_viridis_c(name = "Temp.", option = "C") +
+p <- ggplot(value_rank_df, aes(x = Value, y = rank, fill = stat(x))) +
+  ggridges::geom_density_ridges_gradient(scale = 1.25, rel_min_height = 0.01, alpha = 0.8) +
+  scale_fill_viridis_c(name = "Значение предсказания", option = "C") +
   labs(title = "Частоты значений кодов предсказаний по убыванию") +
-  theme_minimal()
+  labs(title = "Частоты предсказанных значений кодов Голланда по их значимости", 
+       x = "Предсказанное значение кода", 
+       y = "Плотность предсказанных значений кодов") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+
+ggsave(plot_name("ranks"), p, width = 16, height = 12, units = "cm", dpi = 300)
 ```
 
 
@@ -647,4 +710,18 @@ cv_glm <- cv.glmnet(X_train, Y_train, family = "mgaussian", alpha = 1)
 
 glm_pred <- predict(cv_glm, newx = X_test[1, , drop = F], s = "lambda.min")[,,1] %>% 
   smart_integer_round()
+```
+
+Сохранение датасета для его фиксации для проверки всех методов:
+```{r}
+objs <- data.table(
+  obj = list(X_train, X_test, Y_train, Y_test, split_idx, mean_train, sd_train),
+  nms = list("X_train", "X_test", "Y_train", "Y_test", "split_idx", "mean_train", "sd_train")
+)
+
+map2(objs$obj, objs$nms, 
+     \(var, varname) saveRDS(var, here("0. Data/3. Saved_params", paste0(varname, ".rds"))))
+
+map2(objs[1:4]$obj, objs[1:4]$nms, \(var, varname)
+     write_feather(as.data.table(var), here("0. Data/3. Saved_params", paste0(varname, ".feather"))))
 ```

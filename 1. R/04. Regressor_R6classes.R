@@ -401,7 +401,7 @@ my_SVR_model <- R6Class(
   inherit = my_template_model,
   
   public = list(
-    fit = function(X_train_, y_train_, kernel =  "sigmoid", ...) {
+    fit = function(X_train_, y_train_, kernel = "radial", ...) {
       self$model <- svm(x = X_train_, y = y_train_, kernel = kernel, ...)
       return(invisible(self))
     }

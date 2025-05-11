@@ -432,7 +432,7 @@ w_config <- tribble(
   approx_shapley,              "Approx Shap",    list(list(R = 500)),
   grid_search_weights,         "Grid Search",    list(list(step = 1.0)),
   stacking_qp_weights,         "QP",             list(list()),
-  genetic_algorithm_weights,   "GA",             list(list(popSize = 50, maxiter = 150)),
+  genetic_algorithm_weights,   "GA",             list(list(popSize = 25, maxiter = 150)),
   particle_swarm_weights,      "PSO",            list(list(swarm_size = 50, maxit = 100)),
   # bayes_optimize_weights,      "Bayes Opt",      list(list(init_points = 15, n_iter = 15)),
   coordinate_optimize_weights, "Coord. Asc",     list(list(tol = 1e-4, max_iter = 20))
