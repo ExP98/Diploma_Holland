@@ -7,7 +7,7 @@ author: "Egor Glushkov"
 
 Библиотеки:
 ```{r include=FALSE}
-source(paste0(here::here(), "/1. R/00. Source_all.R"))
+# source(paste0(here::here(), "/1. R/00. Source_all.R"))
 ```
 
 ```{r}
@@ -129,7 +129,8 @@ predict_linkage_rnd_prob <- function(cooccur_mat, first_ind = NULL) {
 }
 
 
-predict_by_linkage_metrics <- function(cooccur_mat, first_inds_vec = NULL, avg_prob_b = TRUE, n_repeat = 10^2) {
+predict_by_linkage_metrics <- function(cooccur_mat, first_inds_vec = NULL, 
+                                       avg_prob_b = TRUE, n_repeat = 10^2) {
   rnd_max_score <- sapply(1:nrow(Y_test),
                           \(i) calc_C_index_threes(
                             predict_linkage_rnd_max(cooccur_mat, first_inds_vec[i]),
@@ -209,17 +210,19 @@ predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
 ### без PCA
 ```{r}
 # my_RandomForest_model, my_LightGBM_model
-pred <- perform_stack_MO_regression(my_LightGBM_model, X_train, Y_train, X_test, Y_test, print_metric = TRUE)
-# pred <- regularized_lm(X_train, Y_train, X_test, Y_test, print_metric = TRUE)
+# pred <- perform_stack_MO_regression(my_LightGBM_model, X_train, Y_train, X_test, Y_test, print_metric = TRUE)
+pred <- regularized_lm(X_train, Y_train, X_test, Y_test, print_metric = TRUE)
 first_inds_vec <- apply(pred, 1, \(x) which.max(x)) %>% unname()
 predict_by_linkage_metrics(cooccur_mat, first_inds_vec = first_inds_vec)
 ```
-RandomForest: 9.761194 9.731343 (orig 9.627)
-RandomForest PCA: 9.835821 9.5 (orig 9.657)
-my_LightGBM_model: 9.522388 9.470149 (orig 9.687)
-my_LightGBM_model: 9.701493 9.723881 (orig 10.045)
-Lasso PCA: 9.776119 9.597015 (orig 9.746)
-Lasso: 9.701493 9.61194 (orig 10.045)
+
+Значения до обновления:
+  RandomForest: 9.761194 9.731343 (orig 9.627)
+  RandomForest PCA: 9.835821 9.5 (orig 9.657)
+  my_LightGBM_model: 10.475 10.5125 (orig 10.75)
+  my_LightGBM_model: 9.701493 9.723881 (orig 10.045)
+  Lasso PCA: 9.776119 9.597015 (orig 9.746)
+  Lasso: 10.575  10.475 (orig 11.05)
 
 Вывод: предсказание первой буквы и уже по ней по "статистике" второй и третьей (притом константно) работает лучше рандома, но хуже предсказания регрессией 2 и 3 факторов тройки
 
