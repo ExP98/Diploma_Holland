@@ -18,25 +18,6 @@ author: "Egor Glushkov"
 # .[X_train, X_test, Y_train, Y_test, split_idx] <- train_test_split(features, targets)
 ```
 
-valid
-```{r}
-set.seed(SEED)
-split_idx <- sample(c(TRUE, FALSE), nrow(features), replace = TRUE, prob = c(0.6, 0.4))
-
-.[X_train_unscaled, X_test_unscaled] <- list(features[split_idx, ], features[!split_idx, ])
-.[Y_train, Y_test] <- list(targets[split_idx, ], targets[!split_idx, ])
-
-mean_train <- apply(X_train_unscaled, 2, mean, na.rm = TRUE)
-sd_train <- apply(X_train_unscaled, 2, sd, na.rm = TRUE)
-
-X_train <- scale(X_train_unscaled, center = mean_train, scale = sd_train)
-X_test  <- scale(X_test_unscaled, center = mean_train, scale = sd_train)
-
-nn <- round(nrow(X_test)/2)
-.[X_test, X_valid] <- list(X_test[1:nn, ], X_test[(nn+1):nrow(X_test), ])
-.[Y_test, Y_valid] <- list(Y_test[1:nn, ], Y_test[(nn+1):nrow(Y_test), ])
-```
-
 
 # 3. Модель
 
@@ -441,298 +422,90 @@ write_w_search_to_xlsx(regr_chain_w_f_pca, chain_mtr_f_pca, "filtered chain PCA"
 
 ## 4.2 Взвешенное ансамблирование (блендинг) отдельно на психологических тестах
 
+Обучаем на wide_data, тестим на wide_data2:
+```{r}
+ftrs_na <- wide_data2[, .SD, .SDcols = !patterns("HL|HL2")]
+Y_na <- wide_data2[, .SD, .SDcols =  patterns("HL|HL2")] %>% as.matrix()
+X_na <- scale(ftrs_na, center = c(0, mean_train), scale = c(1, sd_train)) %>% as.data.table()
+
+X_wd <- scale(features, center = mean_train, scale = sd_train)
+Y_wd <- targets
+```
+
 Подходы:
-  1. Множественная импутация (MICE)
+  1. Множественная импутация (MICE) -- не применим для новых данных (надо каждый раз обучать)
   2. Матричные и тензорные методы
   3. Добавление масок
   4. Потестовое обучение + обединение с разными весами
   5. Модели, работающие с пропусками (RF, XGBoost) - оч плохо
 
-```{r}
-# wide_data2
-```
-
 Проверять на датасете, где есть все данные: искусственно сделать там NA. Обычно заполнено 3 или 4 теста:
 ```{r}
-na_data <- wide_data %>% copy()
-tests <- c("BF", "EY", "LN", "SC", "CT")
-
-na_data <- na_data %>% 
-  .[, N_na := sample(c(1, 2), 1, prob = c(0.33, 1-0.33)), by = .I] %>% 
-  .[, tests_to_na := list(list(sample(tests, N_na))), by = .I] %>% 
-  melt(id.vars = c("id", "N_na", "tests_to_na"), variable.name = "factor_name") %>% 
-  .[, test := str_sub(factor_name, 1, 2)] %>% 
-  .[, is_a_in_b := mapply('%in%', test, tests_to_na)] %>% 
-  .[is_a_in_b == TRUE, value := NA] %>% 
-  .[, -c("tests_to_na", "test", "is_a_in_b", "N_na")] %>% 
-  dcast(id ~ factor_name, value.var = "value") %>% 
-  .[order(id)]
-```
-
-```{r}
-simple_lm(X_train, Y_train, X_test, Y_test) %>% show_custom_metrics("lm")
-regularized_lm(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
-regularized_lm(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
-perform_stack_MO_regression(my_RandomForest_model, X_train, Y_train, X_test, Y_test) %>%
-  show_custom_metrics("RF", Y_test)
-perform_stack_MO_regression(my_Catboost_model, X_train, Y_train, X_test, Y_test) %>%
-  show_custom_metrics("Catboost", Y_test)
+# na_data <- wide_data %>% copy()
+# tests <- c("BF", "EY", "LN", "SC", "CT")
+# 
+# na_data <- na_data %>% 
+#   .[, N_na := sample(c(1, 2), 1, prob = c(0.33, 1-0.33)), by = .I] %>% 
+#   .[, tests_to_na := list(list(sample(tests, N_na))), by = .I] %>% 
+#   melt(id.vars = c("id", "N_na", "tests_to_na"), variable.name = "factor_name") %>% 
+#   .[, test := str_sub(factor_name, 1, 2)] %>% 
+#   .[, is_a_in_b := mapply('%in%', test, tests_to_na)] %>% 
+#   .[is_a_in_b == TRUE, value := NA] %>% 
+#   .[, -c("tests_to_na", "test", "is_a_in_b", "N_na")] %>% 
+#   dcast(id ~ factor_name, value.var = "value") %>% 
+#   .[order(id)]
 ```
 
 
 ### 1. Multiple Imputation
 
-```{r}
-library(mice)
-
-
-mice_imputation <- function(df_with_na) {
-  df <- df_with_na %>% copy()
-  to_imp <- setdiff(colnames(df), c("id", paste0("HL_", 1:6)))
-  
-  # Строим одну импутацию методом predictive mean matching (pmm)
-  imp <- mice(
-    df[, ..to_imp],
-    m       = 1,        # одна «заполненная» версия
-    method  = "pmm",    # predictive mean matching
-    maxit   = 5,        # число итераций
-    printFlag = FALSE
-  )
-  
-  # Подставляем заполненные значения обратно в DT
-  df[, (to_imp) := complete(imp, 1)]
-  return(df)
-}
-```
-
-Разделение восстановленных данных:
-```{r}
-DT <- mice_imputation(na_data)
-
-set.seed(SEED)
-.[ftr, trg] <- separate_X_y(DT)
-.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg, split_idx = split_idx)
-
-simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-simple_lm(X_train, Y_train, X_test, Y_test) %>% show_custom_metrics("lm")
-
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-regularized_lm(X_train, Y_train, X_test, Y_test, alpha = 0) # Ridge
-
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
-regularized_lm(X_train, Y_train, X_test, Y_test, alpha = 1) # Lasso
-```
-Работает неплохо, пусть и заметно хуже изначально полных данных. Лучше всего -- GLM Ridge
-
-Разделение данных с пропусками, проверка на XGBoost.
-```{r}
-set.seed(SEED)
-.[ftr_na, trg_na] <- separate_X_y(na_data)
-.[X_tr_na, X_ts_na, Y_tr_na, Y_ts_na, ..] <- train_test_split(ftr_na, trg_na, split_idx = split_idx)
-
-perform_stack_MO_regression(my_XGBoost_model, X_tr_na, Y_tr_na, X_ts_na, Y_ts_na) %>% 
-  show_custom_metrics(., "XGB with NA", Y_ts_na)
-
-perform_stack_MO_regression(my_XGBoost_model, X_train, Y_train, X_test, Y_test) %>% 
-  show_custom_metrics(., "XGB", Y_test)
-
-perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("RF with NA", Y_test)
-
-perform_stack_MO_regression(my_RandomForest_model, X_train, Y_train, X_test, Y_test) %>% 
-  show_custom_metrics("RF", Y_test)
-```
-Качество -- оч плохо.
-
-
 Проба на данных с реальными пропусками:
 ```{r}
-DT <- mice_imputation(wide_data2)
+# для лучшего улавливания связей дадим и признаки из полных данных
+# filled_X_na <- mice_imputation(rbind(X_wd, X_na[, -"id"])) %>% .[-c(1:nrow(X_wd))]
+filled_X_na <- mice_imputation(X_na[, -"id"])
 
 set.seed(SEED)
-.[ftr, trg] <- separate_X_y(DT)
-.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg)
-
-simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
-
-perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("RF", Y_test)
-
-perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("Catboost", Y_test)
+.[X_tr, X_ts, Y_tr, Y_ts] <- train_test_split(filled_X_na, Y_na)
+regr_stack_res_na <- calc_regression_models(regr_experiments, X_tr, Y_tr, X_ts, Y_ts)
 ```
+Лишь LightGBM (9.9) и SVR (9.7) лучше константы (9.69). Дальше CatBoost, stepwise, RF
 
 
 ### 2. Matrix/Tensor Completion
 
+Как выбрать rank.max для train_matrix_completion:
 ```{r}
-library(softImpute)
-
-train_matrix_completion <- function(DT, rank.max = 20) {
-  aux_feats <- setdiff(colnames(DT), c("id", paste0("HL_", 1:6)))
-  M         <- as.matrix(DT[, ..aux_feats])
-  fit       <- softImpute::softImpute(M, rank.max = rank.max, lambda = 0, type = "als")
-  return(list(fit = fit, aux = aux_feats))
-}
-
-transform_matrix_completion <- function(fit_obj, DT_new) {
-  aux_feats <- fit_obj$aux
-  M_new <- as.matrix(DT_new[, ..aux_feats])
-  M_imp <- softImpute::complete(M_new, fit_obj$fit)
-  DT_new <- DT_new[, (aux_feats) := as.data.table(M_imp)]
-  return(DT_new)
-}
-```
-
-Как выбрать rank.max:
-```{r}
-M_obs <- as.matrix(wide_data2[, ..aux_feats])
+M_obs <- as.matrix(wide_data[, ..aux_feats])
 sv <- svd(M_obs, nu = 0, nv = 0)$d
 plot(sv, type="b", ylab="Singular values", xlab="Component")
 ```
 
-Восстановим данные там, где есть известные значения:
 ```{r}
-fit_obj <- train_matrix_completion(na_data)
-DT <- transform_matrix_completion(fit_obj, na_data)
+fit_obj <- train_matrix_completion(X_wd)
+filled_X_na <- transform_matrix_completion(fit_obj, X_na[, -"id"])
 
-set.seed(SEED)
-.[ftr, trg] <- separate_X_y(new_user_filled)
-.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg) # , split_idx = split_idx
-
-simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
-perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("RF", Y_test)
-perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("Catboost", Y_test)
+regr_stack_res_na <- calc_regression_models(regr_experiments, X_wd, Y_wd, filled_X_na, Y_na)
 ```
-Хорошо для GLM, плохо на RF, Catboost.
-
-
-Данные с реальными пропусками:
-```{r}
-fit_obj <- train_matrix_completion(wide_data)
-DT <- transform_matrix_completion(fit_obj, wide_data2)
-
-set.seed(SEED)
-.[ftr, trg] <- separate_X_y(DT)
-.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(ftr, trg)
-
-simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
-
-perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("RF", Y_test)
-
-perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("Catboost", Y_test)
-```
+ - Лучше всех: stepwise (9.929, но велик rmse), Lasso L1 (9.925)
+ - Хороши: Ridge L2, kNN (k=50) (оба -- около 9.8)
 
 
 ### 3. Добавление масок
 
 ```{r}
-prepare_data <- function(DT, y_cols = NULL) {
-  df <- DT %>% as.data.table() %>% copy()
-  x_cols <- setdiff(colnames(df), c("id", y_cols))
-  
-  # создаём маски и заполняем NA нулями
-  for (x in x_cols) {
-    mcol <- paste0(x, "_mask")
-    df <- df %>% 
-      .[, (mcol) := as.integer(!is.na(get(x)))] %>% 
-      .[is.na(get(x)), (x) := 0L]
-  }
-  
-  feats <- c(x_cols, paste0(x_cols, "_mask"))
-  return(as.matrix(df[, ..feats]))
-}
+regr_stack_res_na <- calc_regression_models(
+  regr_experiments, 
+  prepare_data(X_wd), Y_wd, prepare_data(X_na), Y_na
+)
 ```
-
-```{r}
-set.seed(SEED)
-.[ftr, trg] <- separate_X_y(na_data)
-DT <- ftr %>% as.data.table() %>% prepare_data(y_cols = paste0("HL_", 1:6))
-.[X_tr, X_ts, Y_tr, Y_ts, sp_idx] <- train_test_split(DT, trg, split_idx = split_idx)
-
-simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
-
-perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("RF", Y_test)
-
-perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("Catboost", Y_test)
-```
-
-На wide_data "обучаем", на wide_data2 тестим
-```{r}
-sp_idx <- c(rep(TRUE, wide_data[, .N]), rep(FALSE, wide_data2[, .N]))
-
-set.seed(SEED)
-.[ftr, trg] <- separate_X_y(untd_dt)
-.[X_tr, X_ts, Y_tr, Y_ts, ..] <- train_test_split(ftr, trg, split_idx = sp_idx)
-X_tr <- prepare_data(X_tr, y_cols = paste0("HL_", 1:6))
-X_ts <- prepare_data(X_ts, y_cols = paste0("HL_", 1:6))
-
-simple_lm(X_tr, Y_tr, X_ts, Y_ts) %>% show_custom_metrics("lm")
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 0) # Ridge
-regularized_lm(X_tr, Y_tr, X_ts, Y_ts, alpha = 1) # Lasso
-
-perform_stack_MO_regression(my_RandomForest_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("RF", Y_test)
-
-perform_stack_MO_regression(my_Catboost_model, X_tr, Y_tr, X_ts, Y_ts) %>% 
-  show_custom_metrics("Catboost", Y_test)
-```
+ - лучше всех: Lasso L1 (>10), stepwise (9.98)
+ - почти топ: Ridge L2 (9.92), ET (9.9), lm (9.876)
 
 
 ### 4. Потестовое обучение + обединениее с разными весами
 
-Обучаем на wd, тестим на wd2
-
-```{r}
-# .[ftrs_na, trgs_na] <- separate_X_y(wide_data2)
-ftrs_na <- wide_data2[, .SD, .SDcols = !patterns("HL|HL2")]
-Y_na <- wide_data2[, .SD, .SDcols =  patterns("HL|HL2")] %>% as.matrix()
-
-# Нормировать!
-X_tr_unsc <- features[split_idx, ]
-mean_train <- apply(X_tr_unsc, 2, mean, na.rm = TRUE) %>% c(0, .) # первое -- для id
-sd_train <- apply(X_tr_unsc, 2, sd, na.rm = TRUE) %>% c(1, .)
-
-X_na <- scale(ftrs_na, center = mean_train, scale = sd_train) %>% as.data.table()
-# X_na, Y_na
-```
-
-```{r}
-for (i in 1:nrow(w_bytest_comb_config)) {
-  .[w_model, w_par, lbl] <- w_bytest_comb_config[i, .(method, params, label)] %>% sapply(\(obj) obj)
-  
-  tic()
-  .[psytest_models, wght_combos] <- fit_by_tests_ensemble(
-    model_class = my_knn_model,
-    X_train, Y_train, X_test, Y_test,
-    MO_regr = stack_MO_regr,
-    weight_model = w_model,
-    weight_model_params = w_par
-  )
-  
-  pred_true_values <- predict_by_tests_ensemble(X_na, Y_na, psytest_models, wght_combos)
-  toc()
-  
-  val <- pred_true_values$cindex %>% mean() %>% round(3)
-  cat(lbl, ", cindex: ", val, "\n\n", sep = "")
-  # pred_true_values$cindex %>% plot_cindex_hist()
-}
-```
-
+Перебираем все регрессоры со всеми способами получить веса. Фактически каждую модель обучаем на данных различных тестов отдельно, затем для каждой из 31 комбинаций наличия тестов с помощью <метода получения весов> находим лучшие веса. Проверяем на данных с пропусками, т.е. wide_data2:
 ```{r}
 for (row_exp in 1:nrow(regr_experiments)) {
   my_model     <- regr_experiments[row_exp, model][[1]]
@@ -771,10 +544,26 @@ for (row_exp in 1:nrow(regr_experiments)) {
 }
 ```
 
+Лучше всего себя показали:
+ - stepwise lm + GA (10.053, но долго - 124 сек)
+ - Ridge L2 + PSO (10.038, но долго - 90 сек)
+ - lm + (GS | simple | equal) (9.98, от 1 до 10 сек)
+ - L1, L2, stepwise, ...
+ 
+Вывод: 
+ - метод: L2 (или L1 или lm)
+ - Grid Search (для скорости), PSO (для точности, ибо GA долгий)
+ 
 
+my_regularized_lm_model(alpha = 0) + no_MO_regr + particle_swarm_weights(swarm_size = NA)
+```{r}
+.[psytest_models, wght_combos] <- best_fit_bytests_ensemble(X_train, Y_train, X_test, Y_test)
+pred_true_values <- predict_by_tests_ensemble(X_na, Y_na, psytest_models, wght_combos)
 
-Прогнать на разных моделях и weight_model
-Сравнить с другими способами заполнения пропусков
+pred_true_values$cindex %>% mean() %>% round(3)   
+pred_true_values$cindex %>% plot_cindex_hist()
+```
+Выполняется ~1 мин, результат ~9.929
 
 
 ### 5. Пример поиска лучшей модели для одного теста

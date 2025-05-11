@@ -310,6 +310,17 @@ filtered_weights <- function(models_probs, Y_true, qnt_prob = 0.67) {
 
 ## 2.3 Ансамбли для потестовых данных                ####
 
+best_fit_bytests_ensemble <- function(X_train_, Y_train_, X_test_, Y_test_) {
+  fit_by_tests_ensemble(model_class = my_regularized_lm_model, 
+                        X_train_, Y_train_, X_test_, Y_test_,
+                        psytests = c("BF", "CT", "EY", "LN", "SC"), 
+                        MO_regr = no_MO_regr, 
+                        weight_model = particle_swarm_weights, 
+                        weight_model_params = list(swarm_size = NA, maxit = 75),
+                        alpha = 0)
+}
+
+
 fit_by_tests_ensemble <- function(model_class, 
                                   X_train_, Y_train_, X_test_, Y_test_,
                                   psytests = c("BF", "CT", "EY", "LN", "SC"), 

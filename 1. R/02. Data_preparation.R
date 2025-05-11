@@ -100,7 +100,9 @@ train_test_split <- function(features, targets, train_size = 0.8, split_idx = NU
     X_test = X_test,
     Y_train = Y_train, 
     Y_test = Y_test,
-    split_idx = split_idx
+    split_idx = split_idx,
+    mean_train = mean_train,
+    sd_train = sd_train
   ))
 }
 
@@ -216,4 +218,4 @@ untd_dt <- bind_rows(wide_data, wide_data2) %>% .[, id := .I]
 # rm(wide_data, wide_data2)
 
 .[features, targets] <- separate_X_y(wide_data)
-.[X_train, X_test, Y_train, Y_test, split_idx] <- train_test_split(features, targets)
+.[X_train, X_test, Y_train, Y_test, split_idx, mean_train, sd_train] <- train_test_split(features, targets)

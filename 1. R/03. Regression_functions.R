@@ -329,7 +329,7 @@ calc_regression_models <- function(regr_models_df, X_train_, Y_train_, X_test_, 
 extract_matrices <- function(pred_res_df) return(pred_res_df[, pred] %>% `names<-`(pred_res_df[, name]))
 
 
-# 2.4 Важность признаков        ####
+# 2.4 Важность признаков                                    ####
 
 get_feature_importance <- function(features_df) {
   # features_df: {6 code rows x 55 feature cols} 
@@ -369,4 +369,50 @@ glm_importance <- function(X_train_, Y_train_, alpha = 1) {
     setnames(new = pluck(cf, 1) %>% rownames()) %>% 
     .[, -"(Intercept)"]
   return(imp_df)
+}
+
+
+# 2.5 Методы восстановления и обучения на неполных данных   ####
+
+# не подходит для восстановления новых данных: обрабатывает только разом исторические данные
+mice_imputation <- function(df_with_na) {
+  df <- df_with_na %>% copy() %>% as.data.table()
+  to_imp <- setdiff(colnames(df), c("id", paste0("HL_", 1:6)))
+  imp <- mice::mice(df[, ..to_imp], m = 1, method  = "pmm", maxit = 5, printFlag = FALSE)
+  df[, (to_imp) := mice::complete(imp, 1)]
+  return(df)
+}
+
+
+train_matrix_completion <- function(DT, rank.max = 20) {
+  aux_feats <- setdiff(colnames(DT), c("id", paste0("HL_", 1:6)))
+  M         <- as.matrix(DT)[, aux_feats]
+  fit       <- softImpute::softImpute(M, rank.max = rank.max, lambda = 0, type = "als")
+  return(list(fit = fit, aux = aux_feats))
+}
+
+
+transform_matrix_completion <- function(fit_obj, DT_new) {
+  DT_new    <- as.matrix(DT_new)
+  aux_feats <- fit_obj$aux
+  M_imp     <- softImpute::complete(DT_new[, aux_feats], fit_obj$fit)
+  DT_new[, aux_feats] <- M_imp
+  return(DT_new)
+}
+
+
+# Добавление масок и нулей вместо пропусков
+prepare_data <- function(DT, y_cols = paste0("HL_", 1:6)) {
+  df <- DT %>% as.data.table() %>% copy()
+  x_cols <- setdiff(colnames(df), c("id", y_cols))
+  
+  for (x in x_cols) {
+    mcol <- paste0(x, "_mask")
+    df <- df %>% 
+      .[, (mcol) := as.integer(!is.na(get(x)))] %>% 
+      .[is.na(get(x)), (x) := 0L]
+  }
+  
+  feats <- c(x_cols, paste0(x_cols, "_mask"))
+  return(as.matrix(df[, ..feats]))
 }

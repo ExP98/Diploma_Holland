@@ -17,7 +17,8 @@ install_pkgs <- function(libs) {
 libs <- c(
   "tidyverse", "data.table", "here", "dotty", "caret", "plotly", "arrow",
   "R6", "xgboost", "lightgbm", "randomForest", "catboost", "e1071", "FNN",
-  "glmnet", "pls", "stacking", "rpart", "ranger", "reticulate", "purrr"
+  "glmnet", "pls", "stacking", "rpart", "ranger", "reticulate", "purrr",
+  "mice", "softImpute"
 )
 
 install_pkgs(libs)
