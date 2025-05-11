@@ -106,7 +106,7 @@ lapply(seq(0.3, 1, 0.1), \(s) {
 }) %>% bind_rows()
 ```
 Лучшее при ssq = 0.8 (k = 19)
-Возможно 0.8
+Возможно 0.9
 
 ## 3.2 Модели
 
@@ -127,7 +127,7 @@ lapply(seq(5, 55, by = 5), \(k_neighb) {
   )
 }) %>% bind_rows()
 ```
-Оптимально: k_neighb = 25
+Оптимально: k_neighb = 30 и 50
 
 ### 7 ExtraTree
 
@@ -135,13 +135,13 @@ Multilabel
 ```{r}
 lapply(c(100, 1000, 2000, 3500), \(nt) {
   classification_test_framework(
-    Y_test, Y_b_test, multlbl_clsf_func = multilabel_extratree_clsf, n_retry = 5, ntree = nt,
+    Y_test, Y_b_test, clsf_func = multilabel_extratree_clsf, n_retry = 5, ntree = nt,
     label = str_glue("ExtraTree ({nt}) multilabel"), X_train = X_train, Y_b_train = Y_b_train, 
     X_test = X_test
   )
 }) %>% bind_rows()
 ```
-ntree = 1000
+ntree = 2000
 
 ### 8 XGBoost
 
@@ -149,7 +149,7 @@ Multilabel
 ```{r}
 lapply(c(100, 200, 500), \(nr) {
   classification_test_framework(
-    Y_test, Y_b_test, multlbl_clsf_func = multilabel_xgb_clsf, n_retry = 3, nrounds = nr,
+    Y_test, Y_b_test, clsf_func = multilabel_xgb_clsf, n_retry = 3, nrounds = nr,
     label = str_glue("XGBoost ({nr}) multilabel"), X_train = X_train, Y_b_train = Y_b_train, 
     X_test = X_test
   )
@@ -163,7 +163,7 @@ Multilabel
 ```{r}
 lapply(c(100, 250, 500), \(nr) {
   classification_test_framework(
-    Y_test, Y_b_test, multlbl_clsf_func = multilabel_lightgbm_clsf, n_retry = 3, nrounds = nr,
+    Y_test, Y_b_test, clsf_func = multilabel_lightgbm_clsf, n_retry = 3, nrounds = nr,
     label = str_glue("LightGBM ({nr}) multilabel"), X_train = X_train, Y_b_train = Y_b_train, 
     X_test = X_test
   )
@@ -189,15 +189,15 @@ classification_test_framework(
 ```{r}
 multiclass_experiments <- tribble(
   ~multcls_clsf_func,              ~label,                       ~params,                  ~n_retry,
-  multiclass_pred_by_SVM,          "SVM multiclass",             list(kernel = "sigmoid"), 5,
-  multiclass_pred_by_RF,           "Random Forest multiclass",   list(ntree = 1000),       5,
-  multiclass_pred_by_ExtraTree,    "ExtraTree multiclass",       list(ntree = 1000),       5,
-  multiclass_pred_by_Logregr,      "Logit (ridge) multiclass",   list(alpha = 0),          5,
-  multiclass_pred_by_Logregr,      "Logit (lasso) multiclass",   list(alpha = 1),          5,
-  multiclass_pred_by_NB,           "Naive Bayes multiclass",     list(),                   5,
-  multiclass_pred_by_kNN,          "kNN (3) multiclass",         list(k_neighb = 3),       5,
-  multiclass_pred_by_kNN,          "kNN (25) multiclass",        list(k_neighb = 25),      5,
-  multiclass_pred_by_kNN,          "kNN (50) multiclass",        list(k_neighb = 50),      5,
+  multiclass_pred_by_SVM,          "SVM multiclass",             list(kernel = "sigmoid"), 3,
+  multiclass_pred_by_RF,           "Random Forest multiclass",   list(ntree = 1000),       3,
+  multiclass_pred_by_ExtraTree,    "ExtraTree multiclass",       list(ntree = 2000),       3,
+  multiclass_pred_by_Logregr,      "Logit (ridge) multiclass",   list(alpha = 0),          3,
+  multiclass_pred_by_Logregr,      "Logit (lasso) multiclass",   list(alpha = 1),          3,
+  multiclass_pred_by_NB,           "Naive Bayes multiclass",     list(),                   3,
+  multiclass_pred_by_kNN,          "kNN (3) multiclass",         list(k_neighb = 3),       3,
+  multiclass_pred_by_kNN,          "kNN (30) multiclass",        list(k_neighb = 30),      3,
+  multiclass_pred_by_kNN,          "kNN (50) multiclass",        list(k_neighb = 50),      3,
   multiclass_pred_by_XGBoost,      "XGBoost multiclass",         list(),                   3,
   multiclass_pred_by_LightGBM,     "LightGBM (100) multiclass",  list(nrounds = 100),      3,
   multiclass_pred_by_LightGBM,     "LightGBM (500) multiclass",  list(nrounds = 500),      3,
@@ -225,15 +225,15 @@ bind_rows(
 ```{r}
 multilabel_experiments <- tribble(
   ~multlbl_clsf_func,             ~label,                        ~params,              ~n_retry,
-  multilabel_svm_clsf,            "SVM multilabel",              list(),               5,
-  multilabel_rf_clsf,             "Random Forest multilabel",    list(),               5,
-  multilabel_extratree_clsf,      "ExtraTree (1000) multilabel", list(ntree = 1000),   5,
-  multilabel_extratree_clsf,      "ExtraTree (2000) multilabel", list(ntree = 2000),   5,
-  multilabel_logit_clsf,          "Logit multilabel",            list(),               5,
-  multilabel_nb_clsf,             "Naive Bayes multilabel",      list(),               5,
-  multilabel_knn_clsf,            "kNN (k = 5) multilabel",      list(k_neighb = 5),   5,
-  multilabel_knn_clsf,            "kNN (k = 25) multilabel",     list(k_neighb = 25),  5,
-  multilabel_knn_clsf,            "kNN (k = 50) multilabel",     list(k_neighb = 50),  5,
+  multilabel_svm_clsf,            "SVM multilabel",              list(),               3,
+  multilabel_rf_clsf,             "Random Forest multilabel",    list(),               3,
+  multilabel_extratree_clsf,      "ExtraTree (1000) multilabel", list(ntree = 1000),   3,
+  multilabel_extratree_clsf,      "ExtraTree (2000) multilabel", list(ntree = 2000),   3,
+  multilabel_logit_clsf,          "Logit multilabel",            list(),               3,
+  multilabel_nb_clsf,             "Naive Bayes multilabel",      list(),               3,
+  multilabel_knn_clsf,            "kNN (k = 5) multilabel",      list(k_neighb = 5),   3,
+  multilabel_knn_clsf,            "kNN (k = 30) multilabel",     list(k_neighb = 30),  3,
+  multilabel_knn_clsf,            "kNN (k = 50) multilabel",     list(k_neighb = 50),  3,
   multilabel_xgb_clsf,            "XGBoost multilabel",          list(nrounds = 500),  3,
   multilabel_lightgbm_clsf,       "LightGBM multilabel",         list(nrounds = 500),  3,
   multilabel_catboost_clsf,       "CatBoost multilabel",         list(nrounds = 500),  3,
@@ -273,7 +273,7 @@ lp_experiments <- tribble(
   lp_nb_letters,          "Naive Bayes",                   list(),
   lp_logit_letters,       "Logistic regr Ridge",           list(alpha = 0),
   lp_logit_letters,       "Logistic regr Lasso",           list(alpha = 1),
-  lp_knn_letters,         "kNN, k = 25",                   list(k_neighb = 25),
+  lp_knn_letters,         "kNN, k = 30",                   list(k_neighb = 30),
   lp_knn_letters,         "kNN, k = 100",                  list(k_neighb = 100),
   lp_et_letters,          "ExtraTrees (ntree = 1000)",     list(ntree = 1000),
   lp_et_letters,          "ExtraTrees (ntree = 2000)",     list(ntree = 2000),
@@ -307,7 +307,7 @@ map2(
   list(mc_res, mc_res_pca, mltlbl_res, mltlbl_res_pca, lp_res, lp_res_pca),
   list("Multiclass", "Multiclass with PCA", "Multilabel", "Multilabel with PCA",
        "Label Powerset", "Label Powerset with PCA"),
-  \(df, sheetname) xlsx::write.xlsx(df, here("0. Data/1. Output/Classif_results.xlsx"), sheetname, 
+  \(df, sheetname) xlsx::write.xlsx(df, here("4. Output/09. Classif_results.xlsx"), sheetname, 
                                     row.names = FALSE, append = TRUE)
 )
 ```

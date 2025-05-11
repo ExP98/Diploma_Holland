@@ -92,7 +92,7 @@ get_regr_w <- function(weight_config, matrices, Y_true) {
 
 
 write_w_search_to_xlsx <- function(w_srch_res, matr, sheetname, 
-                                   filename = here("0. Data/1. Output/clsf_ensembles/clsf_ensembles_weights.xlsx")) {
+                                   filename = here("4. Output/10. Classification_ensembles_weights.xlsx")) {
   lbls <- names(matr)
   res <- w_srch_res %>% 
     copy() %>% 
