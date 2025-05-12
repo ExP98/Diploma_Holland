@@ -370,7 +370,7 @@ train_matrix_completion <- function(DT, rank.max = 20) {
 transform_matrix_completion <- function(fit_obj, DT_new) {
   DT_new    <- as.matrix(DT_new)
   aux_feats <- fit_obj$aux
-  M_imp     <- softImpute::complete(DT_new[, aux_feats], fit_obj$fit)
+  M_imp     <- softImpute::complete(DT_new[, aux_feats, drop = FALSE], fit_obj$fit)
   DT_new[, aux_feats] <- M_imp
   return(DT_new)
 }

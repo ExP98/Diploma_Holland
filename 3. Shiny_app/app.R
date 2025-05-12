@@ -14,8 +14,8 @@ library(shinyBS)
 
 # 2. Датасет с ограничениями, модель       ####
 # set.seed(123)
-constraints <- read.xlsx2(paste0(here(), "/3. Shiny_app/psytest_constraints.xlsx"),
-                          sheetName = "constraints") %>% 
+constraints <- xlsx::read.xlsx(paste0(here(), "/3. Shiny_app/psytest_constraints.xlsx"),
+                               sheetName = "constraints") %>% 
   as.data.table() %>% 
   .[, names(.SD) := lapply(.SD, as.numeric), .SDcols = c("feature_num", "min", "max", "median")] %>% 
   .[test != "Тест Голланда"]
@@ -26,10 +26,11 @@ mean_scale <- readRDS(here("3. Shiny_app/model/mean_scale.rds"))
 sd_scale   <- readRDS(here("3. Shiny_app/model/sd_scale.rds"))
 coln_order <- readRDS(here("3. Shiny_app/model/coln_order.rds"))
 cv_glm     <- readRDS(here("3. Shiny_app/model/MODEL_cv_glm.rds"))
+fit_obj    <- readRDS(here("3. Shiny_app/model/fit_obj.rds"))
 
 glm_predict <- function(model, newdata) {
-  glm_pred <- predict(model, newx = newdata, s = "lambda.min")[,,1] %>% 
-    smart_integer_round()
+  glm_pred <- predict(model, newx = newdata, s = "lambda.min")[,,1]
+    # smart_integer_round()
   return(glm_pred)
 }
 
@@ -247,24 +248,25 @@ server <- function(input, output) {
       if (length(errors) > 0) {
         lapply(errors, \(e) showNotification(e, type = "error"))
         rv$results <- NULL
+      } else {
+        all_answers <- filled_data %>% 
+          bind_rows(anti_join(
+            constraints[, .(feature_short_name, val = NA)], # val = median, если без transform_matrix_completion в конце
+            filled_data,
+            by = join_by(feature_short_name)
+          )) %>%
+          as.data.table() %>%
+          .[, .(feature_short_name, val, id = 1)] %>% 
+          dcast(id ~ feature_short_name, value.var = "val") %>%
+          # .[, paste0(setdiff(constraints[, unique(feature_short_name)], colnames(.))) := 1] %>% 
+          .[, id := NULL] %>% 
+          relocate(all_of(coln_order)) %>% 
+          as.matrix() %>% 
+          scale(center = mean_scale, scale = sd_scale) %>% 
+          transform_matrix_completion(fit_obj, .)
+        
+        rv$results <- glm_predict(cv_glm, all_answers)
       }
-      
-      all_answers <- filled_data %>% 
-        bind_rows(anti_join(
-          constraints[, .(feature_short_name, val = median)],
-          filled_data,
-          by = join_by(feature_short_name)
-        )) %>%
-        as.data.table() %>%
-        .[, .(feature_short_name, val, id = 1)] %>% 
-        dcast(id ~ feature_short_name, value.var = "val") %>%
-        .[, paste0(setdiff(constraints[, unique(feature_short_name)], colnames(.))) := 1] %>% 
-        .[, id := NULL] %>% 
-        relocate(coln_order) %>% 
-        as.matrix() %>% 
-        scale(center = mean_scale, scale = sd_scale)
-      
-      rv$results <- glm_predict(cv_glm, all_answers)
     } else {
       rv$results <- NULL
     }

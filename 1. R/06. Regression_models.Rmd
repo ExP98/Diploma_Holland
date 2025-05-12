@@ -707,8 +707,11 @@ ggsave(plot_name("ranks"), p, width = 16, height = 12, units = "cm", dpi = 300)
 ```{r}
 cv_glm <- cv.glmnet(X_train, Y_train, family = "mgaussian", alpha = 1)
 # saveRDS(cv_glm, here("3. Shiny_app/model/MODEL_cv_glm.rds"))
+# saveRDS(fit_obj, here("3. Shiny_app/model/fit_obj.rds"))
 
-glm_pred <- predict(cv_glm, newx = X_test[1, , drop = F], s = "lambda.min")[,,1] %>% 
+X_filled <- transform_matrix_completion(fit_obj, X_na[1, -"id", drop = F])
+
+glm_pred <- predict(cv_glm, newx = X_filled, s = "lambda.min")[,,1] %>% 
   smart_integer_round()
 ```
 
