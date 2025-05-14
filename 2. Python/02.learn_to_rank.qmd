@@ -24,22 +24,28 @@ from sklearn.model_selection import train_test_split
 # Данные
 
 ```{python}
-data = pd.read_feather("../0. Data/wide_data.feather")
+# data = pd.read_feather("../0. Data/wide_data.feather")
 
-X = data.loc[:, ~data.columns.isin(["HL_1", "HL_2", "HL_3", "HL_4", "HL_5", "HL_6", "id"])]
-y = data.loc[:, "HL_1":"HL_6"]
+# X = data.loc[:, ~data.columns.isin(["HL_1", "HL_2", "HL_3", "HL_4", "HL_5", "HL_6", "id"])]
+# y = data.loc[:, "HL_1":"HL_6"]
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=242)
+# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=242)
 
-scaler = StandardScaler().fit(X_train)
-X_train = scaler.transform(X_train)
-X_test = scaler.transform(X_test)
+# scaler = StandardScaler().fit(X_train)
+# X_train = scaler.transform(X_train)
+# X_test = scaler.transform(X_test)
+
+X_train = pd.read_feather("../0. Data/3. Saved_params/X_train.feather").to_numpy()
+y_train = pd.read_feather("../0. Data/3. Saved_params/Y_train.feather")
+X_test  = pd.read_feather("../0. Data/3. Saved_params/X_test.feather").to_numpy()
+y_test  = pd.read_feather("../0. Data/3. Saved_params/Y_test.feather")
 ```
 
 
 # Learn-to-rank
 Ранжирование, listwise-подход
 
+Общие функции и классы:
 ```{python}
 class CustomDataset(Dataset):
     def __init__(self, X, y):
@@ -82,6 +88,10 @@ def train_model(model, loss_func, X_train, y_train, num_epochs=100, batch_size=6
             optimizer.step()
             
             total_loss += loss.item()
+
+        avg_loss = total_loss / len(dataloader)
+        if (epoch + 1) % 25 == 0:
+            print(f"Epoch {epoch+1}/{num_epochs} — avg loss: {avg_loss:.4f}")
     print(f"Loss: {total_loss / len(dataloader):.4f}")    
     return model
 
@@ -96,7 +106,7 @@ def predict_scores(model, X_new):
   
 def ndcg_at_k(y_pred, y_true, k = 3):
     y_pred = y_pred
-    y_true = y_true.values
+    y_true = np.asarray(y_true)
   
     # y_true, y_pred — массивы shape (n_queries, n_items)
     ndcgs = []
@@ -113,10 +123,12 @@ def ndcg_at_k(y_pred, y_true, k = 3):
 ```
 
 
-## ListNet
+## Архитектуры нейронных сетей
+
+### MLP
 
 ```{python}
-class ListNet(nn.Module):
+class MLPRanker(nn.Module):
     def __init__(self, input_dim=55, output_dim=6):
         super().__init__()
         self.fc = nn.Sequential(
@@ -137,30 +149,13 @@ class ListNet(nn.Module):
         
     def forward(self, x):
         return self.fc(x)
-
-# Функция потерь ListNet
-def listnet_loss(y_pred, y_true):
-    P_pred = torch.softmax(y_pred, dim=1)
-    P_true = torch.softmax(y_true, dim=1)
-    # кросс-энтропия (вместо дивергенции KL как некое приближение)
-    return -torch.mean(torch.sum(P_true * torch.log(P_pred + 1e-10), dim=1))
 ```
 
 
-```{python}
-listnet_model = ListNet()
-listnet_model = train_model(listnet_model, listnet_loss, X_train, y_train, num_epochs=100)
-
-LTR_LN_preds = predict_scores(listnet_model, X_test)
-print(f"C-index: {round(df_metric(LTR_LN_preds, y_test, calc_C_index), 3)}")
-print(f"NDCG@k: {ndcg_at_k(LTR_LN_preds, y_test, k=3)}")
-```
-
-
-## ApproxNDCG
+### MLP with ReLU
 
 ```{python}
-class DeepRanker(nn.Module):
+class NonlinearMLPRanker(nn.Module):
     def __init__(self, input_dim=55, output_dim=6):
         super().__init__()
         self.fc = nn.Sequential(
@@ -184,51 +179,144 @@ class DeepRanker(nn.Module):
 
     def forward(self, x):
         return self.fc(x)
+```
 
 
-# Функция потерь ApproxNDCG (дифференцируемая)
+### Listwise Transformer (Cross‑item Attention)
+
+```{python}
+# Listwise Transformer с item‑embedding
+class ListwiseTransformer(nn.Module):
+    def __init__(self, user_dim=55, item_embed_dim=8, d_model=64, nhead=4, num_layers=2, n_items=6):
+        super().__init__()
+        self.n_items = n_items
+
+        # learnable‑вектор для каждого из 6 items
+        self.item_emb = nn.Parameter(torch.randn(n_items, item_embed_dim))
+
+        # проекция (user_feats || item_emb) → d_model
+        self.input_proj = nn.Linear(user_dim + item_embed_dim, d_model)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, batch_first=True)
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.out = nn.Linear(d_model, 1)
+
+    def forward(self, user_feats):
+        b = user_feats.size(0)
+        u = user_feats.unsqueeze(1).expand(-1, self.n_items, -1)
+        e = self.item_emb.unsqueeze(0).expand(b, -1, -1)
+        x = torch.cat([u, e], dim=2)  # (b, 6, user_dim+item_embed_dim)
+        # Transformer
+        h = self.input_proj(x)        # (b, 6, d_model)
+        h = h.permute(1,0,2)          # (6, b, d_model)
+        h = self.encoder(h)           # (6, b, d_model)
+        h = h.permute(1,0,2)          # (b, 6, d_model)
+        scores = self.out(h).squeeze(-1)  # (b, 6)
+        return scores
+```
+
+
+### Deep & Cross Network (DCN)
+
+```{python}
+# DCN‑архитектура с item‑embedding
+class DCNLayer(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.w = nn.Parameter(torch.randn(dim))
+        self.b = nn.Parameter(torch.zeros(dim))
+
+    def forward(self, x):
+        # x: (batch*6, dim)
+        xw = (x * self.w).sum(dim=1, keepdim=True)  # (batch*6, 1)
+        cross = x * xw + self.b
+        return cross + x  # residual
+
+class DCNUserItemRanker(nn.Module):
+    def __init__(self, user_dim=55, item_embed_dim=8, cross_layers=3, deep_dims=[128,64,32], n_items=6):
+        super().__init__()
+        self.n_items = n_items
+        self.item_emb = nn.Parameter(torch.randn(n_items, item_embed_dim))
+        total_dim = user_dim + item_embed_dim
+
+        # cross‑network
+        self.cross_net = nn.ModuleList([DCNLayer(total_dim) for _ in range(cross_layers)])
+        # deep‑network
+        deep = []
+        prev = total_dim
+        for h in deep_dims:
+            deep += [nn.Linear(prev, h), nn.ReLU(), nn.Dropout(0.1)]
+            prev = h
+        self.deep_net = nn.Sequential(*deep)
+        # финальный выход
+        self.out = nn.Linear(prev + total_dim, 1)
+
+    def forward(self, user_feats):
+        b = user_feats.size(0)
+        u = user_feats.unsqueeze(1).expand(-1, self.n_items, -1)          # (b,6,user_dim)
+        e = self.item_emb.unsqueeze(0).expand(b, -1, -1)                  # (b,6,item_emb)
+        x = torch.cat([u, e], dim=2)                                      # (b,6,total_dim)
+        x_flat = x.view(b*self.n_items, -1)  # (b*6, total_dim)
+        # cross
+        x_cross = x_flat
+        for layer in self.cross_net:
+            x_cross = layer(x_cross)
+        # deep
+        x_deep = self.deep_net(x_flat)
+        x_cat = torch.cat([x_cross, x_deep], dim=1)   # (b*6, total_dim+deep_last)
+        scores = self.out(x_cat).view(b, self.n_items)  # (b,6)
+        return scores
+```
+
+
+## Функции потерь
+
+```{python}
+# ListNet
+def listnet_loss(y_pred, y_true):
+    P_pred = torch.softmax(y_pred, dim=1)
+    P_true = torch.softmax(y_true, dim=1)
+    # кросс-энтропия (вместо дивергенции KL как некое приближение)
+    return -torch.mean(torch.sum(P_true * torch.log(P_pred + 1e-10), dim=1))
+
+
+# ListNet Top-3
+def listnet_loss_topk(y_pred, y_true, k=3, eps=1e-10):
+    # 1) строим полные распределения
+    P_pred = torch.softmax(y_pred, dim=1)  # (batch, n_items)
+    P_true = torch.softmax(y_true, dim=1)  # (batch, n_items)
+    # 2) для каждого примера берём индексы топ‑k по true
+    _, idx_true = torch.sort(y_true, dim=1, descending=True)  # (batch, n_items)
+    topk_idx = idx_true[:, :k]                                # (batch, k)
+    # 3) собираем векторы P_pred и P_true только по этим индексам
+    P_pred_k = P_pred.gather(1, topk_idx)  # (batch, k)
+    P_true_k = P_true.gather(1, topk_idx)  # (batch, k)
+    # 4) кросс‑энтропия на top‑k
+    loss = -torch.mean(torch.sum(P_true_k * torch.log(P_pred_k + eps), dim=1))
+    return loss
+
+
+# дифференциируемая ApproxNDCG
 def approx_ndcg_loss(scores, relevance, eps=1e-10):
-    """
-    scores: предсказанные оценки модели (batch_size, 6)
-    relevance: истинные значения целей (batch_size, 6)
-    """
+
     batch_size, num_targets = scores.shape
-    
     # 1. Аппроксимируем ранги через попарные сравнения
-    diff = scores.unsqueeze(2) - scores.unsqueeze(1)  # (batch, 6, 6)
-    
+    diff = scores.unsqueeze(2) - scores.unsqueeze(1)  # (batch, 6, 6) 
     # здесь сигмоида ("релаксация рангов"), чтобы NDCG была дифференциируемой
     approx_ranks = torch.sigmoid(diff).sum(dim=2)  # (batch, 6)
-    
     # 2. Рассчитываем DCG
     dcg = (torch.pow(2.0, relevance) - 1) / torch.log2(approx_ranks + 1 + eps)
     dcg = dcg.sum(dim=1)  # (batch, )
-    
     # 3. Рассчитываем IDCG (идеальное ранжирование)
     ideal_sorted, _ = torch.sort(relevance, dim=1, descending=True)  # (batch, 6)
     ideal_ranks = torch.arange(1, num_targets + 1, device=scores.device).float().unsqueeze(0)  # (1, 6)
     idcg = (torch.pow(2.0, ideal_sorted) - 1) / torch.log2(ideal_ranks + 1 + eps)
     idcg = idcg.sum(dim=1)  # (batch, )
-    
     # 4. NDCG = DCG / IDCG, loss = 1 - NDCG
     ndcg = dcg / (idcg + eps)
     return 1 - ndcg.mean()
-```
-
-```{python}
-ApproxNDCG_model = DeepRanker() # input_dim=X_train.shape[1]
-ApproxNDCG_model = train_model(ApproxNDCG_model, approx_ndcg_loss, X_train, y_train, num_epochs=100)
-
-AN_preds = predict_scores(ApproxNDCG_model, X_test)
-print(f"C-index: {round(df_metric(AN_preds, y_test, calc_C_index), 3)}")
-print(f"NDCG@k: {ndcg_at_k(AN_preds, y_test, k=3)}")
-```
 
 
-## LambdaRank
-### Classic
-
-```{python}
+# LambdaRank
 def lambda_rank_loss(scores, relevance, sigma=1.0):
     """
     scores: tensor of shape (batch_size, n_items)
@@ -268,167 +356,54 @@ def lambda_rank_loss(scores, relevance, sigma=1.0):
 ```
 
 
-```{python}
-ll_model = DeepRanker()
-ll_model = train_model(ll_model, lambda_rank_loss, X_train, y_train, num_epochs=100)
-
-ll_preds = predict_scores(ll_model, X_test)
-print(f"C-index: {round(df_metric(ll_preds, y_test, calc_C_index), 3)}")
-print(f"NDCG@k: {ndcg_at_k(ll_preds, y_test, k=3)}")
-```
-
-Архитектура: простая последовательность полносвязных слоёв (MLP) с BatchNorm, Dropout, ReLU.
-
-Обработка: каждый документ (item) обрабатывается независимо — модель выдаёт скоринг si=f(xi) без учёта остальных элементов списка.
-
-Особенности:
-    Минимальная способность моделировать зависимость между элементами.
-    Легковесен и быстр в вычислении, легко масштабируется на большие батчи.
-    Подходит в качестве baseline, когда списки короткие и зависимости между элементами несущественны.
-
-
-### Listwise Transformer (Cross‑item Attention)
+## Модели
 
 ```{python}
-# Listwise Transformer с item‑embedding
-class ListwiseTransformerUI(nn.Module):
-    def __init__(self, user_dim=55, item_embed_dim=8, d_model=64, nhead=4, num_layers=2, n_items=6):
-        super().__init__()
-        self.n_items = n_items
+def evaluate_losses(losses: dict, model_cls, num_epochs=100,
+                    X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test):
+    results = {}
+    for name, loss_fn in losses.items():
+        print(f"{name}")
+        model = model_cls()
+        model = train_model(model, loss_fn, X_train, y_train, num_epochs=num_epochs)
+        preds = predict_scores(model, X_test)
+        cidx  = df_metric(preds, y_test, calc_C_index)
+        ndcg3 = ndcg_at_k(preds, y_test, k=3)
+        results[name] = {'C-index': cidx, f'NDCG@3': ndcg3}
+    return results
 
-        # learnable‑вектор для каждого из 6 items
-        self.item_emb = nn.Parameter(torch.randn(n_items, item_embed_dim))
-
-        # проекция (user_feats || item_emb) → d_model
-        self.input_proj = nn.Linear(user_dim + item_embed_dim, d_model)
-        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, batch_first=True)
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.out = nn.Linear(d_model, 1)
-
-    def forward(self, user_feats):
-        # user_feats: (batch, user_dim)
-        b = user_feats.size(0)
-
-        # 1) tile user_feats на каждый из 6 items → (b, 6, user_dim)
-        u = user_feats.unsqueeze(1).expand(-1, self.n_items, -1)
-
-        # 2) expand item_emb → (b, 6, item_embed_dim)
-        e = self.item_emb.unsqueeze(0).expand(b, -1, -1)
-
-        # 3) конкатенируем
-        x = torch.cat([u, e], dim=2)  # (b, 6, user_dim+item_embed_dim)
-
-        # 4) Transformer
-        h = self.input_proj(x)        # (b, 6, d_model)
-        h = h.permute(1,0,2)          # (6, b, d_model)
-        h = self.encoder(h)           # (6, b, d_model)
-        h = h.permute(1,0,2)          # (b, 6, d_model)
-        scores = self.out(h).squeeze(-1)  # (b, 6)
-        return scores
+losses = {
+    'ListNet@1': listnet_loss,
+    'ListNet@3': listnet_loss_topk,
+    'ApproxNDCG': approx_ndcg_loss,
+    'LambdaRank': lambda_rank_loss
+}
 ```
 
 ```{python}
-LWT = ListwiseTransformerUI()
-LWT = train_model(LWT, lambda_rank_loss, X_train, y_train)
+mlp_results = evaluate_losses(losses, MLPRanker, num_epochs=100)
 
-LWT_preds = predict_scores(LWT, X_test)
-print(f"C-index: {round(df_metric(LWT_preds, y_test, calc_C_index), 3)}")
-print(f"NDCG@k: {ndcg_at_k(LWT_preds, y_test, k=3)}")
-```
-
-Архитектура: поверх входных векторов каждого item сначала проекция в пространство размерности d, затем несколько слоёв TransformerEncoder (self‑attention), и в конце линейный выход.
-
-Обработка: всё n-элементное «предложение» подаётся как единый тензор (batch,n,d). Модель через механизм внимания явно учитывает, как каждый item соотносится со всеми остальными.
-
-Плюсы:
-    Позволяет захватывать «конкуренцию» внутри списка, перенастраивая скоринг одного элемента в зависимости от соседей.
-    Гибко масштабируется на разные длины списков (через positional‑encoding, если нужен порядок).
-
-Минусы:
-    O(n2) в памяти и вычислениях из‑за попарных attention‑весов.
-    Чувствителен к гиперпараметрам трансформера (число голов, слоёв).
-
-
-### Deep & Cross Network (DCN)
-
-```{python}
-# DCN‑архитектура с item‑embedding
-class DCNLayer(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.w = nn.Parameter(torch.randn(dim))
-        self.b = nn.Parameter(torch.zeros(dim))
-
-    def forward(self, x):
-        # x: (batch*6, dim)
-        xw = (x * self.w).sum(dim=1, keepdim=True)  # (batch*6, 1)
-        cross = x * xw + self.b
-        return cross + x  # residual
-
-class DCNUserItemRanker(nn.Module):
-    def __init__(self, user_dim=55, item_embed_dim=8, cross_layers=3, deep_dims=[128,64,32], n_items=6):
-        super().__init__()
-        self.n_items = n_items
-        self.item_emb = nn.Parameter(torch.randn(n_items, item_embed_dim))
-        total_dim = user_dim + item_embed_dim
-
-        # cross‑network
-        self.cross_net = nn.ModuleList([DCNLayer(total_dim) for _ in range(cross_layers)])
-        # deep‑network
-        deep = []
-        prev = total_dim
-        for h in deep_dims:
-            deep += [nn.Linear(prev, h), nn.ReLU(), nn.Dropout(0.1)]
-            prev = h
-        self.deep_net = nn.Sequential(*deep)
-        # финальный выход
-        self.out = nn.Linear(prev + total_dim, 1)
-
-    def forward(self, user_feats):
-        # user_feats: (batch, user_dim)
-        b = user_feats.size(0)
-
-        # 1) tile и concat user_feats и item_emb
-        u = user_feats.unsqueeze(1).expand(-1, self.n_items, -1)          # (b,6,user_dim)
-        e = self.item_emb.unsqueeze(0).expand(b, -1, -1)                  # (b,6,item_emb)
-        x = torch.cat([u, e], dim=2)                                      # (b,6,total_dim)
-
-        # 2) flatten для независимой обработки item‑ов
-        x_flat = x.view(b*self.n_items, -1)  # (b*6, total_dim)
-
-        # 3) cross
-        x_cross = x_flat
-        for layer in self.cross_net:
-            x_cross = layer(x_cross)
-
-        # 4) deep
-        x_deep = self.deep_net(x_flat)
-
-        # 5) concat и финальный скор
-        x_cat = torch.cat([x_cross, x_deep], dim=1)   # (b*6, total_dim+deep_last)
-        scores = self.out(x_cat).view(b, self.n_items)  # (b,6)
-        return scores
+for item in mlp_results.items():
+    print(item)
 ```
 
 ```{python}
-dcn_model = DCNUserItemRanker()
-dcn_model = train_model(dcn_model, lambda_rank_loss, X_train, y_train)
+nl_mlp_results = evaluate_losses(losses, NonlinearMLPRanker, num_epochs=100)
 
-dcn_preds = predict_scores(dcn_model, X_test)
-print(f"C-index: {round(df_metric(dcn_preds, y_test, calc_C_index), 3)}")
-print(f"NDCG@k: {ndcg_at_k(dcn_preds, y_test, k=3)}")
+for item in nl_mlp_results.items():
+    print(item)
 ```
 
-Архитектура: для каждого item комбинирует два «потока»
-    Cross‑Network: рекурсивные «кросс‑слои», которые моделируют мультипликативные и полиномиальные пересечения признаков, сохраняя при этом тот же размер.
-    Deep‑Network: классический MLP. Затем конкатенирует выходы обоих потоков и выдаёт скоринг.
+```{python}
+dcn_results = evaluate_losses(losses, DCNUserItemRanker, num_epochs=100)
 
-Обработка: по‑прежнему каждый item обрабатывается самостоятельно, но внутри него усиливаются сложные feature‑interactions.
+for item in dcn_results.items():
+    print(item)
+```
 
-Плюсы:
-    Очень эффективно моделирует высокоуровневые пересечения признаков без экспоненциального роста числа параметров.
-    Хорошо работает, когда у вас много категориальных/биннинговых фич и важны их комбинации.
+```{python}
+lwt_results = evaluate_losses(losses, ListwiseTransformer, num_epochs=100)
 
-Минусы:
-    По сравнению с классическим MLP чуть более тяжеловесен.
-    Не учитывает взаимовлияние разных items внутри одной группы.
+for item in lwt_results.items():
+    print(item)
+```
