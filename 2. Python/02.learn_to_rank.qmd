@@ -90,8 +90,8 @@ def train_model(model, loss_func, X_train, y_train, num_epochs=100, batch_size=6
             total_loss += loss.item()
 
         avg_loss = total_loss / len(dataloader)
-        if (epoch + 1) % 25 == 0:
-            print(f"Epoch {epoch+1}/{num_epochs} — avg loss: {avg_loss:.4f}")
+        # if (epoch + 1) % 25 == 0:
+        #     print(f"Epoch {epoch+1}/{num_epochs} — avg loss: {avg_loss:.4f}")
     print(f"Loss: {total_loss / len(dataloader):.4f}")    
     return model
 
@@ -359,51 +359,65 @@ def lambda_rank_loss(scores, relevance, sigma=1.0):
 ## Модели
 
 ```{python}
-def evaluate_losses(losses: dict, model_cls, num_epochs=100,
+def evaluate_losses(model_classes, losses, num_epochs=100,
                     X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test):
-    results = {}
-    for name, loss_fn in losses.items():
-        print(f"{name}")
-        model = model_cls()
-        model = train_model(model, loss_fn, X_train, y_train, num_epochs=num_epochs)
-        preds = predict_scores(model, X_test)
-        cidx  = df_metric(preds, y_test, calc_C_index)
-        ndcg3 = ndcg_at_k(preds, y_test, k=3)
-        results[name] = {'C-index': cidx, f'NDCG@3': ndcg3}
-    return results
+    records = []
+    for model_cls in model_classes:
+        model_name = model_cls.__name__
+        for name, loss_fn in losses.items():
+            # print(f"{name}")
+            model = model_cls()
+            model = train_model(model, loss_fn, X_train, y_train, num_epochs=num_epochs)
+            preds = predict_scores(model, X_test)
+            cidx  = df_metric(preds, y_test, calc_C_index)
+            ndcg3 = ndcg_at_k(preds, y_test, k=3)
+            # results[name] = {'C-index': cidx, f'NDCG@3': ndcg3}
 
+            records.append({
+                'model_cls': model_name,
+                'loss_key': name,
+                'C-index': cidx,
+                'NDCG@3': ndcg3
+            })
+        df_results = pd.DataFrame.from_records(
+            records,
+            columns=['model_cls', 'loss_key', 'C-index', 'NDCG@3']
+        )
+    return df_results
+```
+
+```{python}
 losses = {
     'ListNet@1': listnet_loss,
     'ListNet@3': listnet_loss_topk,
     'ApproxNDCG': approx_ndcg_loss,
     'LambdaRank': lambda_rank_loss
 }
+
+model_classes = [MLPRanker, NonlinearMLPRanker, DCNUserItemRanker, ListwiseTransformer]
 ```
 
 ```{python}
-mlp_results = evaluate_losses(losses, MLPRanker, num_epochs=100)
+results = evaluate_losses(model_classes, losses)
+print(results)
+```
 
-for item in mlp_results.items():
-    print(item)
+
+```{python}
+from pathlib import Path
+from openpyxl import load_workbook
+
+excel_path = Path(__file__).parent.parent / "4. Output" / "01. Python_models.xlsx"
+mode = 'a' if excel_path.exists() else 'w'
+new_sheet_name = 'learn_to_rank'
 ```
 
 ```{python}
-nl_mlp_results = evaluate_losses(losses, NonlinearMLPRanker, num_epochs=100)
+if mode == 'a':
+    wb = load_workbook(excel_path)
+    if new_sheet_name in wb.sheetnames:
+        raise ValueError(f"Лист '{new_sheet_name}' уже есть в файле {excel_path}")
 
-for item in nl_mlp_results.items():
-    print(item)
-```
-
-```{python}
-dcn_results = evaluate_losses(losses, DCNUserItemRanker, num_epochs=100)
-
-for item in dcn_results.items():
-    print(item)
-```
-
-```{python}
-lwt_results = evaluate_losses(losses, ListwiseTransformer, num_epochs=100)
-
-for item in lwt_results.items():
-    print(item)
+with pd.ExcelWriter(excel_path, engine='openpyxl', mode=mode) as writer:
+    results.to_excel(writer, sheet_name=new_sheet_name, index=False)
 ```
