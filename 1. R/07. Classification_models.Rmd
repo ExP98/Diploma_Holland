@@ -229,7 +229,8 @@ multilabel_experiments <- tribble(
   multilabel_rf_clsf,             "Random Forest multilabel",    list(),               3,
   multilabel_extratree_clsf,      "ExtraTree (1000) multilabel", list(ntree = 1000),   3,
   multilabel_extratree_clsf,      "ExtraTree (2000) multilabel", list(ntree = 2000),   3,
-  multilabel_logit_clsf,          "Logit multilabel",            list(),               3,
+  multilabel_logit_clsf,          "Logit (ridge) multilabel",    list(alpha = 0),      3,
+  multilabel_logit_clsf,          "Logit (lasso) multilabel",    list(alpha = 1),      3,
   multilabel_nb_clsf,             "Naive Bayes multilabel",      list(),               3,
   multilabel_knn_clsf,            "kNN (k = 5) multilabel",      list(k_neighb = 5),   3,
   multilabel_knn_clsf,            "kNN (k = 30) multilabel",     list(k_neighb = 30),  3,
@@ -253,6 +254,23 @@ print(mltlbl_res_pca)
  - kNN (k = 25) multilabel (хотя и другие kNN норм)
  - другие примерно равны (в чем-то лучше, в чем-то хуже)
  
+Upd. Забыл про alpha для logit:
+```{r}
+ml_logit_experminets <- tribble(
+  ~multlbl_clsf_func,             ~label,                        ~params,              ~n_retry,
+  multilabel_logit_clsf,          "Logit (ridge) multilabel",    list(alpha = 0),      5,
+  multilabel_logit_clsf,          "Logit (lasso) multilabel",    list(alpha = 1),      5
+)
+
+ml_logit_res     <- run_multilabel_experiments(ml_logit_experminets, X_train, Y_b_train, X_test, Y_b_test)
+ml_logit_res_pca <- run_multilabel_experiments(ml_logit_experminets, X_train_pca, Y_b_train, X_test_pca, Y_b_test)
+# print(ml_logit_res)
+# print(ml_logit_res_pca)
+
+bind_rows(ml_logit_res[, is_pca := FALSE], ml_logit_res_pca[, is_pca := TRUE]) %>% 
+  xlsx::write.xlsx(here("4. Output/09. Classif_results.xlsx"), "ml logit", row.names = F, append = T)
+```
+
 
 С PCA или без результаты почти идентичны, хотя с PCA чуть лучше. 
 ```{r}
@@ -311,7 +329,29 @@ map2(
                                     row.names = FALSE, append = TRUE)
 )
 ```
-Текстовое сравнение смотреть в файле Classif_results_txt.txt
+
+Случайный классификатор:
+```{r}
+res <- NULL
+
+for (i in 1:100) {
+  random_sample <- sapply(1:nrow(Y_test), \(x) runif(6, 0, 14)) %>% t() 
+  cindex <- df_metric(random_sample, Y_test, func = calc_C_index)
+  classif_metrics <- random_sample %>% 
+    apply(., 1, bool_mask_row) %>% t() %>% 
+    calc_classification_metrics(., Y_b_test, "random classif") %>% 
+    mutate(cindex = cindex, .after = 1)
+  res <- res %>% bind_rows(classif_metrics)
+}
+
+bind_rows(
+  res %>% copy() %>% .[, lapply(.SD, \(col) mean(col,   na.rm = TRUE)), .SDcols = is.numeric],
+  res %>% copy() %>% .[, lapply(.SD, \(col) median(col, na.rm = TRUE)), .SDcols = is.numeric] 
+)
+```
+Ожидаемо результаты близки к теоретическим: С-индекс около 9.0, вероятность угадать хотя бы 1 код из триады = 0.95, все три -- 0.05. 
+Top2 -- это угадать ровно 2 кода (0.45) или ровно 3 кода (0.05) = 0.5
+Это -- классическая задача из теорвера про шары двух цветов в корзине и взятие без повторений.
 
 
 ## 3.4 Ансамблирование
