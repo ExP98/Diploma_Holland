@@ -72,6 +72,11 @@ class CustomDataset(Dataset):
 def train_model(model, loss_func, X_train, y_train, num_epochs=100, batch_size=62):
     dataset = CustomDataset(X_train, y_train)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    if hasattr(model, 'fit') and hasattr(model, 'predict'):
+        model.fit(X, y, group)
+        return model
+
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
     
     for epoch in range(num_epochs):
@@ -394,7 +399,12 @@ losses = {
     'LambdaRank': lambda_rank_loss
 }
 
-model_classes = [MLPRanker, NonlinearMLPRanker, DCNUserItemRanker, ListwiseTransformer]
+model_classes = [
+    MLPRanker, 
+    # NonlinearMLPRanker, # всегда хуже MLP_Ranker
+    DCNUserItemRanker,
+    ListwiseTransformer
+]
 ```
 
 ```{python}
@@ -402,6 +412,24 @@ results = evaluate_losses(model_classes, losses)
 print(results)
 ```
 
+```{python}
+cindex_table = results.pivot_table(
+    index='loss_key',
+    columns='model_cls',
+    values='C-index',
+    aggfunc='first'
+).reset_index()
+
+ndcg_table = results.pivot_table(
+    index='loss_key',
+    columns='model_cls',
+    values='NDCG@3',
+    aggfunc='first'
+).reset_index()
+
+result = pd.concat([cindex_table, ndcg_table], axis=1).reset_index()
+print(result)
+```
 
 ```{python}
 from pathlib import Path
@@ -410,14 +438,12 @@ from openpyxl import load_workbook
 excel_path = Path(__file__).parent.parent / "4. Output" / "01. Python_models.xlsx"
 mode = 'a' if excel_path.exists() else 'w'
 new_sheet_name = 'learn_to_rank'
-```
 
-```{python}
 if mode == 'a':
     wb = load_workbook(excel_path)
     if new_sheet_name in wb.sheetnames:
         raise ValueError(f"Лист '{new_sheet_name}' уже есть в файле {excel_path}")
 
 with pd.ExcelWriter(excel_path, engine='openpyxl', mode=mode) as writer:
-    results.to_excel(writer, sheet_name=new_sheet_name, index=False)
+    result.to_excel(writer, sheet_name=new_sheet_name, index=False)
 ```
