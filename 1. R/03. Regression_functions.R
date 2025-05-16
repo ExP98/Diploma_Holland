@@ -111,8 +111,8 @@ plot_cindex_hist <- function(values) {
                   showlegend = FALSE) %>%
     add_lines(x = dens$x, y = dens_counts, mode = "lines", line = list(color = "slategray", width = 2), 
               showlegend = FALSE) %>%
-    layout(title = "Распределение C-индекса", 
-          xaxis = list(title = "Значения C-индекса", range = c(0, 18), 
+    layout(title = "Распределение C-индекса предсказаний PSO-ансамбля", 
+          xaxis = list(title = "Значения C-индекса предсказаний", range = c(0, 18), 
                        zeroline = TRUE, showline = TRUE, linecolor = "black",
                        zerolinecolor = "black", zerolinewidth = 1),
           yaxis = list(title = "Доля ответов, %", ticksuffix = "", rangemode = "tozero", 
