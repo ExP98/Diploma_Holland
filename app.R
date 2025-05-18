@@ -4,17 +4,34 @@
 #@ Разработчик: Глушков Егор
 
 
-# 1. Библиотеки                                        ####
+# 0. Библиотеки                                        ####
 library(shiny)
 library(readxl)
 library(DT)
 library(data.table)
 library(shinyBS)
+library(here)
+library(stringr)
+library(dplyr)
+library(softImpute)
+
+
+# 1. Функции                                        ####
+transform_matrix_completion <- function(fit_obj, DT_new) {
+  DT_new    <- as.matrix(DT_new)
+  aux_feats <- fit_obj$aux
+  M_imp     <- softImpute::complete(DT_new[, aux_feats, drop = FALSE], fit_obj$fit)
+  DT_new[, aux_feats] <- M_imp
+  return(DT_new)
+}
+
+here::here()
+# rsconnect::deployApp("D:/Programs/RProjects/Diploma_Holland")
 
 
 # 2. Датасет с ограничениями, модель       ####
 # set.seed(123)
-constraints <- xlsx::read.xlsx(paste0(here(), "/3. Shiny_app/psytest_constraints.xlsx"),
+constraints <- xlsx::read.xlsx(here("3. Shiny_app/psytest_constraints.xlsx"),
                                sheetName = "constraints") %>% 
   as.data.table() %>% 
   .[, names(.SD) := lapply(.SD, as.numeric), .SDcols = c("feature_num", "min", "max", "median")] %>% 
