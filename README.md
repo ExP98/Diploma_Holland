@@ -1,3 +1,11 @@
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+![Under Review](https://img.shields.io/badge/status-under_review-orange)
+![Main language: R](https://img.shields.io/badge/main_language-R-276DC3?logo=r)
+![Also uses: Python](https://img.shields.io/badge/also%20uses-Python-3776AB?logo=python)
+![Research](https://img.shields.io/badge/type-academic%20research-blueviolet)
+![Commits](https://img.shields.io/github/commit-activity/y/ExP98/Diploma_Holland)
+[![](https://img.shields.io/badge/Shiny-shinyapps.io-blue?style=flat&labelColor=black&logo=RStudio&logoColor=blue)](https://exp98.shinyapps.io/diploma_holland/)
+
 # Предсказание кода Голланда (RIASEC) по результатам психометрических тестов на основе ML
 
 ## Краткое описание
