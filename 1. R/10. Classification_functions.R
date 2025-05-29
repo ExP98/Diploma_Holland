@@ -331,20 +331,14 @@ multiclass_pred_by_Catboost <- function(X_train_, Y_train_, X_test_, k = 3, nrou
 
 ## 3.2 Multilabel                   ####
 
-run_multilabel_experiments <- function(experiments_df, X_train, Y_b_train, X_test, Y_b_test) {
-  # experiments_df (tibble/data.table): multlbl_clsf_func, label, params, n_retry
+run_multilabel_experiments <- function(experiments_df, X_train, Y_b_train, 
+                                       X_test, Y_b_test) {
+  # experiments_df (tibble/data.table): clsf_func, label, params, n_retry
   evaluate_ML <- function(multlbl_clsf_func, label = "", n_retry = 1, ...) {
-    classification_test_framework(
-      Y_test      = Y_b_test, 
-      Y_b_test    = Y_b_test, 
-      clsf_func   = multlbl_clsf_func, 
-      n_retry     = n_retry, 
-      label       = label, 
-      X_train     = X_train, 
-      Y_b_train   = Y_b_train, 
-      X_test      = X_test,
-      ...
-    )
+    classification_test_framework(Y_test = Y_b_test, Y_b_test = Y_b_test, 
+                                  clsf_func = multlbl_clsf_func, n_retry = n_retry, 
+                                  label = label, X_train = X_train, Y_b_train = Y_b_train, 
+                                  X_test = X_test, ...)
   }
   
   res <- experiments_df %>%

@@ -115,30 +115,20 @@ write_w_search_to_xlsx <- function(w_srch_res, matr, sheetname,
 # также можно использовать approx_shapley_cpp
 approx_shapley <- function(models_probs, Y_true, R = 500) {
   M <- length(models_probs)
-  N <- nrow(models_probs[[1]])
-  K <- ncol(models_probs[[1]])
-  model_names <- names(models_probs) %||% as.character(seq_len(M))
-  
+  prob_array <- simplify2array(models_probs)
   phi <- numeric(M)
-  names(phi) <- model_names
-  prob_array <- array(unlist(models_probs), dim = c(N, K, M))
-  
   for (r in seq_len(R)) {
-    perm <- sample(M)
-    weights <- 1:M
-    cum_sum <- matrix(0, nrow = N, ncol = K)
-    
-    for (k in seq_len(M)) {
+    perm <- sample.int(M)
+    cum_sum <- 0
+    v_prev <- 0
+    for (k in seq_along(perm)) {
       idx <- perm[k]
-      prob_k <- prob_array[,,idx]
-      cum_avg <- (cum_sum + prob_k) / k
-      v_prev <- if (k == 1) 0 else matr_cind(cum_sum / (k - 1), Y_true)
-      v_curr <- matr_cind(cum_avg, Y_true)
+      cum_sum <- cum_sum + prob_array[,, idx]
+      v_curr <- matr_cind(cum_sum / k, Y_true)
       phi[idx] <- phi[idx] + (v_curr - v_prev)
-      cum_sum <- cum_sum + prob_k
+      v_prev <- v_curr
     }
   }
-  
   w <- phi / R
   return(w / sum(w))
 }
@@ -231,6 +221,16 @@ particle_swarm_weights <- function(models_probs, Y_true, swarm_size = 50, maxit 
   w[w < 1e-6] <- 0
   return(w / sum(w))
 }
+
+# particle_swarm_weights <- function(models_probs, Y_true, swarm_size = 50, maxit = 100) {
+#   M <- length(models_probs)
+#   fn_pso <- function(x) {-weighted_cindex_value(x / sum(x), models_probs, Y_true)}
+#   PSOres <- pso::psoptim(par = rep(1/M, M), fn = fn_pso, lower = rep(.Machine$double.eps, M),
+#                          upper = rep(1, M), control = list(s = swarm_size, maxit = maxit, trace = FALSE, vectorize = TRUE, maxit.stagnate = 10))
+#   w <- PSOres$par
+#   w[w < 1e-6] <- 0
+#   return(w / sum(w))
+# }
 
 
 # Байесовская оптимизация

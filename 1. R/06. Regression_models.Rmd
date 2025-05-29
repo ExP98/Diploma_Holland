@@ -513,7 +513,7 @@ regr_stack_res_na[order(-C_index), -"pred"] %>%
 ```{r message=FALSE, warning=FALSE}
 regr_stack_res_na <- calc_regression_models(
   regr_experiments, 
-  prepare_data(X_wd), Y_wd, prepare_data(X_na), Y_na
+  prepare_mask_data(X_wd), Y_wd, prepare_mask_data(X_na), Y_na
 )
 
 regr_stack_res_na[order(-C_index), -"pred"] %>% 
