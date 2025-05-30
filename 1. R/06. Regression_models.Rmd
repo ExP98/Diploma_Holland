@@ -472,12 +472,13 @@ Y_wd <- targets
 Проба на данных с реальными пропусками:
 ```{r}
 # для лучшего улавливания связей дадим и признаки из полных данных
-# filled_X_na <- mice_imputation(rbind(X_wd, X_na[, -"id"])) %>% .[-c(1:nrow(X_wd))]
-filled_X_na <- mice_imputation(X_na[, -"id"])
+filled_X_na <- mice_imputation(rbind(X_wd, X_na[, -"id"])) %>% .[-c(1:nrow(X_wd))]
+# filled_X_na <- mice_imputation(X_na[, -"id"])
 
-set.seed(SEED)
-.[X_tr, X_ts, Y_tr, Y_ts] <- train_test_split(filled_X_na, Y_na)
-regr_stack_res_na <- calc_regression_models(regr_experiments, X_tr, Y_tr, X_ts, Y_ts)
+# set.seed(SEED)
+# .[X_tr, X_ts, Y_tr, Y_ts] <- train_test_split(filled_X_na, Y_na)
+# regr_stack_res_na <- calc_regression_models(regr_experiments, X_tr, Y_tr, X_ts, Y_ts)
+regr_stack_res_na <- calc_regression_models(regr_experiments, X_wd, Y_wd, filled_X_na, Y_na)
 
 incompl_file <- here("4. Output/05. Incomplete data.xlsx")
 xlsx::write.xlsx(regr_stack_res_na[order(-C_index), -"pred"],
@@ -500,7 +501,7 @@ plot(sv, type="b", ylab="Singular values", xlab="Component")
 fit_obj <- train_matrix_completion(X_wd)
 filled_X_na <- transform_matrix_completion(fit_obj, X_na[, -"id"])
 
-regr_stack_res_na <- calc_regression_models(regr_experiments, X_wd, Y_wd, filled_X_na, Y_na)
+regr_stack_res_na <- calc_regression_models(regr_experiments, filled_X_na, Y_na, X_wd, Y_wd)
 regr_stack_res_na[order(-C_index), -"pred"] %>% 
   xlsx::write.xlsx(., incompl_file, "Matrix_completion", row.names = F, append = T)
 ```
@@ -615,6 +616,32 @@ res_by_psytests %>% dcast(name ~ psytest, value.var = "rmse") %>% .[order(BF)] %
   xlsx::write.xlsx(., bytest_file, "rmse", row.names = F, append = T)
 res_by_psytests %>% dcast(name ~ psytest, value.var = "C_index") %>% .[order(-CT)] %>% 
   xlsx::write.xlsx(., bytest_file, "C_index", row.names = F, append = T)
+```
+
+
+### 6. Применение лучшего подхода восстановления и лучшей модели
+
+```{r}
+fit_obj <- train_matrix_completion(X_wd)
+filled_X_na <- transform_matrix_completion(fit_obj, X_na[, -"id"])
+
+## X_wd, Y_wd, filled_X_na, Y_na
+# .[X_train_pca, X_test_pca] <- pca_data_preparation(X_wd, filled_X_na, limit_ssq = 0.9)
+# regr_stack_res_pca <- calc_regression_models(regr_experiments, X_train_pca, Y_wd, X_test_pca, Y_na)
+
+regr_stack_res_na <- calc_regression_models(regr_experiments, filled_X_na, Y_na, X_wd, Y_wd)
+stack_mtr_na <- regr_stack_res_na[!name %in% model_to_exclude] %>% extract_matrices()
+stack_mtr_f_na <- cut_matr(stack_mtr_na, qnt_prob = 0.6, Y_true = Y_wd)
+
+regr_stack_w_na  <- get_regr_w(w_config, stack_mtr_f_na, Y_wd)
+
+regr_stack_res_na[order(-C_index), -"pred"] %>% 
+  xlsx::write.xlsx(., incompl_file, "SoftImpute", row.names = F, append = T)
+
+# regr_stack_w_na[order(-cindex), -"w"] %>% 
+#   xlsx::write.xlsx(., incompl_file, "SI_weighted", row.names = F, append = T)
+
+write_w_search_to_xlsx(regr_stack_w_na, stack_mtr_f_na, "SoftImp_W", incompl_file)
 ```
 
 
