@@ -23,7 +23,7 @@
 - `2. Python/` — модели на Python: нейросетевые модели, ранжирование
 - `3. Shiny_app/`, app.R — код и вспомогательные файлы интерактивного веб-приложения
 - `4. Output/` — графики и результаты
-- `5. Presentation_TeX/` — исходники-материалы презентации
+- `5. Sources_TeX/` — исходники-материалы текста и презентации, готовые файлы
 - `rsconnect/` — конфигурация публикации приложения
 
 ## Структура проекта
@@ -44,6 +44,7 @@ Diploma_Holland/
 │   ├── 09. Non_standard_models.Rmd
 │   ├── 10. Classification_functions.R
 │   └── 11. Weights_selection.R
+│   └── 20. Future_works.md
 ├── 2. Python/
 │   ├── 01.multitarget_regression.qmd
 │   ├── 02.learn_to_rank.qmd
@@ -55,9 +56,11 @@ Diploma_Holland/
 │   ├── psytest_constraints
 │   └── result_output.Rmd
 ├── 4. Output/
-├── 5. Presentation_TeX/
+├── 5. Sources_TeX/
+├── renv/
 ├── rsconnect/shinyapps.io/exp98/
 ├── .gitignore
+├── renv.lock
 ├── Diploma_Holland.Rproj
 ├── LICENSE
 ├── README.md
