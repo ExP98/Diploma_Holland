@@ -1,0 +1,37 @@
+% Удалим глобальную настройку tabcolsep
+% \setlength{\tabcolsep}{6pt}  % удалено
+
+\begin{table}
+  \centering
+  \caption{Сравнение подходов к классификации (Top-K accuracy)}
+  \label{tab:classif_res}
+  {\setlength{\tabcolsep}{8pt}
+  \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} 
+    p{3.8cm}|
+    *{3}{>{\centering\arraybackslash}p{0.83cm}}|
+    *{3}{>{\centering\arraybackslash}p{0.83cm}}|
+    *{3}{>{\centering\arraybackslash}p{0.83cm}}
+  @{}  }
+    \toprule
+    \multicolumn{1}{@{}p{3.8cm}@{}}{\centering\textbf{Модель}}  
+      & \multicolumn{3}{|c|}{\textbf{Multiclass}}
+      & \multicolumn{3}{c|}{\textbf{Multilabel}}
+      & \multicolumn{3}{c}{\textbf{Label Powerset}} \\
+    \cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+      & Top1 & Top2 & Top3 
+      & Top1 & Top2 & Top3 
+      & Top1 & Top2 & Top3 \\
+    \midrule
+    kNN             & 0.99 & 0.71 & 0.13 & 1.00 & 0.76 & 0.11 & 0.98 & 0.65 & 0.18 \\
+    Логист. L1-регр.& 1.00 & 0.70 & 0.16 & 1.00 & 0.70 & 0.16 & 0.99 & 0.64 & 0.10 \\
+    XGBoost         & 1.00 & 0.70 & 0.11 & 0.98 & 0.68 & 0.10 & 0.96 & 0.63 & 0.11 \\
+    Логист. L2-регр.& 1.00 & 0.70 & 0.15 & 0.99 & 0.70 & 0.21 & 0.99 & 0.68 & 0.09 \\
+    Наивный Байес   & 0.98 & 0.70 & 0.15 & 0.99 & 0.70 & 0.15 & 0.99 & 0.69 & 0.16 \\
+    ExtraTrees      & 1.00 & 0.73 & 0.15 & 1.00 & 0.78 & 0.15 & 0.98 & 0.69 & 0.20 \\
+    SVM             & 1.00 & 0.74 & 0.15 & 1.00 & 0.72 & 0.14 & 0.98 & 0.68 & 0.21 \\
+    Random Forest   & 1.00 & 0.74 & 0.16 & 1.00 & 0.74 & 0.15 & 0.99 & 0.64 & 0.23 \\
+    CatBoost        & 0.99 & 0.79 & 0.11 & 0.99 & 0.79 & 0.11 & 0.99 & 0.70 & 0.16 \\
+    LightGBM        & 0.98 & 0.56 & 0.05 & 0.98 & 0.70 & 0.10 & 0.95 & 0.53 & 0.05 \\
+    \bottomrule
+  \end{tabular*}}
+\end{table}

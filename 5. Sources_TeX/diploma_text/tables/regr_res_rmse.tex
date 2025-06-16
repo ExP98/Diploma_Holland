@@ -1,0 +1,48 @@
+\newcommand{\grmse}[1]{\gradientcelld{#1}{2.0}{2.1}{2.8}{high}{mid}{low}{70}}
+
+\begingroup
+    \fontsize{8pt}{9pt}\selectfont
+    \begin{table}
+      \centering
+      \caption{Сравнение регрессионных моделей, метрика RMSE}
+      \label{tab:regr_res_rmse}
+        \setlength{\tabcolsep}{2pt}
+        \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} 
+          >{\raggedright\arraybackslash}m{6.25cm}  
+          | *{4}{>{\centering\arraybackslash}m{2.35cm}}
+        @{}}
+      \toprule
+          \textbf{Модель} 
+            & \textbf{Multi\-output}      
+            & \textbf{Мult. PCA}    
+            & \textbf{Chain}   
+            & \textbf{Chain PCA} \\
+        \midrule
+        Регрессия Lasso (L1)      & \grmse{2.018} & \grmse{2.036} & \grmse{2.018} & \grmse{2.030} \\
+        Линейная регрессия (OLS)  & \grmse{2.155} & \grmse{2.019} & \grmse{2.155} & \grmse{2.019} \\
+        Регрессия Ridge (L2)      & \grmse{2.025} & \grmse{2.037} & \grmse{2.028} & \grmse{2.044} \\
+        Пошаговая регрессия       & \grmse{2.094} & \grmse{2.027} & \grmse{2.094} & \grmse{2.027} \\
+        CatBoost                  & \grmse{2.044} & \grmse{2.096} & \grmse{2.044} & \grmse{2.096} \\
+        Случайный лес             & \grmse{2.069} & \grmse{2.131} & \grmse{2.070} & \grmse{2.133} \\
+        LightGBM                  & \grmse{2.074} & \grmse{2.128} & \grmse{2.074} & \grmse{2.128} \\
+        Метод опорных векторов    & \grmse{2.100} & \grmse{2.101} & \grmse{2.100} & \grmse{2.101} \\
+        ExtraTrees                & \grmse{2.100} & \grmse{2.150} & \grmse{2.112} & \grmse{2.152} \\
+        kNN                       & \grmse{2.162} & \grmse{2.151} & \grmse{2.162} & \grmse{2.151} \\
+        Constant baseline         & \grmse{2.308} & \grmse{2.308} & \grmse{2.308} & \grmse{2.308} \\
+        XGBoost                   & \grmse{2.317} & \grmse{2.314} & \grmse{2.317} & \grmse{2.314} \\
+        \midrule
+        TabPFN                    & \grmse{2.056} &            &            &            \\
+        MLP (BatchNorm, DropOut, регул-я) & \grmse{2.143} &            &            &            \\
+        MLP                       & \grmse{2.442} &            &            &            \\
+        \bottomrule
+      \end{tabular*}
+      \vspace{0.75em}
+      \begin{minipage}{\textwidth}
+          \small
+          \textit{Обозначения:\\
+          \hspace*{1em}Mult.~--- multioutput, предсказание переменных независимо друг от друга,\\
+          \hspace*{1em}Chain~--- предсказание выходных переменных по цепочке,\\
+          \hspace*{1em}PCA~--- метод главных компонент (уменьшение размерности)}
+      \end{minipage}
+    \end{table}
+\endgroup

@@ -1,0 +1,48 @@
+\begin{table}[!ht]
+  \centering
+  \caption{Сравнение регрессионных моделей, C‑индекс}
+  \label{tab:regr_res}
+    \setlength{\tabcolsep}{2pt}
+    \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} 
+      >{\raggedright\arraybackslash}m{6.25cm}  
+      | *{4}{>{\centering\arraybackslash}m{2.35cm}}
+    @{}}
+  \toprule
+      \textbf{Модель} 
+        & \textbf{Multi\-output}      
+        & \textbf{Мult. PCA}   
+        & \textbf{Chain}   
+        & \textbf{Chain PCA} \\
+    \midrule
+    Регрессия Lasso (L1)      & \g{11.175} & \g{10.887} & \g{11.175} & \g{11.150} \\
+    ExtraTrees                & \g{10.700} & \g{11.100} & \g{10.625} & \g{10.825} \\
+    Регрессия Ridge (L2)      & \g{10.988} & \g{10.537} & \g{11.062} & \g{10.412} \\
+
+    \arrayrulecolor[gray]{0.8}
+    \specialrule{0.75pt}{0pt}{0pt}
+    \arrayrulecolor{black}
+    
+    Метод опорных векторов    & \g{10.713} & \g{10.950} & \g{10.713} & \g{10.950} \\
+    Пошаговая регрессия       & \g{10.605} & \g{10.905} & \g{10.600} & \g{10.905} \\
+    CatBoost                  & \g{10.688} & \g{10.812} & \g{10.688} & \g{10.812} \\
+    Случайный лес             & \g{10.625} & \g{10.475} & \g{10.812} & \g{10.588} \\
+    Линейная регрессия (OLS)  & \g{10.688} & \g{10.800} & \g{10.688} & \g{10.800} \\
+    LightGBM                  & \g{10.750} & \g{10.425} & \g{10.750} & \g{10.425} \\
+    kNN                       & \g{10.525} & \g{10.400} & \g{10.525} & \g{10.400} \\
+    XGBoost                   & \g{9.164}  & \g{9.729}  & \g{9.162}  & \g{9.725}  \\
+    Constant baseline         & \g{9.000}  & \g{9.000}  & \g{9.000}  & \g{9.000}  \\
+    \midrule
+    TabPFN                    & \g{10.562} &            &            &            \\
+    MLP (BatchNorm, DropOut, регуляризация) & \g{10.462} &    &            &            \\
+    MLP                       & \g{10.275} &            &            &            \\
+    \bottomrule
+  \end{tabular*}
+  \vspace{0.75em}
+  \begin{minipage}{\textwidth}
+      \small
+      \textit{Обозначения:\\
+      \hspace*{1em}Mult.~--- multioutput, предсказание переменных независимо друг от друга,\\
+      \hspace*{1em}Chain~--- предсказание выходных переменных по цепочке,\\
+      \hspace*{1em}PCA~--- метод главных компонент (уменьшение размерности)}
+  \end{minipage}
+\end{table}

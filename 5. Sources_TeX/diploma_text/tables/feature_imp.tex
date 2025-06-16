@@ -1,0 +1,28 @@
+\begingroup
+\fontsize{7pt}{8pt}\selectfont
+\begin{table}
+  \centering
+  \caption{Важность признаков модели случайного леса}
+  \label{tab:feature_imp}
+  \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} 
+      >{\centering\arraybackslash}p{2.25cm}|
+      >{\raggedright\arraybackslash}p{9cm}|c c @{}}
+    \toprule
+    \makecell{Код\\признака} 
+      & \makecell[c]{Наименование признака} 
+      & \makecell{Важность\\(\%)} 
+      & \makecell{Накоплено\\(\%)} \\
+    \midrule
+    CT\_1   & Открытость--замкнутость                & 15.5 & 15.5 \\
+    CT\_7   & Чувственность--твердость               & 15.5 & 31.0 \\
+    SC\_19  & Гедонизм--индивидуальный приоритет     & 4.2  & 35.2 \\
+    EY\_1   & Экстраверсия                           & 4.0  & 39.2 \\
+    CT\_4   & Беспечность--озабоченность             & 3.6  & 42.8 \\
+    SC\_3   & Власть--нормативный идеал              & 3.4  & 46.2 \\
+    LN\_3   & Циклотимность                          & 3.3  & 49.5 \\
+    BF\_3   & Самоконтроль--импульсивность           & 2.5  & 52.0 \\
+    BF\_4   & Эмоц. устойчивость--неустойчивость     & 2.5  & 54.5 \\
+    \bottomrule
+  \end{tabular*}
+\end{table}
+\endgroup

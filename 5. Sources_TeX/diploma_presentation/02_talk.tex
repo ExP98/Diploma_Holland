@@ -1,0 +1,535 @@
+% !TEX TS-program = xelatex
+% !BIB program = bibtex
+% !TeX spellcheck = ru_RU
+% !TEX root = 02_talk.tex
+
+\documentclass
+  [ russian
+  , aspectratio=169 % Для защит онлайн лучше использовать разрешение не 4х3
+  ] {beamer}
+
+
+\input{00_preamble.tex}
+\makeatletter
+
+\input{01_title.tex}
+
+\newcommand{\advisorChair}{\my@title@chair@ru}
+% То, что в квадратных скобках, отображается внизу по центру каждого слайда.
+\title[Определение кода Голланда]{\my@title@title@ru}
+% То, что в квадратных скобках, отображается в левом нижнем углу.
+\author[\my@title@author@ru]{\my@title@author@ru}
+\institute[СПбГУ]{}
+\date[14 июня 2025 г.]{}
+\newcommand{\supervisor}{\my@title@supervisor@ru}
+\newcommand{\supervisorPosition}{\my@title@supervisorPosition@ru}
+\newcommand{\consultant}{\my@title@consultant@ru}
+\newcommand{\consultantPosition}{\my@title@consultantPosition@ru}
+\newcommand{\reviewer}{\my@title@reviewer@ru}
+\newcommand{\reviewerPosition}{\my@title@reviewerPosition@ru}
+\newcommand{\defenseYear}{\my@title@year@ru}
+
+\makeatother
+\begin{document}
+{
+\setbeamertemplate{footline}{}
+% Лого университета или организации, отображается в шапке титульного листа
+\begin{frame}
+    \includegraphics[width=1.4cm]{figures/SPbGU_Logo.png}
+    \vspace{-30pt}
+    \hspace{-10pt}
+    \begin{center}
+        \begin{tabular}{c}
+            \small{Санкт-Петербургский государственный университет} \\
+            \small{\advisorChair}
+        \end{tabular}
+        \titlepage
+        \vspace{-3em}
+    \end{center}
+
+    {\small
+        \textbf{Научный руководитель:}  \supervisorPosition~\supervisor \\
+        \textbf{Консультант:}  \consultantPosition~\consultant \\
+        \textbf{Рецензент:} \reviewerPosition~\reviewer \\
+    }
+    \makeatother
+    \vspace{1.5em}
+    
+    \begin{center}
+        \small{Санкт-Петербург, \defenseYear}
+    \end{center}
+\end{frame}
+}
+
+
+\begin{frame}
+    \frametitle{Введение}
+    \begin{itemize}
+        \item Важность корректного выбора профессионального пути
+
+        \vspace{4pt}
+        \item Ресурсоёмкость традиционного глубинного интервью, дистанционные методы профориентации, психометрические тесты
+
+        \vspace{4pt}
+        \item Модель RIASEC (код Голланда): 
+            \begin{itemize}
+                \item шесть типов социально-профессиональной направленности личности
+                \item различные вариации теста
+                \item сравнение профессиональных профилей с помощью C-индекса
+            \end{itemize}
+
+        \vspace{4pt}
+        \item Взаимосвязь кода Голланда с социально-демографическими признаками, цифровыми следами, психометрическими тестами с помощью статистических методов, структурного моделирования, машинного обучения
+
+        \vspace{4pt}
+        \item Нет инструментов, позволяющих по комбинации популярных тестов предсказывать код Голланда, особенно в условиях неполноты информации
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Постановка задачи}
+    \textbf{Целью} работы является автоматизация процесса профориентации посредством разработки инструмента для предсказания кода Голланда по неполным результатам психометрических тестов с использованием методов машинного обучения
+    \vspace{0.5em}
+
+    \textbf{Задачи}:
+    \begin{itemize}
+        \item Реализовать различные подходы к определению кода Голланда: многоцелевая регрессия, классификация, ранжирование
+        \item Разработать модуль формирования взвешенного ансамбля моделей для объединения прогнозов базовых моделей
+        \item Провести сравнительный анализ подходов и методов определения кода Голланда на основе C-индекса
+        \item Разработать математическое обеспечение для модуля восстановления пропусков психометрических тестов
+        \item Создать прототип инструмента для определения профориентационных предпочтений 
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Новизна и значимость}
+    \begin{itemize}
+        \item \emph{Новизна результатов исследования}: создание нового программного комплекса, обеспечивающего автоматизацию процесса профориентации на основе предсказания кода Голланда
+        \vspace{0.6em}
+        \item \emph{Теоретическая значимость}: использование уникальной комбинации различных психометрических тестов при разработке новых моделей машинного обучения для определения взаимосвязи тестов и кода Голланда
+        \vspace{0.6em}
+        \item \emph{Практическая значимость}: разработка прототипа программного модуля автоматизации оценки профессиональной направленности по психологическому профилю личности
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Обзор. Психометрические  тесты личности}
+    {
+    \setlength{\leftmargini}{3em}
+    \begin{itemize}
+        \item Тест Голланда RIASEC (6)\\
+         {\footnotesize 6 типов (профилей) личностей, с которыми соотнесены наборы профессий}
+        \item Опросник Леонгарда-Шмишека (10)
+        \item Личностный опросник Айзенка (4)
+        \item 16-факторный опросник Кеттелла (16)
+        \item Пятифакторный опросник личности («Большая пятерка»; 5)
+        \item Ценностный опросник Шварца (20)
+    \end{itemize}
+    }
+        
+    \setlength{\abovecaptionskip}{3pt}
+    \setlength{\belowcaptionskip}{1.5pt}
+    \begin{table}
+      \centering
+      \footnotesize
+      \caption{Пример данных психометрических тестов}
+      \label{tab:input_test_data}
+      \begin{tabular}{
+        >{\centering\arraybackslash}p{0.45cm}       |  % id
+        *{3}{>{\centering\arraybackslash}p{0.6cm}}     % BF
+        >{\centering\arraybackslash}p{0.165cm}         % ...
+        *{2}{>{\centering\arraybackslash}p{0.66cm}} |  % LN
+        *{6}{>{\centering\arraybackslash}p{0.5cm}}     % HL
+      }
+        \toprule
+        \multirow{2}{*}{\textbf{id}}
+          & \multicolumn{3}{c}{\textbf{Большая пятёрка}}
+          & \multirow{2}{*}{\textbf{\dots}}
+          & \multicolumn{2}{c|}{\textbf{Леонгард}}
+          & \multicolumn{6}{c}{\textbf{Голланд}} \\
+        \cmidrule(lr){2-4} \cmidrule(lr){6-7} \cmidrule(lr){8-13}
+          & BF1 & BF2 & BF3 
+          & 
+          & LN9 & LN10 
+          & R & I & A & S & E & C \\
+        \midrule
+        1 & 39 & 66 & 33 & \dots &  3 & 12  &  8 &  8 &  6 &  8 &  1 & 11 \\
+        2 & 45 & 46 & 73 & \dots & 12 &  6  &  3 &  7 &  7 &  8 & 10 &  7 \\
+        3 & 34 & 41 & 56 & \dots & 18 & 12  & 10 & 10 &  3 & 11 &  7 &  1 \\
+        4 & 49 & 47 & 50 & \dots & 15 & 24  &  6 &  4 &  8 &  6 &  7 & 11 \\
+        \bottomrule
+      \end{tabular}
+    \end{table}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Общая схема вариантов вычислительного эксперимента}
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.9\linewidth]{figures/multi_pipeline.jpg}
+        \vspace{-0.9em}
+        \captionsetup{font=footnotesize}
+        \caption{Общая схема вариантов вычислительного эксперимента}
+        \label{fig:multi_pipeline}
+    \end{figure}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Подходы и метрики качества}
+    \begin{itemize}
+        \item Многоцелевая регрессия~--- метрика \emph{avgRMSE}
+        \item Классификация~--- \emph{Top-k accuracy}
+        % \vspace{0.4em}
+        \item Ранжирование~--- \emph{NDCG@3}
+    \vspace{0.6em}
+    \item Сравнение подходов на основе C-индекса, желаемое значение: $C_\text{index} \geq 11$
+  \[
+    C_\text{index} = 3\, (X_1, Y_1) + 2\, (X_2, Y_2) + 1\, (X_3, Y_3),
+  \]
+  где $\{X_i\}$ и $\{Y_i\}$ — первые три позиции кодов Голланда, их позиции в замкнутой цепочке (шестиугольнике) \textit{R-I-A-S-E-C}:
+  \[
+    (X_i, Y_i) =
+    \begin{cases}
+      3, & \text{если $X_i = Y_i$,}\\
+      2, & \text{если $X_i$ и $Y_i$ -- соседние позиции,}\\
+      1, & \text{если $X_i$ и $Y_i$ -- позиции через один код,}\\
+      0, & \text{если $X_i$ и $Y_i$ -- противоположны.}
+    \end{cases}
+  \]
+  \end{itemize}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Особенности реализации}
+    \begin{itemize}
+        \item R (версия 4.4.2):
+        \begin{itemize}
+            \item векторизованная обработка и манипуляции с данными: \textit{data.table, tidyverse, R6}
+            \item статистические и ML-модели: \textit{stats, mice, softImpute, glmnet, MASS, xgboost, lightgbm, catboost, randomForest, FNN, caret, e1071, ranger, quadprog, GA, PSO}
+            \item интерактивные веб-приложения: \textit{Shiny (Posit)}; визуализация: \textit{plotly}
+        \end{itemize}
+        
+        \vspace{0.2em}
+        \item Python (версия 3.12.3):
+        \begin{itemize}
+            \item \textit{numpy, pandas, sklearn, PyTorch, TabPFN}
+        \end{itemize}
+
+        \vspace{0.2em}
+        \item Основные этапы реализации\textsuperscript{1}:
+        \begin{enumerate}
+            \item Разведочный анализ данных
+            \item Вычислительный эксперимент: выбор наилучшего подхода к определению кода Голланда, обучение и сохранение модели
+            \item Прототип инструмента автоматизации профориентации (веб-приложение) 
+        \end{enumerate}
+    \end{itemize}
+    
+    \btVFill
+    {\footnotesize
+        \textsuperscript{1} GitHub: Предсказание кода Голланда (RIASEC) по результатам психометрических тестов личности.\\
+        \quad URL: \url{https://github.com/ExP98/Diploma_Holland} (дата обращения: 07.06.2025)
+    }
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Архитектура вычислительного модуля}
+    \begin{figure}
+        \centering
+        \includegraphics[width=1\linewidth]{figures/Arch_colored.png}
+        \caption{Архитектура вычислительного модуля}
+        \label{fig:archi}
+    \end{figure}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Описание набора данных}
+    \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+        \small
+        \begin{itemize}
+            \item VK Mini Apps «Психологические тесты»\textsuperscript{2}
+            \item Анонимизированные данные\textsuperscript{3} 1278 пользователей: 339~--- полные, 939~--- не заполнены данные по 1--2 тестам
+            \item Обработка данных: json $\rightarrow$ широкий табличный формат, валидация, заполнение пропусков, нормализация, понижение размерности (метод главных компонент, \emph{PCA})
+            \item Ограничения: особенности сбора данных (смещения из-за специфики портала, способа формирования выборки)
+        \end{itemize}
+    \end{column}
+
+    \begin{column}{0.52\textwidth}
+        \begin{figure}
+            \centering
+            \includegraphics[width=0.85\linewidth]{figures/HL.png}
+            \captionsetup{font=footnotesize}
+            \caption{Диаграмма размаха факторов Голланда}
+            \label{fig:HL_boxplot}
+        \end{figure}
+    \end{column}
+    
+    \end{columns}
+  
+    \btVFill
+    {\scriptsize
+        \textsuperscript{2} Мини-приложение \enquote{Психологические тесты} (\enquote{VK Mini Apps}). URL: \url{https://vk.com/app7794698}
+
+        \textsuperscript{3} Политика конфиденциальности. URL: \url{https://vk.com/@ticslabs-politika-konfidencialnosti}
+    }
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Подходы. Базовые модели}
+    \begin{itemize}
+        \item Регрессия и классификация:
+            \begin{itemize}
+                \item модели на основе линейной регрессии (\emph{Lasso L1, Ridge L2, пошаговая})
+                \item ансамбли деревьев (\emph{случайный лес, ExtraTrees})
+                \item модели градиентного бустинга (\emph{CatBoost, LightGBM, XGBoost})
+                \item непараметрические модели (\emph{kNN, метод опорных векторов})
+                \item нейросетевые модели (\emph{MLP, TabPFN})
+                \item регуляризованная логистическая регрессия (\emph{Lasso L1, Ridge L}2)
+                \item наивный байесовский классификатор
+                \item базовая константная модель (для сравнительного анализа)
+            \end{itemize}
+        \vspace{0.4em}
+        \item Списочное ранжирование:
+            \begin{itemize}
+                \item Скоринговая функция: MLP, Deep \& Cross Network, трансформер
+                \item Функции потерь: ApproxNDCG, LambdaRank, ListNet@1, ListNet@3
+            \end{itemize}
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Сравнение регрессионных моделей}
+    \input{tables/01_regr_res}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Сравнение подходов к классификции}
+    \input{tables/11_classif_res.tex}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Сравнение классификационных моделей}
+    \input{tables/12_best_classif.tex}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Сравнение моделей ранжирования}
+    \input{tables/21_learn_to_rank}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Ансамблирование регрессионных моделей}
+    \input{tables/03_regr_ensembles}
+    \input{tables/04_pso_regr_weights}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Ансамблирование классификационных моделей}
+    \input{tables/13_clsf_ensemble.tex}
+    \input{tables/14_pso_clsf_weights.tex}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Методы восстановления результатов незаполненных тестов}
+    \input{tables/41_impute}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Ансамблевые методы восстановления для Soft Impute}
+    \input{tables/42_impute_ens}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Итоговая последовательность вычислительных шагов}
+    
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.95\linewidth]{figures/final_pipeline.jpg}
+        \caption{Итоговая последовательность шагов вычислительного конвейера\textsuperscript{4}}
+        \label{fig:pipeline}
+    \end{figure}
+
+
+    \btVFill
+    {\footnotesize \quad
+        \textsuperscript{4} Предсказание кода Голланда по результатам психометрических тестов~--- Shinyapps.io\\
+        \qquad URL: \url{https://exp98.shinyapps.io/diploma_holland} (дата обращения: 07.06.2025)
+    }
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Интерфейс прототипа инструмента профориентации}
+    \begin{figure}
+        \centering
+        \includegraphics[width=1.0\linewidth]{figures/UI2.png}
+        \caption{Интерфейс прототипа инструмента профориентации}
+        \label{fig:ui2}
+    \end{figure}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Результаты экспериментов}
+    \begin{itemize}
+        \item Лучшая базовая модель~--- L1-регрессия с независимыми выходами:\\$C_{index}~=~11.175$
+        
+        \vspace{0.5em}
+        \item Превосходство классических методов машинного обучения над нейросетевыми~--- лучшая среди нейронных сетей MLP (ListNet@3): $C_{index}~=~10.788$
+
+        \vspace{0.5em}
+        \item Ансамблевые модели (подбор весов методом роя частиц): 
+        \begin{itemize}
+            \item ансамбль регрессоров с независимыми выходами: $C_{index}~=~11.663$
+            \item ансамбль классификаторов со многими метками: $C_{index}~=~11.625$
+        \end{itemize}
+
+        \vspace{0.5em}
+        \item Для восстановления данных предпочтителен метод мягкой импутации\\\emph{Soft Impute}: $C_{index}~=~10.740$
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Результаты}
+    \begin{enumerate}
+        \item Реализованы\textsuperscript{5} подходы к определению кода Голланда: регрессия, классификация, списочное ранжирование
+        \item Разработан модуль формирования взвешенного ансамбля моделей
+        \item Проведен сравнительный анализ моделей предсказания кодов Голланда
+        \item Разработаны и реализованы математические модели модуля восстановления пропусков результатов психометрических тестов
+        \item Создан прототип инструмента для определения профориентационных предпочтений на основе R Shiny
+        \vspace{0.8em}
+        \item[$\circ$] Участие в XXVIII Международной конференции SCM'25
+        \item[$\circ$] Акт об использовании результатов ВКР в НИР СПб ФИЦ РАН
+    \end{enumerate}
+
+    \btVFill
+    {\footnotesize
+        \textsuperscript{5} GitHub: Предсказание кода Голланда (RIASEC) по результатам психометрических тестов личности.\\\quad URL: \url{https://github.com/ExP98/Diploma_Holland} (дата обращения: 07.06.2025)\\
+    }
+\end{frame}
+
+
+%\addtocounter{framenumber}{1}
+\appendix
+
+\begin{frame}{Акт об использовании результатов ВКР}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.48\textwidth}
+      \centering
+      \includegraphics[width=0.72\linewidth]{figures/Акт-1.PNG}
+    \column{0.48\textwidth}
+      \centering
+      \includegraphics[width=0.75\linewidth]{figures/Акт-2.PNG}
+  \end{columns}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Ссылки на дополнительные материалы}
+    \begin{itemize}
+        \item Исходный код\textsuperscript{1}
+        \item Веб-приложение\textsuperscript{2}
+        \item Участие в XXVIII Международной конференции по мягким вычислениям и измерениям SCM'25\textsuperscript{3}
+    \end{itemize}
+    
+    \btVFill
+    {\footnotesize
+        \textsuperscript{1} GitHub: Предсказание кода Голланда (RIASEC) по результатам психометрических тестов личности. URL: \url{https://github.com/ExP98/Diploma_Holland} (дата обращения: 07.06.2025)\\
+        \vspace{0.2em}
+        \textsuperscript{2} Предсказание кода Голланда по результатам психометрических тестов - Shinyapps.io. URL: \url{https://exp98.shinyapps.io/diploma_holland} (дата обращения: 07.06.2025)\\
+        \vspace{0.2em}
+        \textsuperscript{3} Тенденции взаимосвязи личностных особенностей и результатов теста Голланда среди пользователей социальной сети ВКонтакте. URL: \url{https://scm.etu.ru/assets/files/2025/sbornik/044-048.pdf} (дата обращения: 07.06.2025)
+    }
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Анализ важности признаков}
+    \input{tables/02_feature_imp}
+    \begin{itemize}
+        \item Два наиболее важных признака (Кеттелла)~--- более 30\% накопленной важности
+        \item Первые восемь признаков~--- более 50\% (всего 55 признаков)
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Распределение значений C-индекса для предсказаний}
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.65\linewidth]{figures/Cindex_distr_PSO_regr.png}
+        \caption{Распределение значений C-индекса для предсказаний PSO-ансамбля регрессоров}
+        \label{fig:cindex_distr}
+    \end{figure}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Обзор лучших моделей для каждого типа задач}
+    \input{tables/31_summary}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Метрики качества RMSE и NDCG}
+    \begin{itemize}
+    \item Корень из среднеквадратичной ошибки (RMSE):
+      \[
+        \mathrm{RMSE}
+        = \sqrt{\frac{1}{n}\sum_{i=1}^n \bigl(y_i - \hat{y}_i\bigr)^2},
+      \]
+      где \(n\)~--- число объектов, \(y_i\) и \(\hat{y}_i\)~--- истинное и предсказанное значения
+
+    \vspace{0.2em}
+    \item Нормализованный дисконтированный совокупный прирост (NDCG@K):
+    \begin{flalign*}
+        \mathrm{DCG@K} = \sum_{i=1}^K \frac{2^{\mathrm{rel}_i}-1}{\log_2(i+1)}, \;
+        \mathrm{IDCG@K} = \sum_{i=1}^K \frac{2^{\mathrm{rel}_i^\ast}-1}{\log_2(i+1)}, \;
+        \mathrm{NDCG@K} = \frac{\mathrm{DCG@K}}{\mathrm{IDCG@K}},&&
+    \end{flalign*}
+    где \(K\) — глубина ранжирования, \(\mathrm{rel}_i\) и \(\mathrm{rel}_i^*\)~--- релевантность i-го элемента в ранжированном списке и в идеальном ранжировании
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Сравнение регрессионных моделей (RMSE)}
+    \input{tables/app_01_basic_regr}
+\end{frame}
+
+\begin{frame}
+    \frametitle{Результаты ансамбля регрессионных моделей (RMSE)}
+    \input{tables/app_02_ensm_regr}
+\end{frame}
+
+
+\begin{frame}
+    \frametitle{Методы восстановления данных (RMSE)}
+    \input{tables/app_03_basic_impute}
+\end{frame}
+
+\begin{frame}
+    \frametitle{Ансамблевые методы восстановления для Soft Impute (RMSE)}
+    \input{tables/app_04_ensm_impute}
+\end{frame}
+
+\end{document}

@@ -1,0 +1,66 @@
+% !TEX TS-program = xelatex
+% !BIB program = bibtex
+% !TeX spellcheck = ru_RU
+
+% About magic macros see also
+% https://tex.stackexchange.com/questions/78101/
+
+% По умолчанию используется шрифт 14 размера.
+% Если Вы не влезаете в лимит страниц и нужен 12-й шрифт,
+% то уберите опцию [14pt]
+\documentclass[14pt, russian]{tex/matmex-diploma-custom}
+
+\begin{document}
+\input{title.tex}
+\maketitle
+\setcounter{tocdepth}{2}
+\tableofcontents
+
+\pagebreak
+\newfontfamily\myfont{CMU Sans Serif}
+
+\input{000_intro}
+\input{010_task}
+\input{020_related}
+\input{030_solution}
+\input{040_implementation}
+
+\clearpage
+\input{050_experiment}
+\input{060_conclusion}
+
+\setmonofont{CMU Typewriter Text}
+%% в .cls заменить в bibliographystyle plain на tex/ugost2008l.bst при конечной компиляции
+\bibliography{vkr.bib}
+
+\clearpage
+
+\begin{appendices}
+    \appendix
+    \renewcommand{\thesection}{\Alph{section}}
+
+    % Перенастраиваем заголовки \section так, чтобы для приложений было "Приложение A. Название"
+    \titleformat{\section}[block]
+      {\normalfont\Large\bfseries}{\appendixname\ \thesection.}{1em}{}
+
+    \begin{landscape}
+        \section{Описание психометрических тестов}
+        \label{app:psytests}
+        \small
+        \input{tables/psytests_desc_stats.tex}
+    \end{landscape}
+
+    \begin{landscape}
+        \section{Интерфейс прототипа приложения}
+        \label{app:ui}
+        \begin{figure}[!h]
+            \centering
+            \includegraphics[width=1.0\linewidth]{figures/UI2.png}
+            \caption{Интерфейс прототипа инструмента профориентации}
+            \label{fig:ui2}
+        \end{figure}
+    \end{landscape}
+
+\end{appendices}
+
+\end{document}

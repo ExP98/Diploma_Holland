@@ -1,0 +1,45 @@
+\renewcommand{\g}[1]{\gradientcelld{#1}{9}{11.1}{11.8}{low}{mid}{high}{70}}
+
+\begin{table}
+    \captionsetup{skip=-0.5ex, belowskip=2pt}
+    \footnotesize
+    \setlength{\tabcolsep}{0pt}
+    \caption{Сравнение методов подбора весов ансамбля регрессионных моделей}
+    \label{tab:regr_ensembles}
+    \begin{tabular*}{0.95\textwidth}{@{\extracolsep{\fill}}
+        >{\raggedright\arraybackslash}m{5.5cm}|
+        *{4}{>{\centering\arraybackslash}m{2.2cm}}
+      @{}}
+      \toprule
+        \multicolumn{1}{>{\centering\arraybackslash}m{5.5cm}|}{\textbf{Метод подбора весов}} 
+            & \multicolumn{2}{c}{\textbf{Multioutput}}
+            & \multicolumn{2}{c}{\textbf{Chained}} \\
+          \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+            & \textbf{все модели} 
+            & \textbf{топ-5} 
+            & \textbf{все модели} 
+            & \textbf{топ-5} \\
+      \midrule
+      Равные веса всех моделей       & \g{11.063} & \g{11.088} & \g{11.050} & \g{11.013} \\
+      Вектор Шэпли (Shap)            & \g{11.050} & \g{11.138} & \g{11.138} & \g{11.050} \\
+      Частичный перебор по сетке     & \g{11.550} & \g{11.388} & \g{11.538} & \g{11.325} \\
+      Квадратичная оптимизация (QP)  & \g{10.588} & \g{10.463} & \g{10.738} & \g{10.813} \\
+      Генетический алгоритм (GA)     & \g{11.500} & \g{11.550} & \g{11.300} & \g{11.563} \\
+      Метод роя частиц (PSO)         & \g{11.600} & \g{11.663} & \g{11.613} & \g{11.613} \\
+      Координатный спуск             & \g{11.188} & \g{11.225} & \g{11.288} & \g{11.413} \\
+      \midrule
+      Лин. регрессии с регуляризацией 
+        & \multicolumn{2}{c}{Линейная регрессия} 
+        & \multicolumn{2}{c}{\g{10.887}} \\
+      L1, L2, LightGBM, CatBoost, RF 
+        & \multicolumn{2}{c}{Линейная регрессия} 
+        & \multicolumn{2}{c}{\g{10.688}} \\
+      \bottomrule
+    \end{tabular*}
+    % \begin{minipage}{\textwidth}
+    %   \footnotesize
+    %   \textit{\hspace*{1.5em}Обозначения:\\
+    %   \hspace*{2.5em}топ-5~--- подбор весов только для топ-5 моделей по C-индексу\\
+    %   \hspace*{2.5em}L1 и L2~--- Lasso- и Ridge-модели регрессии, RF~--- случайный лес}
+    % \end{minipage}
+\end{table}

@@ -1,0 +1,45 @@
+\renewcommand{\g}[1]{\gradientcelld{#1}{7}{10.5}{11.2}{low}{mid}{high}{70}}
+
+\begin{table}
+    \captionsetup{skip=-0.5ex, belowskip=1pt}
+    \footnotesize
+    \centering
+    \caption{Сравнение базовых регрессионных моделей по C-индексу}
+    \label{tab:regr_res}
+    \setlength{\tabcolsep}{0pt}
+    \begin{tabular*}{0.9\textwidth}{@{\extracolsep{\fill}}
+          >{\raggedright\arraybackslash}m{5.2cm}|
+          *{4}{>{\centering\arraybackslash}m{2.08cm}}
+        @{}}
+      \toprule
+      \multicolumn{1}{>{\centering\arraybackslash}m{5.2cm}|}{\textbf{Модель}}
+        & \multicolumn{2}{c}{\textbf{Multioutput}}
+        & \multicolumn{2}{c}{\textbf{Chained}} \\
+      \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+        & \textbf{без PCA} & \textbf{PCA}
+        & \textbf{без PCA} & \textbf{PCA} \\
+      \midrule
+      Регрессия Lasso (L1)      & \g{11.175} & \g{10.887} & \g{11.175} & \g{11.150} \\
+      ExtraTrees                & \g{10.700} & \g{11.100} & \g{10.625} & \g{10.825} \\
+      Регрессия Ridge (L2)      & \g{10.988} & \g{10.537} & \g{11.062} & \g{10.412} \\
+      Метод опорных векторов    & \g{10.713} & \g{10.950} & \g{10.713} & \g{10.950} \\
+      Пошаговая регрессия       & \g{10.605} & \g{10.905} & \g{10.600} & \g{10.905} \\
+      CatBoost                  & \g{10.688} & \g{10.812} & \g{10.688} & \g{10.812} \\
+      Случайный лес             & \g{10.625} & \g{10.475} & \g{10.812} & \g{10.588} \\
+      LightGBM                  & \g{10.750} & \g{10.425} & \g{10.750} & \g{10.425} \\
+      k-ближайших соседей (kNN) & \g{10.525} & \g{10.400} & \g{10.525} & \g{10.400} \\
+      XGBoost                   & \g{9.164}  & \g{9.729}  & \g{9.162}  & \g{9.725}  \\
+      Базовая константная       & \g{9.000}  & \g{9.000}  & \g{9.000}  & \g{9.000}  \\
+      \midrule
+      TabPFN                    & \g{10.562} &            &            &            \\
+      MLP (BN, DropOut, регуляризация) & \g{10.462} &     &            &            \\
+      Многослойный перцептрон (MLP)    & \g{10.275} &     &            &            \\
+      \bottomrule
+    \end{tabular*}
+    % \vspace{0.75em}
+    % \begin{minipage}{\textwidth}
+    %   \scriptsize
+    %   \textit{\hspace*{3em} Обозначения: PCA~--- метод главных компонент (уменьшение размерности), BN~--- пакетная нормализация}
+    % \end{minipage}
+\end{table}
+

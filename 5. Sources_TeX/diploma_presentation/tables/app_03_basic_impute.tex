@@ -1,0 +1,34 @@
+\renewcommand{\gr}[1]{\gradientcelld{#1}{2.045}{2.1}{2.3}{high}{mid}{low}{70}}
+
+\begin{table}
+    \setlength{\tabcolsep}{0pt}
+    \small
+    \centering
+    \caption{Восстановление значений незаполненных психометрических тестов с помощью базовых регрессионных моделей (RMSE)}
+    \label{tab:impute_rmse}
+    \begin{tabular*}{0.9\textwidth}{@{\extracolsep{\fill}} 
+        >{\raggedright\arraybackslash}m{6cm}|
+        *{3}{>{\centering\arraybackslash}m{2.5cm}}
+      @{}}
+        \toprule
+        \multicolumn{1}{c|}{\textbf{Модель-регрессор}} 
+          & \textbf{MICE} 
+          & \textbf{Soft Impute} 
+          & \textbf{Маски} \\
+        \midrule
+        Регрессия Lasso (L1)            & \gr{2.059} & \gr{2.046} & \gr{2.098} \\
+        CatBoost                        & \gr{2.054} & \gr{2.092} & \gr{2.105} \\
+        Пошаговая регрессия             & \gr{2.118} & \gr{2.059} & \gr{2.154} \\
+        Линейная регрессия (OLS)        & \gr{2.126} & \gr{2.065} & \gr{2.174} \\
+        Регрессия Ridge (L2)            & \gr{2.068} & \gr{2.125} & \gr{2.101} \\
+        Случайный лес                   & \gr{2.081} & \gr{2.085} & \gr{2.113} \\
+        ExtraTrees                      & \gr{2.083} & \gr{2.126} & \gr{2.133} \\
+        LightGBM                        & \gr{2.083} & \gr{2.110} & \gr{2.136} \\
+        Метод опорных векторов (SVR)    & \gr{2.127} & \gr{2.154} & \gr{2.105} \\
+        k-ближайших соседей (kNN)       & \gr{2.107} & \gr{2.150} & \gr{2.142} \\
+        Базовая константная             & \gr{2.203} & \gr{2.247} & \gr{2.244} \\
+        XGBoost                         & \gr{2.212} & \gr{2.261} & \gr{2.238} \\
+        \bottomrule
+    \end{tabular*}
+\end{table}
+

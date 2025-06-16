@@ -1,0 +1,17 @@
+\begin{table}[bht]
+    \setlength{\tabcolsep}{0pt}
+    \centering
+    \caption{Весовые коэффициенты моделей и C-индекс для PSO}
+    \label{tab:pso_regr_weights}
+    \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} 
+        l*{4}{c}>{\centering\arraybackslash}p{1.3cm}
+        >{\raggedright\arraybackslash}p{1.3cm}@{}}
+        \toprule
+        \textbf{Подбор} & \multicolumn{4}{c}{\textbf{Веса моделей}} & \textbf{\quad C-} \\
+        \cmidrule(lr){2-5}
+        \textbf{весов} & Lasso L1 & Пошаговая регр. & CatBoost & ExtraTrees & \textbf{индекс} \\
+        \midrule
+        PSO & 0.432 & 0.327 & 0.150 & 0.091 & 11.663 \\
+        \bottomrule
+    \end{tabular*}
+\end{table}

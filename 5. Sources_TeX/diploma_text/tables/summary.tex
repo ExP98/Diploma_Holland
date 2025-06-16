@@ -1,0 +1,69 @@
+\renewcommand{\g}[1]{\gradientcelld{#1}{10}{10.65}{11.7}{low}{mid}{high}{60}}
+
+\begin{table}[!b]
+    \fontsize{14pt}{18pt}\selectfont
+    \setlength{\tabcolsep}{0pt}
+    \centering
+    \caption{Обзор лучших моделей для каждого типа задач}
+    \label{tab:summary}
+    \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}
+        >{\raggedright\arraybackslash}m{4.0cm}   % Тип задач
+        | >{\raggedright\arraybackslash}m{3.7cm} % Подход
+        | >{\raggedright\arraybackslash}m{5.9cm}   % Лучшая модель
+        | >{\centering\arraybackslash}m{2.65cm}     % C‑индекс
+        @{}}
+        \toprule
+        \multicolumn{1}{c|}{\textbf{Тип задач}}
+          & \multicolumn{1}{c|}{\textbf{Подход}}
+          & \multicolumn{1}{c|}{\textbf{Лучшая модель}}
+          & \multicolumn{1}{c}{\textbf{C-индекс}} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Регрессия       & Блендинг, mo
+                        & PSO (L1-регрессия, пошаговая регрессия, CatBoost, ExtraTrees)
+                        & \g{11.663} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & Блендинг, ml
+                        & PSO (kNN, SVM, логистич. L1-регр., XGBoost, LightGBM и др.)
+                        & \g{11.625} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Регрессия       & Блендинг, chain
+                        & PSO
+                        & \g{11.613} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & Блендинг, lp
+                        & PSO / поиск по сетке
+                        & \g{11.525} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & Блендинг, mc
+                        & Генетический алг. / PSO
+                        & \g{11.263} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Регрессия       & Multioutput
+                        & L1-регрессия
+                        & \g{11.175} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Регрессия       & Chain
+                        & L2-регрессия
+                        & \g{11.062} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & Multilabel
+                        & kNN
+                        & \g{10.838} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Ранжирование    & Списочное
+                        & MLP с ListNet@3
+                        & \g{10.788} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & Multiclass
+                        & Логистич. L1-регрессия
+                        & \g{10.663} \\
+        \bottomrule
+    \end{tabular*}
+    \begin{minipage}{\textwidth}
+      \small
+      \textit{Обозначения:\\
+      \hspace*{1em}mo~--- Multioutput, ml~--- Multilabel, lp~--- Label Powerset, mc~--- Multiclass,\\
+      \hspace*{1em}MLP~--- многослойный перцептрон, PSO~--- метод роя частиц,\\
+      \hspace*{1em}SVM~--- метод опорных векторов, kNN~--- метод k-ближайших соседей}
+    \end{minipage}
+\end{table}

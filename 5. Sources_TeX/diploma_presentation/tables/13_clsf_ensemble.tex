@@ -1,0 +1,28 @@
+\renewcommand{\g}[1]{\gradientcelld{#1}{8}{10.8}{11.7}{low}{mid}{high}{70}}
+
+\begin{table}
+    \captionsetup{skip=-0.5ex, belowskip=1pt}
+    \small
+    \setlength{\tabcolsep}{0pt}
+    \centering
+    \caption{Сравнение методов подбора весов ансамбля классификаторов}
+    \label{tab:clsf_ensemble}
+    \begin{tabular*}{0.9\textwidth}{@{\extracolsep{\fill}}
+        >{\raggedright\arraybackslash}m{5.5cm}|
+        *{3}{>{\centering\arraybackslash}m{2.65cm}} @{}}
+        \toprule
+        \multicolumn{1}{c|}{\textbf{Метод подбора весов}}
+          & \textbf{Multiclass}
+          & \textbf{Multilabel}
+          & \textbf{Label Powerset} \\
+        \midrule
+        Равные веса всех моделей      & \g{10.663} & \g{10.888} & \g{10.563} \\
+        Вектор Шэпли (Shap)           & \g{10.563} & \g{11.038} & \g{10.525} \\
+        Частичный перебор по сетке    & \g{11.213} & \g{11.488} & \g{11.525} \\
+        Квадратичная оптимизация (QP) & \g{10.488} & \g{10.638} & \g{10.650} \\
+        Генетический алгоритм (GA)    & \g{11.263} & \g{11.313} & \g{11.213} \\
+        Метод роя частиц (PSO)        & \g{11.263} & \g{11.625} & \g{11.525} \\
+        Координатный спуск            & \g{11.200} & \g{11.275} & \g{10.425} \\
+        \bottomrule
+    \end{tabular*}
+\end{table}

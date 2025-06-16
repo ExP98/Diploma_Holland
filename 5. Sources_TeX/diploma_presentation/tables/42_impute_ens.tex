@@ -1,0 +1,44 @@
+\renewcommand{\g}[1]{\gradientcelld{#1}{9}{10.25}{11}{low}{mid}{high}{70}}
+
+\begin{table}
+    \footnotesize
+    \setlength{\tabcolsep}{0pt}
+    \centering
+    \caption{Весовые коэффициенты моделей и C-индекс при разных методах подбора весов для ансамблей на восстановленных данных}
+    \label{tab:impute_ens}
+    \begin{tabular*}{0.95\textwidth}{@{\extracolsep{\fill}} 
+        >{\raggedright\arraybackslash}m{4.35cm}|
+        *{5}{>{\centering\arraybackslash}m{1.5cm}}|
+        >{\centering\arraybackslash}m{2cm}
+      @{}}
+        \toprule
+        \multicolumn{1}{c|}{\textbf{Подбор весов}} 
+          & \multicolumn{5}{c|}{\textbf{Веса моделей}} 
+          & \textbf{С-индекс}\\
+        \cmidrule(lr){2-6}
+        \multicolumn{1}{c|}{}  
+          & \textbf{Lasso L1} 
+          & \textbf{Пошагов.} 
+          & \textbf{LightGBM} 
+          & \textbf{Случ. лес} 
+          & \textbf{kNN} 
+          & \textbf{} \\
+        \midrule
+        Метод роя частиц (PSO)     & 0.001 & 0.481 & 0.038 & 0.475 & 0.005 & \g{10.740} \\
+        Частичный перебор по сетке & 0.000 & 0.500 & 0.000 & 0.500 & 0.000 & \g{10.657} \\
+        Генетический алгоритм (GA) & 0.281 & 0.369 & 0.109 & 0.189 & 0.052 & \g{10.401} \\
+        Координатный спуск         & 0.019 & 0.422 & 0.067 & 0.305 & 0.187 & \g{10.245} \\
+        Квадратичная оптимиз. (QP) & 0.050 & 0.000 & 0.390 & 0.007 & 0.553 & \g{10.065} \\
+        Равные веса всех моделей   & 0.200 & 0.200 & 0.200 & 0.200 & 0.200 & \g{10.053} \\
+        Вектор Шэпли (Shap)        & 0.247 & 0.185 & 0.206 & 0.179 & 0.183 & \g{10.047} \\
+        \bottomrule
+    \end{tabular*}
+        \vspace{0.5em}
+        \begin{minipage}{\textwidth}
+        \scriptsize
+        \textit{\hspace*{1.5em}Обозначения:\\
+        \hspace*{2.5em}Пошагов. ~--- пошаговая регрессия,\\
+        \hspace*{2.5em}Случ. лес~--- случайный лес (Random Forest),\\
+        \hspace*{2.5em}kNN~--- метод k-ближайших соседей}
+    \end{minipage}
+\end{table}

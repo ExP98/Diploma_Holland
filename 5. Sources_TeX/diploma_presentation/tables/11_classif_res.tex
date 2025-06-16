@@ -1,0 +1,40 @@
+\newcommand{\gA}[1]{\gradientcelld{#1}{0.93}{0.97}{1}{low}{mid}{high}{70}}
+\newcommand{\gB}[1]{\gradientcelld{#1}{0.56}{0.69}{0.8}{low}{mid}{high}{70}}
+\newcommand{\gC}[1]{\gradientcelld{#1}{0.05}{0.12}{0.23}{low}{mid}{high}{70}}
+
+
+\begin{table}
+  \centering
+  \small
+  \setlength{\tabcolsep}{0.5pt}
+  \caption{Сравнение подходов к классификации (метрика Top-K accuracy)}
+  \label{tab:classif_res}
+  \begin{tabular*}{0.9\textwidth}{@{\extracolsep{\fill}} 
+    p{3cm}|
+    *{3}{>{\centering\arraybackslash}p{1.07cm}}|
+    *{3}{>{\centering\arraybackslash}p{1.07cm}}|
+    *{3}{>{\centering\arraybackslash}p{1.07cm}}
+  @{}  }
+    \toprule
+    \multicolumn{1}{>{\centering\arraybackslash}p{3cm}|}{\textbf{Модель}}
+      & \multicolumn{3}{c|}{\textbf{Multiclass}}
+      & \multicolumn{3}{c|}{\textbf{Multilabel}}
+      & \multicolumn{3}{c}{\textbf{Label Powerset}} \\
+    \cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+      & Top1 & Top2 & Top3 
+      & Top1 & Top2 & Top3 
+      & Top1 & Top2 & Top3 \\
+    \midrule
+    kNN                & \gA{0.99} & \gB{0.71} & \gC{0.13} & \gA{1.00} & \gB{0.76} & \gC{0.11} & \gA{0.98} & \gB{0.65} & \gC{0.18} \\
+    Логистич. L1-регр. & \gA{1.00} & \gB{0.70} & \gC{0.16} & \gA{1.00} & \gB{0.70} & \gC{0.16} & \gA{0.99} & \gB{0.64} & \gC{0.10} \\
+    XGBoost            & \gA{1.00} & \gB{0.70} & \gC{0.11} & \gA{0.98} & \gB{0.68} & \gC{0.10} & \gA{0.96} & \gB{0.63} & \gC{0.11} \\
+    Логистич. L2-регр. & \gA{1.00} & \gB{0.70} & \gC{0.15} & \gA{0.99} & \gB{0.70} & \gC{0.21} & \gA{0.99} & \gB{0.68} & \gC{0.09} \\
+    Наивный Байес      & \gA{0.98} & \gB{0.70} & \gC{0.15} & \gA{0.99} & \gB{0.70} & \gC{0.15} & \gA{0.99} & \gB{0.69} & \gC{0.16} \\
+    ExtraTrees         & \gA{1.00} & \gB{0.73} & \gC{0.15} & \gA{1.00} & \gB{0.78} & \gC{0.15} & \gA{0.98} & \gB{0.69} & \gC{0.20} \\
+    Метод опорн. вект. & \gA{1.00} & \gB{0.74} & \gC{0.15} & \gA{1.00} & \gB{0.72} & \gC{0.14} & \gA{0.98} & \gB{0.68} & \gC{0.21} \\
+    Случайный лес      & \gA{1.00} & \gB{0.74} & \gC{0.16} & \gA{1.00} & \gB{0.74} & \gC{0.15} & \gA{0.99} & \gB{0.64} & \gC{0.23} \\
+    CatBoost           & \gA{0.99} & \gB{0.79} & \gC{0.11} & \gA{0.99} & \gB{0.79} & \gC{0.11} & \gA{0.99} & \gB{0.70} & \gC{0.16} \\
+    LightGBM           & \gA{0.98} & \gB{0.66} & \gC{0.09} & \gA{0.98} & \gB{0.70} & \gC{0.10} & \gA{0.95} & \gB{0.63} & \gC{0.09} \\
+    \bottomrule
+  \end{tabular*}
+\end{table}

@@ -1,0 +1,44 @@
+\renewcommand{\gr}[1]{\gradientcelld{#1}{2.025}{2.05}{2.2}{high}{mid}{low}{70}}
+
+\begin{table}
+    \captionsetup{skip=-0.5ex, belowskip=2pt}
+    \centering
+    \small
+    \setlength{\tabcolsep}{0pt}
+    \caption{Сравнение методов подбора весов ансамбля регрессионных моделей по RMSE}
+    \label{tab:regr_ensembles_rmse}
+    \begin{tabular*}{0.95\textwidth}{@{\extracolsep{\fill}}
+        >{\raggedright\arraybackslash}m{5.5cm}|
+        *{4}{>{\centering\arraybackslash}m{2.2cm}}
+      @{}}
+      \toprule
+        \multicolumn{1}{>{\centering\arraybackslash}m{5.5cm}|}{\textbf{Метод подбора весов}}
+          & \multicolumn{2}{c}{\textbf{Multioutput}}
+          & \multicolumn{2}{c}{\textbf{Chained}} \\
+        \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+          & \textbf{все модели} & \textbf{топ-5}
+          & \textbf{все модели} & \textbf{топ-5} \\
+      \midrule
+      Равные веса всех моделей        & \gr{2.052} & \gr{2.038} & \gr{2.052} & \gr{2.032} \\
+      Вектор Шэпли (Shap)             & \gr{2.047} & \gr{2.035} & \gr{2.046} & \gr{2.033} \\
+      Частичный перебор по сетке      & \gr{2.052} & \gr{2.026} & \gr{2.045} & \gr{2.035} \\
+      Квадратичная оптимизация (QP)   & \gr{2.109} & \gr{2.093} & \gr{2.111} & \gr{2.070} \\
+      Генетический алгоритм (GA)      & \gr{2.035} & \gr{2.036} & \gr{2.044} & \gr{2.032} \\
+      Метод роя частиц (PSO)          & \gr{2.049} & \gr{2.031} & \gr{2.065} & \gr{2.026} \\
+      Координатный спуск              & \gr{2.097} & \gr{2.048} & \gr{2.089} & \gr{2.040} \\
+      \midrule
+      Лин. регрессии с регуляризацией
+        & \multicolumn{2}{c}{Линейная регрессия}
+        & \multicolumn{2}{c}{\gr{2.111}} \\
+      L1, L2, LightGBM, CatBoost, RF
+        & \multicolumn{2}{c}{Линейная регрессия}
+        & \multicolumn{2}{c}{\gr{2.091}} \\
+      \bottomrule
+    \end{tabular*}
+    \begin{minipage}{\textwidth}
+      \footnotesize
+      \textit{\hspace*{1.5em}Обозначения:\\
+      \hspace*{2.5em}топ-5~--- подбор весов только для топ-5 моделей согласно метрике,\\
+      \hspace*{2.5em}L1 и L2~--- Lasso- и Ridge-модели регрессии, RF~--- случайный лес}
+    \end{minipage}
+\end{table}

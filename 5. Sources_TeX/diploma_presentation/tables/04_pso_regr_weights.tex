@@ -1,0 +1,41 @@
+% \begin{table}
+%     \setlength{\tabcolsep}{0pt}
+%     \centering
+%     \caption{Весовые коэффициенты моделей и C-индекс для PSO}
+%     \label{tab:pso_regr_weights}
+%     \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} 
+%         l*{4}{c}>{\centering\arraybackslash}p{1.3cm}
+%         >{\raggedright\arraybackslash}p{1.3cm}@{}}
+%         \toprule
+%         \textbf{Подбор} & \multicolumn{4}{c}{\textbf{Веса моделей}} & \textbf{\quad C-} \\
+%         \cmidrule(lr){2-5}
+%         \textbf{весов} & Lasso L1 & Пошаговая регр. & CatBoost & ExtraTrees & \textbf{индекс} \\
+%         \midrule
+%         PSO & 0.432 & 0.327 & 0.150 & 0.091 & 11.663 \\
+%         \bottomrule
+%     \end{tabular*}
+% \end{table}
+
+\begin{table}
+    \captionsetup{skip=-1ex, belowskip=0pt}
+    \centering
+    \footnotesize
+    % \caption{Весовые коэффициенты моделей PSO-ансамбля подхода Multioutput}
+    \label{tab:pso_regr_weights}
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular*}{0.95\textwidth}{@{\extracolsep{\fill}}
+          >{\raggedright\arraybackslash}p{3.5cm}|
+          *{4}{>{\centering\arraybackslash}c}|c
+        @{}}
+      \toprule
+      \textbf{Подбор весов}
+        & \textbf{Lasso L1}
+        & \textbf{Пошаговая регр.}
+        & \textbf{CatBoost}
+        & \textbf{ExtraTrees} & \textbf{\Large$\Sigma$} \\
+      \midrule
+      PSO, топ-5 multioutput & 0.432 & 0.327 & 0.150 & 0.091 & = 1.000 \\
+      \bottomrule
+    \end{tabular*}
+\end{table}
+

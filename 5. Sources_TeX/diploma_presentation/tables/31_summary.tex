@@ -1,0 +1,68 @@
+\renewcommand{\g}[1]{\gradientcelld{#1}{10}{10.65}{11.7}{low}{mid}{high}{60}}
+
+\begin{table}
+    \footnotesize
+    \captionsetup{skip=0ex, belowskip=2pt}
+    \setlength{\tabcolsep}{2pt}
+    \centering
+    \caption{Обзор лучших моделей для каждого подхода и типа задач}
+    \label{tab:summary}
+    \begin{tabular*}{0.95\textwidth}{@{\extracolsep{\fill}}
+            >{\raggedright\arraybackslash}m{2.43cm}  % Тип задач
+          | >{\raggedright\arraybackslash}m{2.43cm}  % Подход
+          | >{\raggedright\arraybackslash}m{6.2cm}   % Лучшая модель
+          | >{\centering\arraybackslash}m{2.85cm}       % C‑индекс
+        @{}}
+        \toprule
+        \multicolumn{1}{c|}{\textbf{Тип задач}}
+          & \multicolumn{1}{c|}{\textbf{Подход}}
+          & \multicolumn{1}{c|}{\textbf{Лучшая модель}}
+          & \multicolumn{1}{c}{\textbf{C-индекс}} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Регрессия       & ансамбль, mo
+                        & Рой частиц (Lasso-регрессия, пошаговая регрессия, CatBoost, ExtraTrees)
+                        & \g{11.663} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & ансамбль, ml
+                        & Рой частиц (kNN, SVM, логистическая Lasso-регрессия, XGBoost, LightGBM и др.)
+                        & \g{11.625} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Регрессия       & ансамбль, chain
+                        & Рой частиц
+                        & \g{11.613} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & ансамбль, lp
+                        & Рой частиц / поиск по сетке
+                        & \g{11.525} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & ансамбль, mc
+                        & Генетический алгоритм / Рой частиц
+                        & \g{11.263} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Регрессия       & multioutput
+                        & Lasso-регрессия
+                        & \g{11.175} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Регрессия       & chained
+                        & Ridge-регрессия
+                        & \g{11.062} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & multilabel
+                        & k-ближайших соседей (kNN)
+                        & \g{10.838} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Ранжирование    & списочное
+                        & MLP с ListNet@3
+                        & \g{10.788} \\
+        \specialrule{0.2pt}{1pt}{1pt}
+        Классификация   & multiclass
+                        & Логистическая Lasso-регрессия
+                        & \g{10.663} \\
+        \bottomrule
+    \end{tabular*}
+    \begin{minipage}{\textwidth}
+      \scriptsize
+      \textit{\hspace*{1.5em}Обозначения: mo~--- multioutput, ml~--- multilabel, lp~--- label powerset, mc~--- multiclass,\\
+      \hspace*{2em}MLP~--- многослойный перцептрон, SVM~--- метод опорных векторов, kNN~--- метод k-ближайших соседей}
+    \end{minipage}
+\end{table}

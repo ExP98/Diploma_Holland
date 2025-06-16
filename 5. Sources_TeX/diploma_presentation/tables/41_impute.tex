@@ -1,0 +1,32 @@
+\renewcommand{\g}[1]{\gradientcelld{#1}{7}{9.6}{10.5}{low}{mid}{high}{70}}
+  
+\begin{table}
+    \captionsetup{skip=-0.5ex, belowskip=1pt}
+    \setlength{\tabcolsep}{0pt}
+    \small
+    \centering
+    \caption{Восстановление значений незаполненных психометрических тестов с помощью базовых регрессионных моделей}
+    \label{tab:impute}
+        \begin{tabular*}{0.9\textwidth}{@{\extracolsep{\fill}} 
+        >{\raggedright\arraybackslash}m{5cm}|
+        *{4}{>{\centering\arraybackslash}m{2.15cm}}
+        @{}}
+        \toprule
+        \multicolumn{1}{c|}{\textbf{Модель-регрессор}} & 
+        \textbf{MICE} & \textbf{Soft Impute} & \textbf{Маски} & \textbf{Ансам\-бли} \\
+        \midrule
+        Регрессия Lasso (L1)   & \g{9.191} & \g{10.248}  & \g{9.998} & \g{9.866} \\
+        Пошаговая регрессия    & \g{9.608} & \g{10.183}  & \g{9.978} & \g{10.082}\\
+        Случайный лес          & \g{9.518} & \g{10.136}  & \g{9.819} & \g{9.712} \\
+        LightGBM               & \g{9.372} & \g{10.086}  & \g{9.686} & \g{9.594} \\
+        Линейная регрессия (OLS) & \g{9.407} & \g{10.021}  & \g{9.876} & \g{10.012}\\
+        Регрессия Ridge (L2)   & \g{9.442} & \g{9.770}   & \g{9.868} & \g{9.933} \\
+        ExtraTrees             & \g{9.101} & \g{9.823}   & \g{9.870} & \g{9.808} \\
+        Метод опорных векторов & \g{9.221} & \g{9.814}   & \g{9.864} & \g{9.760} \\
+        CatBoost               & \g{9.131} & \g{9.814}   & \g{9.835} & \g{9.461} \\
+        k-ближайших соседей (kNN) & \g{9.372} & \g{9.834}   & \g{9.830} & \g{9.377} \\
+        XGBoost                & \g{8.769} & \g{9.571}   & \g{9.267} & \g{9.614} \\
+        Базовая константная    & \g{9.000} & \g{9.000}   & \g{9.000} & \g{9.000} \\
+        \bottomrule
+    \end{tabular*}
+\end{table}

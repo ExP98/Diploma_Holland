@@ -1,0 +1,38 @@
+% \begin{table}
+%     \setlength{\tabcolsep}{0pt}
+%     \centering
+%     \caption{Весовые коэффициенты моделей и C‑индекс для PSO}
+%     \label{tab:clsf_pso_w}
+%     \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} 
+%           >{\centering\arraybackslash}p{1.5cm}
+%           *{5}{c}>{\centering\arraybackslash}p{1.3cm}
+%           >{\raggedright\arraybackslash}p{1.2cm}
+%         @{}}
+%           \toprule
+%           \textbf{Подбор} & \multicolumn{5}{c}{\textbf{Веса моделей}} & \textbf{\quad C-}\\
+%           \cmidrule(lr){2-6}
+%           \textbf{весов} & kNN & SVM & Logit L1 & XGBoost & LightGBM & \textbf{индекс}\\
+%           \midrule
+%           PSO & 0.291 & 0.164 & 0.191 & 0.183 & 0.151 & 11.625 \\
+%           \bottomrule
+%     \end{tabular*}
+% \end{table}
+
+\begin{table}
+    \captionsetup{skip=-0.5ex, belowskip=1pt}
+    \centering
+    \small
+    \caption{Весовые коэффициенты моделей для PSO}
+    \label{tab:clsf_pso_w}
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular*}{0.9\textwidth}{@{\extracolsep{\fill}}
+          >{\raggedright\arraybackslash}p{2.5cm}|
+          *{6}c|c
+        @{}}
+      \toprule
+      \textbf{Подбор весов} & \textbf{kNN} & \textbf{Logit L1} & \textbf{XGBoost} & \textbf{SVM} & \textbf{LightGBM} & \textbf{$\cdots$} & \textbf{\Large$\Sigma$}\\
+      \midrule
+      PSO & 0.291 & 0.191 & 0.183 & 0.164 & 0.151 & 0.020 & = 1.000\\
+      \bottomrule
+    \end{tabular*}
+\end{table}

@@ -1,0 +1,105 @@
+% !TeX spellcheck = ru_RU
+% !TEX root = vkr.tex
+
+% Опциональные добавления используемых пакетов. Вполне может быть, что они вам не понадобятся, но в шаблоне приведены примеры их использования.
+\usepackage{tikz} % Мощный пакет для создание рисунков, однако может очень сильно замедлять компиляцию
+\usetikzlibrary{decorations.pathreplacing,calc,shapes,positioning,tikzmark}
+
+% Библиотека для TikZ, которая генерирует отдельные файлы для каждого рисунка
+% Позволяет ускорить компиляцию, однако имеет свои ограничения
+% Например, ломает пример выделения кода в листинге из шаблона
+% \usetikzlibrary{external}
+% \tikzexternalize[prefix=figures/]
+
+\newcounter{tmkcount}
+
+\tikzset{
+    use tikzmark/.style={
+            remember picture,
+            overlay,
+            execute at end picture={
+                    \stepcounter{tmkcount}
+                },
+        },
+    tikzmark suffix={-\thetmkcount}
+}
+
+
+%% Таблицы
+\usepackage{tabularx}
+\usepackage{makecell}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{multicol}
+\usepackage{ltablex}
+\usepackage{longtable}
+\usepackage{array}
+
+
+% Для названий стоит использовать \textsc{}
+\newcommand{\OCaml}{\textsc{OCaml}}
+\definecolor{eclipseGreen}{RGB}{63,127,95}
+
+\makeatletter
+
+%%% Обязательные пакеты
+%% Beamer
+\usepackage{beamerthemesplit}
+\usetheme{SPbGU}
+\beamertemplatenavigationsymbolsempty
+\usepackage{appendixnumberbeamer}
+
+%% Локализация
+\usepackage{fontspec}
+\setmainfont{CMU Serif}
+\setsansfont{CMU Sans Serif}
+\setmonofont{CMU Typewriter Text}
+% \setmonofont{Fira Code}[Contextuals=Alternate,Scale=0.9]
+% \setmonofont{Inconsolata}
+
+\newfontfamily\cyrscfont{Inconsolata}[
+  SmallCapsFeatures={Letters=SmallCaps},
+  Scale=MatchLowercase
+]
+\DeclareRobustCommand{\textsc}[1]{{\cyrscfont\addfontfeatures{Letters=SmallCaps}#1}}
+
+\usepackage{polyglossia}
+\setmainlanguage{russian}
+\setotherlanguage{english}
+
+%% Графика
+\usepackage{pdfpages} % Позволяет вставлять многостраничные pdf документы в текст
+\usepackage{fancyvrb}
+
+\makeatother
+
+\usepackage[autostyle]{csquotes} % Правильные кавычки в зависимости от языка
+\usepackage{totcount}
+\usepackage{setspace}
+\usepackage{amsmath, amsfonts, amssymb, amsthm, mathtools} % "Адекватная" работа с математикой в LaTeX
+
+\usepackage[labelsep=period,            % вместо ':' ставить '.'
+            justification=centering,
+            singlelinecheck=false
+           ]{caption} % Настройка подписей "не текста"
+\usepackage{subcaption} % Подписи для разделенного "не текста"
+\addto\captionsrussian{\renewcommand{\figurename}{Рисунок}}
+
+\usepackage{pgf}
+\usepackage{colortbl}
+\usepackage[table]{xcolor}
+\usepackage{highlight}
+\definecolor{low}{HTML}{ef3b2c}
+\definecolor{mid}{HTML}{fff7f7}
+\definecolor{high}{HTML}{66FF66}
+\newcommand{\g}[1]{\gradientcelld{#1}{6}{10.5}{11.5}{low}{mid}{high}{70}}
+\newcommand{\gr}[1]{\gradientcelld{#1}{2.0}{2.1}{2.8}{high}{mid}{low}{70}}
+
+\newcommand{\h}[1]{%
+  \pgfmathparse{#1>0.05}%
+  \ifnum\pgfmathresult=1
+    \cellcolor{high!50}#1%
+  \else
+    #1%
+  \fi
+}

@@ -1,0 +1,216 @@
+%!TEX root = vkr.tex
+
+%% Параметры заполнения титульного листа
+\usepackage{xkeyval}
+
+%% Русскоязычный вариант
+\define@key[ru]{mytitle}{chair}{\def\my@title@chair@ru{#1}}
+\define@key[ru]{mytitle}{title}{\def\my@title@title@ru{#1}}
+\define@key[ru]{mytitle}{group}{\def\my@title@group@ru{#1}}
+\define@key[ru]{mytitle}{author}{\def\my@title@author@ru{#1}}
+\define@key[ru]{mytitle}{supervisor}{\def\my@title@supervisor@ru{#1}}
+\define@key[ru]{mytitle}{supervisorPosition}{\def\my@title@supervisorPosition@ru{#1}}
+\define@key[ru]{mytitle}{reviewer}{\def\my@title@reviewer@ru{#1}}
+\define@key[ru]{mytitle}{reviewerPosition}{\def\my@title@reviewerPosition@ru{#1}}
+\define@key[ru]{mytitle}{consultant}{\def\my@title@consultant@ru{#1}}
+\define@key[ru]{mytitle}{consultantPosition}{\def\my@title@consultantPosition@ru{#1}}
+\define@key[ru]{mytitle}{year}{\def\my@title@year@ru{#1}}
+\define@key[ru]{mytitle}{specialty}{\def\my@title@specialty@ru{#1}}
+\define@key[ru]{mytitle}{programme}{\def\my@title@programme@ru{#1}}
+\define@key[ru]{mytitle}{profile}{\def\my@title@profile@ru{#1}}
+\define@choicekey*[ru]{mytitle}{type}{coursework,practice,prediploma,master,bachelor,production}{\def\my@title@type@ru{#1}}
+\define@choicekey*[ru]{mytitle}{kind}{solution,experiment,production,comparison,theoretical}{\def\my@title@kind@ru{#1}}
+
+%% Англоязычный вариант
+\define@key[en]{mytitle}{chair}{\def\my@title@chair@en{#1}}
+\define@key[en]{mytitle}{title}{\def\my@title@title@en{#1}}
+\define@key[en]{mytitle}{group}{\def\my@title@group@en{#1}}
+\define@key[en]{mytitle}{author}{\def\my@title@author@en{#1}}
+\define@key[en]{mytitle}{supervisor}{\def\my@title@supervisor@en{#1}}
+\define@key[en]{mytitle}{supervisorPosition}{\def\my@title@supervisorPosition@en{#1}}
+\define@key[en]{mytitle}{reviewer}{\def\my@title@reviewer@en{#1}}
+\define@key[en]{mytitle}{reviewerPosition}{\def\my@title@reviewerPosition@en{#1}}
+\define@key[en]{mytitle}{consultant}{\def\my@title@consultant@en{#1}}
+\define@key[en]{mytitle}{consultantPosition}{\def\my@title@consultantPosition@en{#1}}
+\define@key[en]{mytitle}{year}{\def\my@title@year@en{#1}}
+\define@key[en]{mytitle}{specialty}{\def\my@title@specialty@en{#1}}
+\define@key[en]{mytitle}{programme}{\def\my@title@programme@en{#1}}
+\define@key[en]{mytitle}{profile}{\def\my@title@profile@en{#1}}
+\define@choicekey*[en]{mytitle}{type}{coursework,practice,prediploma,master,bachelor}{\def\my@title@type@en{#1}}
+\define@choicekey*[en]{mytitle}{kind}{solution,experiment,production,comparison,theoretical}{\def\my@title@kind@en{#1}}
+
+\newcommand{\filltitle}[2]{
+    %% Значения по умолчанию для обоих языков
+    \ifthenelse{\equal{#1}{ru}}
+    {
+        \presetkeys[#1]{mytitle}{
+            year = {\the\year},
+            type = {practice},
+            reviewer = {},
+            consultant = {},
+            profile = {}
+        }{}
+    }
+    {}
+    \ifthenelse{\equal{#1}{en}}
+    {
+        \presetkeys[#1]{mytitle}{
+            year = {\the\year},
+            type = {practice},
+            reviewer = {},
+            consultant = {},
+            profile = {}
+        }{}
+    }
+    {}
+    \setkeys[#1]{mytitle}{#2}
+}
+
+
+%% Титульная страница на русском языке
+\newcommand\maketitleru{
+    \fancypagestyle{titleru}{
+        \fancyhf{}  % clear all header and footer fields
+        \renewcommand{\headrulewidth}{0pt}  % remove head ruler
+        % В верхнем колонтитуле будет университет, кафедра и группа, если это курсовая/практика, или просто университет для ВКР
+        \chead{\large
+            Санкт-Петербургский государственный университет
+            \vskip 1em
+            \ifthenelse{\equal{\my@title@type@ru}{bachelor} \OR \equal{\my@title@type@ru}{master}}
+            {}
+            {
+                {\large \my@title@chair@ru }
+                \vskip 1em
+                    {\large Группа \my@title@group@ru }
+            }
+        }
+        % В нижнем колонтитуле город и год
+        \cfoot{\large\parbox[b]{\textwidth}{\centering Санкт-Петербург\\ \my@title@year@ru}}
+    }
+
+    \title{\my@title@title@ru}
+    \begin{titlepage}
+        \newgeometry{top=20mm,bottom=20mm,left=20mm,right=15mm,nohead,includeheadfoot}
+        \thispagestyle{titleru}
+        \begin{center}
+            \vspace*{0.2\textheight}
+            {\Large\textbf{\textit{\my@title@author@ru}}}
+            \vskip 1em
+                {\large Выпускная квалификационная работа}
+            \vskip 1em
+                {\LARGE \@title}
+
+            \vskip 2em
+            Уровень образования: \ifthenelse{\equal{\my@title@type@ru}{master}}{магистратура}{бакалавриат}
+
+            \vskip 1em
+            Направление \textit{\my@title@specialty@ru}
+            \vskip 1em
+            Основная образовательная программа \textit{\my@title@programme@ru}
+            \vskip 1em
+            \ifthenelse{\equal{\my@title@profile@ru}{}}{}{Профиль \underline{\textit{\my@title@profile@ru}}}
+
+            {\normalsize \raggedleft
+                \vskip 4em
+                Научный руководитель:\\
+                \my@title@supervisorPosition@ru\ \my@title@supervisor@ru\\
+                \vskip 1em
+                Консультант:\\
+                \my@title@consultantPosition@ru\ \my@title@consultant@ru\\
+                \vskip 1em
+                Рецензент:\\
+                \my@title@reviewerPosition@ru\ \my@title@reviewer@ru\\
+            }
+        \end{center}
+    \end{titlepage}
+}
+
+% Титульная страница на английском языке
+\newcommand\maketitleen{
+    \fancypagestyle{titleen}{
+        \fancyhf{}  % clear all header and footer fields
+        \renewcommand{\headrulewidth}{0pt}  % remove head ruler
+        %% В верхнем колонтитуле будет университет, кафедра и группа, если это курсовая/практика, или просто университет для ВКР
+        \chead{\large
+            Saint Petersburg State University
+            \vskip 1em
+            \ifthenelse{\equal{\my@title@type@en}{bachelor} \OR \equal{\my@title@type@en}{master}}
+            {}
+            {
+                {\large \my@title@chair@en }
+                \vskip 1em
+                    {\large Group \my@title@group@en }
+            }
+        }
+        %% В нижнем колонтитуле город и год
+        \cfoot{\large\parbox[b]{\textwidth}{\centering Saint Petersburg\\ \my@title@year@en}}
+    }
+    \title{\my@title@title@en}
+    \begin{titlepage}%
+        \newgeometry{top=20mm,bottom=20mm,left=20mm,right=15mm,nohead,includeheadfoot}
+        \thispagestyle{titleen}
+        \begin{center}
+
+            \vspace*{0.2\textheight}
+            {\Large\textbf{\textit{\my@title@author@en}}}
+            \vskip 1em
+                {\large \ifthenelse{\equal{\my@title@type@en}{master}}{Master's Thesis}{Bachelor's Thesis}}
+            \vskip 1em
+                {\LARGE \@title}
+
+            \vskip 2em
+            Education level: \ifthenelse{\equal{\my@title@type@en}{master}}{master}{bachelor}
+            \vskip 1em
+            Speciality \textit{\my@title@specialty@en}
+            \vskip 1em
+            Programme \textit{\my@title@programme@en}
+
+            \vskip 1em
+
+            \ifthenelse{\equal{\my@title@profile@en}{}}{}{Profile: \underline{\textit{\my@title@profile@en}}}
+
+            {\normalsize \raggedleft
+                \vskip 4em
+                Scientific supervisor:\\
+                \my@title@supervisorPosition@en\ \my@title@supervisor@en\\
+                \vskip 1em
+                Consultant:\\
+                \my@title@consultantPosition@en\ \my@title@consultant@en\\
+                \vskip 1em
+                Reviewer:\\
+                \my@title@reviewerPosition@en\ \my@title@reviewer@en\\
+            }
+        \end{center}
+    \end{titlepage}
+}
+
+%% Титульный лист генерируется, если для соответствующего языка
+%% определен аргумент title
+%% Счетчик страниц автоматически увеличивается при генерации титульнго листа
+\renewcommand\maketitle{
+    %% На титульной странице все кроме полей соответствует \documentclass[12pt]{article}
+    \my@title12pt
+    \newcounter{titlepages}
+    \setcounter{titlepages}{1}
+    \begin{spacing}{1.0}
+        \ifthenelse{\isundefined{\my@title@title@ru}}{}{
+            % fancyhdr set height of the top/bottom headers automatically
+            % so set them to zero to be sure that he does it
+            \setlength{\headheight}{0pt}
+            \setlength{\footskip}{0pt}
+            \maketitleru\addtocounter{titlepages}{1}
+        }
+        \ifthenelse{\isundefined{\my@title@title@en} \OR \equal{\my@title@type@ru}{coursework} \OR \equal{\my@title@type@ru}{practice} \OR \equal{\my@title@type@ru}{production} \OR \equal{\my@title@type@ru}{prediploma}}{}{
+            % fancyhdr already set height of the top/bottom headers on the previous page (titleru)
+            % but on this page the headers' height might be different
+            % so set them to zero again in order to make fancyhdr to do it
+            \setlength{\headheight}{0pt}
+            \setlength{\footskip}{0pt}
+            \maketitleen\addtocounter{titlepages}{1}
+        }
+    \end{spacing}
+    \setcounter{page}{\value{titlepages}}
+    % restore preamble's geometry
+    \my@body14pt
+    \newgeometry{top=20mm,bottom=20mm,left=30mm,right=15mm,nohead,includeheadfoot}
+}
