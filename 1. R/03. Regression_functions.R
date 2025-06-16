@@ -144,6 +144,32 @@ plot_cindex_hist <- function(values) {
 }
 
 
+### NDCG
+
+dcg_at_k <- function(true_vals, pred_vals = true_vals, k = 3) {
+  rel <- true_vals[order(pred_vals, decreasing = TRUE)[1:k]]
+  return(sum((2^rel - 1) / log2(seq_len(k) + 1)))
+}
+
+
+ndcg_at_k <- function(true_vals, pred_vals, k = 3) {
+  dcg  <- dcg_at_k(true_vals, pred_vals, k)
+  idcg <- dcg_at_k(true_vals, k = k)
+  if (idcg == 0) {
+    return(0)
+  } else {
+    return(dcg / idcg)
+  }
+}
+
+
+# Средний NDCG@3 по всей матрице
+mean_ndcg_at_3 <- function(Y_true, Y_pred) {
+  scores <- sapply(seq_len(nrow(Y_true)), \(i) ndcg_at_k(Y_true[i,], Y_pred[i,], k = 3))
+  return(mean(scores))
+}
+
+
 # 2.2 Преобразования данных                               ####
 
 pca_scaler <- function(X_df, pca_model_, k = 32) {
