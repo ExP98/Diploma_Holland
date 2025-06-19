@@ -1,0 +1,8 @@
+# --- 1) Исключаем TeX и BibTeX из статистики языков ---
+*.tex   linguist-documentation
+*.bib   linguist-documentation
+*.bst   linguist-documentation
+
+# --- 2) Переопределяем .Rmd на R, чтобы они учитывались в статистике как R-код ---
+*.Rmd   linguist-language=R
+*.rmd   linguist-language=R
